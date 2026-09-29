@@ -1,0 +1,19 @@
+"""Runs in CI against the Postgres service (DATABASE_URL); reported as skipped elsewhere."""
+
+import os
+
+import psycopg
+import pytest
+
+from <%= it.names.snake %>.db import check_database
+
+URL = os.environ.get("DATABASE_URL", "")
+
+pytestmark = pytest.mark.skipif(not URL, reason="DATABASE_URL is not set")
+
+
+def test_answers_after_bootstrap_and_has_applied_every_migration() -> None:
+    assert check_database(URL)
+    with psycopg.connect(URL) as conn:
+        applied = conn.execute("select name from _migrations order by name").fetchall()
+    assert len(applied) > 0

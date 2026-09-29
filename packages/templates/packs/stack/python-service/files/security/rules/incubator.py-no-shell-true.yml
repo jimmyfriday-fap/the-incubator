@@ -1,0 +1,13 @@
+rules:
+  - id: incubator.py-no-shell-true
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Subprocesses must be spawned without a shell: pass an argument list and leave shell=False
+      (the default). A shell turns every interpolated value into a command-injection risk.
+    patterns:
+      - pattern: $F(..., shell=$S, ...)
+      - metavariable-pattern:
+          metavariable: $S
+          patterns:
+            - pattern-not: 'False'

@@ -1,0 +1,12 @@
+import { describe, expect, it } from 'vitest';
+
+// Live smoke against the package registry (INCUBATOR_LIVE=1 and PACKAGE_VERSION, e.g. after a release).
+const version = process.env['PACKAGE_VERSION'];
+const registry = process.env['NPM_REGISTRY_URL'] ?? 'https://registry.npmjs.org/';
+
+describe.skipIf(!version)('live registry', () => {
+  it('serves the released version', async () => {
+    const res = await fetch(new URL(`${encodeURIComponent(<%~ it.h.yamlStr(it.names.slug) %>)}/${version ?? ''}`, registry));
+    expect(res.status).toBe(200);
+  });
+});

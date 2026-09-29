@@ -1,0 +1,53 @@
+<% const paired = it.spec.testing.home === 'paired-repo'; const theme = it.spec.stack.framework === 'wordpress-theme'; -%>
+<?xml version="1.0"?>
+<!-- Lint (the `lint` step): PSR-12 layout, which PHP-CS-Fixer formats, plus the WordPress Coding
+     Standards' security and database sniffs and a ban on shell and eval functions. -->
+<ruleset name="<%= it.names.slug %>">
+    <description>PSR-12 plus WordPress security sniffs for <%= it.names.slug %>.</description>
+
+    <!-- Relative to vendor/squizlabs/php_codesniffer, so the standards resolve without the Composer plugin. -->
+    <config name="installed_paths" value="../../phpcsstandards/phpcsutils,../../phpcsstandards/phpcsextra,../../wp-coding-standards/wpcs"/>
+    <config name="minimum_wp_version" value="6.6"/>
+
+    <arg name="extensions" value="php"/>
+    <arg name="basepath" value="."/>
+    <arg name="colors"/>
+    <arg value="s"/>
+
+    <file>src</file>
+<% if (!paired) { -%>
+    <file>tests</file>
+<% } -%>
+    <file>docker</file>
+    <file><%= theme ? 'functions.php' : it.names.slug + '.php' %></file>
+
+    <rule ref="PSR12">
+        <!-- PSR-12's 120-column limit is only a SHOULD, and generated names (slugs up to 100 characters)
+             and WordPress header fields cannot always wrap; PHP-CS-Fixer owns the rest of the layout. -->
+        <exclude name="Generic.Files.LineLength"/>
+    </rule>
+    <!-- WordPress runtime rules apply to shipped code; the test suites drive plain PHP and PDO directly. -->
+    <rule ref="WordPress.Security">
+        <exclude-pattern>*/tests/*</exclude-pattern>
+    </rule>
+    <rule ref="WordPress.DB">
+        <exclude-pattern>*/tests/*</exclude-pattern>
+    </rule>
+    <rule ref="WordPress.PHP.DevelopmentFunctions">
+        <exclude-pattern>*/tests/*</exclude-pattern>
+    </rule>
+    <rule ref="Generic.PHP.BacktickOperator"/>
+    <rule ref="Generic.PHP.ForbiddenFunctions">
+        <properties>
+            <property name="forbiddenFunctions" type="array">
+                <element key="eval" value="null"/>
+                <element key="create_function" value="null"/>
+                <element key="exec" value="null"/>
+                <element key="shell_exec" value="null"/>
+                <element key="system" value="null"/>
+                <element key="passthru" value="null"/>
+                <element key="popen" value="null"/>
+            </property>
+        </properties>
+    </rule>
+</ruleset>

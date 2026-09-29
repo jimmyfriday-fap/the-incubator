@@ -1,0 +1,70 @@
+"""End to end over real HTTP: starts `python -m <%= it.names.snake %>` on a free loopback port (or
+uses BASE_URL, for example a staging host) and drives it with an HTTP client."""
+
+import os
+import socket
+import subprocess
+import sys
+import time
+from collections.abc import Iterator
+from pathlib import Path
+
+import httpx2
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        port: int = sock.getsockname()[1]
+        return port
+
+
+def _wait_healthy(url: str, deadline: float) -> None:
+    while time.monotonic() < deadline:
+        try:
+            if httpx2.get(f"{url}/health", timeout=1).status_code == 200:
+                return
+        except httpx2.TransportError:
+            pass
+        time.sleep(0.2)
+    raise TimeoutError(f"{url} did not become healthy")
+
+
+@pytest.fixture(scope="module")
+def base_url() -> Iterator[str]:
+    configured = os.environ.get("BASE_URL")
+    if configured:
+        yield configured.rstrip("/")
+        return
+    port = _free_port()
+    # why: an empty DATABASE_URL wins over any local .env, so the server runs without a database.
+    env = {**os.environ, "HOST": "127.0.0.1", "PORT": str(port), "DATABASE_URL": ""}
+    server = subprocess.Popen(
+        [sys.executable, "-m", <%~ it.h.pyStr(it.names.snake) %>],
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        url = f"http://127.0.0.1:{port}"
+        _wait_healthy(url, time.monotonic() + 30)
+        yield url
+    finally:
+        server.terminate()
+        server.wait(timeout=10)
+
+
+def test_health_answers_ok(base_url: str) -> None:
+    response = httpx2.get(f"{base_url}/health", timeout=5)
+    assert response.status_code == 200
+    assert response.json()["name"] == <%~ it.h.pyStr(it.names.slug) %>
+
+
+def test_unknown_probe_is_rejected(base_url: str) -> None:
+    response = httpx2.get(f"{base_url}/health", params={"probe": "not-a-check"}, timeout=5)
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "unknown_check"

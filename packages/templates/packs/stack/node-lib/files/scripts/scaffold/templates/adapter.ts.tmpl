@@ -1,0 +1,11 @@
+import { {{FEATURE_CAMEL}} } from '@app/features/{{FEATURE_ID}}.js';
+import type { FeatureAdapter } from './types.js';
+
+// TODO(scaffold): drive {{FEATURE_ID}} the way a caller does, then activate its scenarios.
+export const adapter: FeatureAdapter<Record<string, never>, unknown> = {
+  name: '{{FEATURE_ID}}',
+  seedContext: () => ({}),
+  runStage: () => Promise.resolve({{FEATURE_CAMEL}}()),
+  captureOutput: (out) => out,
+  validate: () => [],
+};

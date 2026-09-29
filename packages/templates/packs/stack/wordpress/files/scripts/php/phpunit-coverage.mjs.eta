@@ -1,0 +1,76 @@
+#!/usr/bin/env node
+// The `unit-coverage` step: the unit suite with line coverage (PCOV or Xdebug), a JUnit report for
+// tests-collected, and a threshold from incubator.json testing.coverageThreshold (default <%= it.spec.testing.coverageThreshold %>).
+// Exit 0 pass, 1 no coverage driver or PHPUnit broke, 2 tests failed or coverage below threshold.
+import { existsSync, readFileSync } from 'node:fs';
+import { EXIT, isMain, readJson } from '../guard/lib/common.mjs';
+import { run, which } from '../guard/lib/proc.mjs';
+
+const CLOVER = '.reports/coverage.xml';
+
+/** Project-level statement coverage from a Clover report, as a percentage (100 when empty). */
+export function statementCoverage(xml) {
+  const project = /<project\b[\s\S]*?<\/project>/.exec(xml)?.[0] ?? xml;
+  const all = [...project.matchAll(/<metrics\b[^>]*>/g)];
+  const last = all.at(-1)?.[0] ?? '';
+  const total = Number(/\bstatements="(\d+)"/.exec(last)?.[1] ?? 0);
+  const covered = Number(/\bcoveredstatements="(\d+)"/.exec(last)?.[1] ?? 0);
+  return total === 0 ? 100 : (covered / total) * 100;
+}
+
+async function main() {
+  const root = process.cwd();
+  const php = which('php');
+  if (!php) {
+    process.stderr.write('php is not on PATH\n');
+    return EXIT.TOOL;
+  }
+  const modules = await run(php[0], [...php[1], '-m'], { cwd: root, capture: true });
+  const driver = /^pcov$/im.test(modules.stdout) ? 'pcov' : /^xdebug$/im.test(modules.stdout) ? 'xdebug' : null;
+  if (!driver) {
+    process.stderr.write(
+      'no coverage driver: install PCOV (recommended) or Xdebug, e.g. shivammathur/setup-php with coverage: pcov\n',
+    );
+    return EXIT.TOOL;
+  }
+  const args = [
+    ...php[1],
+    ...(driver === 'pcov' ? ['-d', 'pcov.enabled=1'] : []),
+    'vendor/bin/phpunit',
+    '--testsuite',
+    'unit',
+    '--log-junit',
+    '.reports/unit.xml',
+    '--coverage-clover',
+    CLOVER,
+    '--coverage-text',
+  ];
+  const r = await run(php[0], args, {
+    cwd: root,
+    env: driver === 'xdebug' ? { XDEBUG_MODE: 'coverage' } : undefined,
+  });
+  if (r.code === null) return EXIT.TOOL;
+  if (r.code !== 0) return EXIT.POLICY;
+  if (!existsSync(CLOVER)) {
+    process.stderr.write(`${CLOVER} was not written\n`);
+    return EXIT.TOOL;
+  }
+  const spec = readJson(root, 'incubator.json', null);
+  const threshold = spec?.testing?.coverageThreshold ?? <%= it.spec.testing.coverageThreshold %>;
+  const pct = statementCoverage(readFileSync(CLOVER, 'utf8'));
+  const ok = pct >= threshold;
+  process.stdout.write(
+    `${ok ? '✔' : '✖'} coverage: ${pct.toFixed(1)}% of statements (threshold ${threshold}%)\n`,
+  );
+  return ok ? EXIT.OK : EXIT.POLICY;
+}
+
+if (isMain(import.meta.url)) {
+  main().then(
+    (code) => (process.exitCode = code),
+    (err) => {
+      process.stderr.write(`phpunit-coverage: ${err.message}\n`);
+      process.exitCode = EXIT.TOOL;
+    },
+  );
+}

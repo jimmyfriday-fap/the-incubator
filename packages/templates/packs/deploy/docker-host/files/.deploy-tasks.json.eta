@@ -1,0 +1,8 @@
+<% const inContainer = {
+  'node-web': ['node', 'scripts/db/bootstrap.mjs', '--migrate-only'],
+  'python-service': ['python', '-m', `${it.names.snake}.db`, '--migrate-only'],
+}[it.spec.stack.pack];
+const tasks = [];
+if (inContainer) tasks.push({ name: 'migrate-db', description: 'Apply numbered migrations inside the running app container (never seeds outside local/staging).', env: ['staging', 'prod'], idempotent: true, runOnce: false, timeout: 600, command: ['node', 'scripts/deploy/docker-remote.mjs', 'exec', '--', ...inContainer] });
+tasks.push({ name: 'record-release', description: 'Print the deployed release for the audit log.', env: ['staging', 'prod'], idempotent: true, runOnce: false, timeout: 30, command: ['node', '-e', 'process.stdout.write(`release recorded\\n`)'] }); -%>
+<%~ it.h.json({ $schema: './schemas/deploy-tasks.schema.json', tasks }) %>

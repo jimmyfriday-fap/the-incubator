@@ -1,0 +1,19 @@
+from pathlib import Path
+
+from <%= it.names.snake %>.env import load_env, parse_env
+
+
+def test_parses_key_value_lines() -> None:
+    text = "# c\nA=1\nB=\"two\"\nC='3'\nbad\n=x\n"
+    assert parse_env(text) == {"A": "1", "B": "two", "C": "3"}
+
+
+def test_later_files_only_fill_gaps_and_the_environment_wins(tmp_path: Path) -> None:
+    (tmp_path / "private").mkdir()
+    (tmp_path / ".env").write_text("A=from-env\nB=from-env\n", encoding="utf-8")
+    (tmp_path / "private" / ".env").write_text("B=from-private\nC=from-private\n", encoding="utf-8")
+    env = {"A": "already-set"}
+    files = [str(tmp_path / ".env"), str(tmp_path / "private" / ".env"), str(tmp_path / "missing")]
+    added = load_env(files, env)
+    assert env == {"A": "already-set", "B": "from-env", "C": "from-private"}
+    assert added == ["B", "C"]

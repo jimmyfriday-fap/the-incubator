@@ -1,0 +1,47 @@
+<% const reg = it.spec.deploy.registry || 'ghcr.io'; const wp = it.spec.stack.pack === 'wordpress';
+const envKeys = wp
+  ? ['MARIADB_DATABASE', 'MARIADB_USER', 'MARIADB_PASSWORD', 'MARIADB_ROOT_PASSWORD', 'WORDPRESS_DB_HOST=db', 'WORDPRESS_DB_NAME', 'WORDPRESS_DB_USER', 'WORDPRESS_DB_PASSWORD']
+  : ['POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'DATABASE_URL=postgres://<user>:<password>@db:5432/<db>', 'APP_ENV=staging|prod']; -%>
+# Deploy
+
+## Deploy class
+
+**`docker-host`**: every deploy builds the repository's `Dockerfile`, pushes it to `<%= reg %>` and
+records the image **digest**. `scripts/deploy/docker-remote.mjs` then reaches the host over SSH (key
+from a secret, host key pinned through a `known_hosts` secret with `StrictHostKeyChecking=yes`),
+copies `deploy/compose.host.yaml` and runs `docker compose pull` and `docker compose up -d --wait`
+with that digest. Compose healthchecks gate the rollout, then an HTTP probe smoke-tests it. No remote
+shell is used: every remote argument is validated against a safe character set.
+
+| Lane | Branch | What happens |
+| --- | --- | --- |
+| local | any | `docker compose up` on your machine (see README). |
+| staging | `<%= it.spec.lanes.branches.staging %>` | Every push runs `deploy-staging.yml`: build, push, deploy the digest to the staging host (compose project `<%= it.names.slug %>-staging`), run post-deploy tasks, smoke. `APP_ENV=staging`; downstream secrets are dummies so staging can never change prod. |
+| prod | `<%= it.spec.lanes.branches.prod %>` | Only `promote-to-production.yml` (manual, dry run by default) merges and dispatches `deploy-production.yml`, which has no push trigger. |
+
+## Promotion rules
+
+1. Promotion and rollback are human-only actions (`.incubator/agent-profile.json`).
+2. `promote-to-production.yml` defaults to `execute_tasks: false` and only prints the plan.
+3. `rollback-production.yml` refuses any target except the latest promote merge, then redeploys the
+   previous image digest recorded in `releases.log` on the host and smoke-tests.
+4. Post-deploy tasks live in `.deploy-tasks.json` and run through `scripts/run-deploy-tasks.mjs`; the
+   task log is kept on the host (`deploy-tasks.log.jsonl`) so `runOnce` tasks stay once-only.
+
+## Required settings
+
+GitHub Actions **variables** (they start as `__INCUBATOR_UNSET__`): `STAGING_SSH_TARGET` and
+`PROD_SSH_TARGET` (`user@host`), `DEPLOY_DIR` (the directory on each host), `STAGING_URL`, `PROD_URL`.
+
+GitHub Actions **secrets** (never committed): `STAGING_SSH_KEY`, `STAGING_SSH_KNOWN_HOSTS`,
+`PROD_SSH_KEY`, `PROD_SSH_KNOWN_HOSTS`<%= it.spec.deploy.staging.tailnetOnly ? ', `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` (Tailscale, to reach the tailnet-only staging host)' : '' %><%= reg === 'ghcr.io' ? '' : ', `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`' %>.
+
+Every deploy workflow runs `scripts/deploy/preflight.mjs` first and fails with exit 2 naming anything
+still unset.
+
+## Host prerequisites
+
+- Docker Engine with the compose plugin, and a deploy user in the `docker` group.
+- `docker login <%= reg %>` on the host with a read-only token when the image is private.
+- `$DEPLOY_DIR/.env` (mode 600) with: <%= envKeys.map((k) => '`' + k + '`').join(', ') %>.
+- A reverse proxy (TLS) in front of `127.0.0.1:${APP_PORT:-8080}`; set `APP_BIND`/`APP_PORT` in `.env` to change it.

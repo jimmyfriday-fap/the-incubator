@@ -1,0 +1,28 @@
+{
+  "project": {
+    "name": "Shipnote",
+    "slug": "shipnote",
+    "description": "A CLI that drafts release notes from commit trailers."
+  },
+  "intent": {
+    "personas": ["owner"],
+    "coreFeatures": [
+      {
+        "id": "draft-notes",
+        "summary": "Draft release notes from trailers",
+        "lane": "enhancement/new"
+      }
+    ]
+  },
+  "platform": "cli",
+  "stack": {
+    "pack": "node-lib"
+  },
+  "deploy": {
+    "target": "package-release"
+  },
+  "testing": {
+    "e2e": "none",
+    "home": "paired-repo"
+  }
+}

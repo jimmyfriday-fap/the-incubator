@@ -9,3 +9,5 @@ export * from './engine.js';
 export * from './discovery/questions.js';
 export * from './discovery/merge.js';
 export * from './discovery/prompt-builder.js';
+export * from './scaffold.js';
+export * from './publish.js';

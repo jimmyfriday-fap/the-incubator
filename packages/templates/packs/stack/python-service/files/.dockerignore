@@ -1,0 +1,15 @@
+.venv
+__pycache__
+*.pyc
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.reports
+.tools
+.git
+.env
+.env.*
+private
+tests
+security
+node_modules

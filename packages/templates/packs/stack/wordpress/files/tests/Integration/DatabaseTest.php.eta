@@ -1,0 +1,57 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Integration;
+
+use <%= it.names.pascal %>\Features\Health;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Runs in CI against the MariaDB service (and locally against `docker compose up -d db`) when
+ * WORDPRESS_DB_HOST is set; reported as skipped elsewhere.
+ */
+final class DatabaseTest extends TestCase
+{
+    private static function connect(): \PDO
+    {
+        $host = getenv('WORDPRESS_DB_HOST');
+        if (!is_string($host) || $host === '') {
+            self::markTestSkipped('set WORDPRESS_DB_HOST, _USER, _PASSWORD and _NAME (see .env.example)');
+        }
+        $parts = explode(':', $host, 2);
+        $dsn = sprintf(
+            'mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
+            $parts[0],
+            $parts[1] ?? '3306',
+            (string) getenv('WORDPRESS_DB_NAME'),
+        );
+
+        return new \PDO(
+            $dsn,
+            (string) getenv('WORDPRESS_DB_USER'),
+            (string) getenv('WORDPRESS_DB_PASSWORD'),
+            [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION],
+        );
+    }
+
+    public function testMariaDbAnswers(): void
+    {
+        $pdo = self::connect();
+        $version = $pdo->query('SELECT VERSION()');
+        self::assertNotFalse($version);
+        self::assertStringContainsStringIgnoringCase('mariadb', (string) $version->fetchColumn());
+    }
+
+    public function testHealthIsOkWithARealDatabaseProbe(): void
+    {
+        $pdo = self::connect();
+        $health = new Health(static function () use ($pdo): bool {
+            $statement = $pdo->query('SELECT 1');
+
+            return $statement !== false && (string) $statement->fetchColumn() === '1';
+        });
+
+        self::assertSame('ok', $health->check()['status']);
+    }
+}

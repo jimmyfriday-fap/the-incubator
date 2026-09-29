@@ -1,0 +1,50 @@
+<% const feats = it.h.sortBy(it.features.filter((f) => !f.builtin), 'id'); -%>
+"""The HTTP app. Feature routes are registered through the `routes` scaffold markers."""
+
+from dataclasses import dataclass, field
+
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+from .features.health import VERSION, HealthDeps, health
+
+# isort: off
+# <scaffold:feature-imports>
+<% feats.forEach((f, i) => { -%>
+<% if (i > 0) { -%>
+
+<% } -%>
+# @<%= f.id %>
+from .features import <%= it.h.snake(f.id) %>
+<% }) -%>
+# </scaffold:feature-imports>
+# isort: on
+
+STATUS_CODES = {"ok": 200, "degraded": 503, "error": 400}
+
+
+@dataclass(frozen=True)
+class AppDeps:
+    """What the app talks to; tests and scenario adapters swap these for fakes."""
+
+    health: HealthDeps = field(default_factory=HealthDeps)
+
+
+def build_app(deps: AppDeps | None = None) -> FastAPI:
+    """Builds the HTTP app."""
+    resolved = deps if deps is not None else AppDeps()
+    app = FastAPI(title=<%~ it.h.pyStr(it.names.slug) %>, version=VERSION)
+
+    @app.get("/health")
+    def get_health(probe: str | None = None) -> JSONResponse:
+        result = health(probe, resolved.health)
+        return JSONResponse(result, status_code=STATUS_CODES[result["status"]])
+
+    # <scaffold:routes>
+<% for (const f of feats) { -%>
+    # @<%= f.id %>
+    <%= it.h.snake(f.id) %>.register(app)
+<% } -%>
+    # </scaffold:routes>
+
+    return app

@@ -1,0 +1,28 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>;
+
+/**
+ * Theme bootstrap, called once from functions.php: theme supports plus the REST routes under
+ * `<%= it.names.slug %>/v1` and the `/health` alias. Keep this thin; behaviour lives in src/Features/.
+ */
+final class Theme
+{
+    public const VERSION = '0.1.0';
+    public const TEXT_DOMAIN = <%~ it.h.phpStr(it.names.slug) %>;
+
+    public static function boot(): void
+    {
+        add_action('after_setup_theme', [self::class, 'setup']);
+        Routes::boot();
+    }
+
+    public static function setup(): void
+    {
+        add_theme_support('wp-block-styles');
+        add_theme_support('editor-styles');
+        add_theme_support('responsive-embeds');
+    }
+}

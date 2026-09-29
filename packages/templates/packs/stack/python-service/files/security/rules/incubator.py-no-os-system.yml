@@ -1,0 +1,12 @@
+rules:
+  - id: incubator.py-no-os-system
+    languages: [python]
+    severity: ERROR
+    message: >-
+      os.system, os.popen and subprocess.getoutput/getstatusoutput always run through a shell. Use
+      subprocess.run with an argument list instead.
+    pattern-either:
+      - pattern: os.system(...)
+      - pattern: os.popen(...)
+      - pattern: subprocess.getoutput(...)
+      - pattern: subprocess.getstatusoutput(...)

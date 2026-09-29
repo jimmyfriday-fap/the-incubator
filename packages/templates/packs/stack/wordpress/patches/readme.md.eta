@@ -1,0 +1,4 @@
+<% const theme = it.spec.stack.framework === 'wordpress-theme'; -%>
+1. Install PHP <%= it.v.php %> with Composer 2 and Node 22 (the guard toolkit is plain Node), then run `composer install`.
+2. Copy `.env.example` to `.env` and run `docker compose up -d --wait`: WordPress on http://localhost:8080 with MariaDB 11 and this <%= theme ? 'theme' : 'plugin' %> mounted from the checkout. Finish the install with `docker compose run --rm cli wp core install --url=http://localhost:8080 --title=<%= it.names.slug %> --admin_user=admin --admin_email=admin@example.test --skip-email`<%= theme ? ' and `docker compose run --rm cli wp theme activate ' + it.names.slug + '`' : '' %>.
+3. The REST routes live under `/wp-json/<%= it.names.slug %>/v1/` (`/health` answers too). `composer test` runs the unit and scenario suites, `composer format` fixes formatting, and `docker build .` builds the production image.

@@ -1,0 +1,35 @@
+<% const src = it.spec.testing.home === 'paired-repo' ? 'app/src' : 'src'; -%>
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Suites: unit (plus the scenario contract layer), integration (MariaDB), live (a deployed lane).
+     Run one through `node scripts/test-profile.mjs <profile>` or PHPUnit's testsuite option. -->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         cacheDirectory=".reports/phpunit-cache"
+         colors="true"
+         beStrictAboutOutputDuringTests="true"
+         failOnRisky="true"
+         failOnWarning="true"
+         failOnDeprecation="true"
+         failOnPhpunitDeprecation="true"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+         displayDetailsOnTestsThatTriggerDeprecations="true"
+         displayDetailsOnPhpunitDeprecations="true">
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests/Unit</directory>
+            <file>tests/ScenariosTest.php</file>
+        </testsuite>
+        <testsuite name="integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
+        <testsuite name="live">
+            <directory>tests/Live</directory>
+        </testsuite>
+    </testsuites>
+    <source ignoreIndirectDeprecations="true" restrictWarnings="true">
+        <include>
+            <directory><%= src %></directory>
+        </include>
+    </source>
+</phpunit>

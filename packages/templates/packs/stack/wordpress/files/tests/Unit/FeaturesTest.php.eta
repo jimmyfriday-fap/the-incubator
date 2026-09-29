@@ -1,0 +1,31 @@
+<% const ids = it.features.filter((f) => !f.builtin).map((f) => f.id); -%>
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Unit;
+
+use <%= it.names.pascal %>\Features\Endpoint;
+use <%= it.names.pascal %>\Tests\Support\Scenario;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Features scaffolded by the Incubator answer 501 until they are implemented (see their scaffold markers).
+ */
+final class FeaturesTest extends TestCase
+{
+    /** @var list<string> */
+    private const FEATURES = [<%~ ids.map((id) => it.h.phpStr(id)).join(', ') %>];
+
+    public function testScaffoldedFeaturesAnswer501UntilImplemented(): void
+    {
+        foreach (self::FEATURES as $id) {
+            $class = <%~ it.h.phpStr(it.names.pascal + '\\Features\\') %> . Scenario::pascal($id);
+            self::assertTrue(class_exists($class), $class);
+            $endpoint = new $class();
+            self::assertInstanceOf(Endpoint::class, $endpoint);
+            self::assertSame([501, ['status' => 'todo', 'feature' => $id]], $endpoint->respond([]));
+        }
+        self::assertCount(<%= ids.length %>, self::FEATURES);
+    }
+}

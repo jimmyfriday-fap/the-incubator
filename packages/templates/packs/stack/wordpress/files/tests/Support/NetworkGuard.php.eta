@@ -1,0 +1,39 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Support;
+
+/**
+ * Unit-suite isolation (installed by tests/bootstrap.php unless INCUBATOR_LIVE=1): every PHP stream
+ * URL (`http://`, `https://`, `ftp://`, `ftps://`) fails the test immediately, so file_get_contents,
+ * fopen and friends cannot reach the network. WordPress's HTTP API (wp_remote_*) is not loaded in
+ * unit tests at all, so calling it fails unless a test stubs it with Brain Monkey. PHP cannot
+ * intercept ext-curl or raw sockets (fsockopen, stream_socket_client) without an extension; review
+ * keeps those out of src/, and the integration and live suites are where real I/O belongs.
+ */
+final class NetworkGuard
+{
+    public const SCHEMES = ['http', 'https', 'ftp', 'ftps'];
+
+    public static function install(): void
+    {
+        $registered = stream_get_wrappers();
+        foreach (self::SCHEMES as $scheme) {
+            if (in_array($scheme, $registered, true)) {
+                stream_wrapper_unregister($scheme);
+            }
+            stream_wrapper_register($scheme, BlockedStream::class);
+        }
+    }
+
+    public static function uninstall(): void
+    {
+        foreach (self::SCHEMES as $scheme) {
+            if (in_array($scheme, stream_get_wrappers(), true)) {
+                stream_wrapper_unregister($scheme);
+            }
+            @stream_wrapper_restore($scheme);
+        }
+    }
+}

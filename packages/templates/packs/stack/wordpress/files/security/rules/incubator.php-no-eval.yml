@@ -1,0 +1,10 @@
+rules:
+  - id: incubator.php-no-eval
+    languages: [php]
+    severity: ERROR
+    message: >-
+      eval() and create_function() run strings as code, so any data that reaches them becomes code.
+      Call the code directly; dispatch on data with a match or a map of callables.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: create_function(...)

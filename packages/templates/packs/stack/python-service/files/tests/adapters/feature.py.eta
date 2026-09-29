@@ -1,0 +1,28 @@
+"""Scenario adapter for <%= it.feature.id %>."""
+
+from typing import Any
+
+from <%= it.names.snake %>.features import <%= it.h.snake(it.feature.id) %>
+
+from tests.scenario_contract import FeatureAdapter, Scenario, Stage
+
+
+class Adapter:
+    """TODO(scaffold): drive <%= it.feature.id %> the way a user does, then activate its scenarios."""
+
+    name = <%~ it.h.pyStr(it.feature.id) %>
+
+    def seed_context(self, scenario: Scenario) -> dict[str, Any]:
+        return {}
+
+    def run_stage(self, stage: Stage, ctx: dict[str, Any], scenario: Scenario) -> Any:
+        return <%= it.h.snake(it.feature.id) %>.handle()
+
+    def capture_output(self, out: Any, ctx: dict[str, Any]) -> Any:
+        return out
+
+    def validate(self, captured: Any, stage: Stage) -> list[str]:
+        return []
+
+
+adapter: FeatureAdapter = Adapter()

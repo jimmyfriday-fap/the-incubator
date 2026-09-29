@@ -1,0 +1,41 @@
+{
+  "$comment": "Files the base pack renders for this repository's own incubator.json that intentionally differ from (or are absent in) the repository. Every entry needs a reason; the dogfood test fails on unlisted drift and on stale entries.",
+  "exceptions": [
+    {
+      "glob": "{CLAUDE.md,AGENTS.md,.github/copilot-instructions.md,.cursor/rules/incubator.mdc,.incubator/agent/INSTRUCTIONS.md}",
+      "reason": "The Incubator's agent instructions describe the monorepo (packages, phases, the brief), not a generated single-package project; they share one body through the same drift check."
+    },
+    {
+      "glob": "README.md",
+      "reason": "The repository README documents the Incubator itself (CLI usage, architecture), not a generated project."
+    },
+    {
+      "glob": ".github/workflows/ci.yml",
+      "reason": "The monorepo CI runs check on three operating systems and the packs matrix; generated repos get the single-job template."
+    },
+    {
+      "glob": ".github/workflows/promote-to-production.yml",
+      "reason": "The Incubator's own release lane (package-release plus desktop artifacts) lands with the Electron build in Phase 6."
+    },
+    {
+      "glob": ".gitignore",
+      "reason": "Monorepo-specific ignores (*.tsbuildinfo, apps/desktop/release/) and no stack marker region."
+    },
+    {
+      "glob": "config/{checks,run-profiles,features,completeness,contracts,abs-path}.json",
+      "reason": "Repository configuration for the monorepo: workspace-wide steps and profiles, the Incubator's own features, contract pins and reasoned abs-path allowances."
+    },
+    {
+      "glob": "docs/plans/000-bootstrap.md",
+      "reason": "The Incubator was bootstrapped by the phase plans in docs/plans/001-*.md onward, not by a generated bootstrap plan."
+    },
+    {
+      "glob": ".incubator/tickets/**",
+      "reason": "Tickets are tracker state created by the local tracker as work happens, not scaffolded."
+    },
+    {
+      "glob": "tests/scenarios/**",
+      "reason": "The Incubator's scenarios exercise its real features (exit codes, discovery); generated repos start from TODO(scaffold) stubs and a health feature."
+    }
+  ]
+}

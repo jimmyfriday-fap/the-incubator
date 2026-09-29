@@ -1,0 +1,37 @@
+name: deploy-staging
+
+# Staging for a package: build the exact tarball a release would publish, install it into an empty
+# project and smoke it. Nothing is published from staging.
+on:
+  push:
+    branches: [<%= it.spec.lanes.branches.staging %>]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 20
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+      - uses: <%= it.h.action('pnpm/action-setup') %>
+      - uses: <%= it.h.action('actions/setup-node') %>
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: node scripts/release/package-smoke.mjs --out release-assets
+      - uses: <%= it.h.action('actions/upload-artifact') %>
+        with:
+          name: package-${{ github.sha }}
+          path: release-assets/
+          retention-days: 14
+      - run: node scripts/run-deploy-tasks.mjs --env staging --sha "$GITHUB_SHA" --yes

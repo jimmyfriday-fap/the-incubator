@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<!-- Static analysis of the test suites (the `typecheck` step); the application in app/src is analysed
+     for types only, its own repository checks it. -->
+<psalm xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns="https://getpsalm.org/schema/config"
+       xsi:schemaLocation="https://getpsalm.org/schema/config vendor/vimeo/psalm/config.xsd"
+       errorLevel="2"
+       phpVersion="<%= it.v.php %>"
+       resolveFromConfigFile="true"
+       findUnusedCode="false"
+       findUnusedBaselineEntry="false"
+       ensureOverrideAttribute="false">
+    <projectFiles>
+        <directory name="tests"/>
+        <ignoreFiles>
+            <directory name="vendor"/>
+            <directory name="app"/>
+        </ignoreFiles>
+    </projectFiles>
+    <extraFiles>
+        <directory name="app/src"/>
+    </extraFiles>
+    <stubs>
+        <file name="vendor/php-stubs/wordpress-stubs/wordpress-stubs.php"/>
+    </stubs>
+    <globals>
+        <var name="wpdb" type="\wpdb"/>
+    </globals>
+</psalm>

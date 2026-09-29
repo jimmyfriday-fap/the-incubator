@@ -1,0 +1,20 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Features;
+
+/**
+ * One REST endpoint of a feature. Plain PHP: `Routes` adapts it to the WordPress REST API, and
+ * the scenario adapters in tests/Adapters/ drive it directly.
+ */
+interface Endpoint
+{
+    /**
+     * Handles one request and returns the HTTP status and the JSON body.
+     *
+     * @param array<array-key, mixed> $params the request parameters (query and body)
+     * @return array{0: int, 1: array<string, mixed>}
+     */
+    public function respond(array $params): array;
+}

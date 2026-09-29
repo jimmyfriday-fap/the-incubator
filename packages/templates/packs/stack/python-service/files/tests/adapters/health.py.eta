@@ -1,0 +1,44 @@
+"""Scenario adapter for health: drives GET /health through the real app."""
+
+from typing import Any
+
+from fastapi.testclient import TestClient
+
+from <%= it.names.snake %>.app import AppDeps, build_app
+from <%= it.names.snake %>.features.health import HealthDeps
+
+from tests.scenario_contract import FeatureAdapter, Scenario, Stage
+
+
+def _database_down() -> bool:
+    raise ConnectionRefusedError("database is down")
+
+
+class Adapter:
+    """`fault` inputs become failing dependencies; `probe` is passed as a query parameter."""
+
+    name = "health"
+
+    def seed_context(self, scenario: Scenario) -> dict[str, Any]:
+        return {}
+
+    def run_stage(self, stage: Stage, ctx: dict[str, Any], scenario: Scenario) -> dict[str, Any]:
+        given = stage.get("input") or {}
+        deps = (
+            AppDeps(health=HealthDeps(check_database=_database_down))
+            if given.get("fault") == "dependency-down"
+            else AppDeps()
+        )
+        params = {"probe": given["probe"]} if "probe" in given else {}
+        response = TestClient(build_app(deps)).get("/health", params=params)
+        return {"http_status": response.status_code, "body": response.json()}
+
+    def capture_output(self, out: dict[str, Any], ctx: dict[str, Any]) -> Any:
+        return out["body"]
+
+    def validate(self, captured: Any, stage: Stage) -> list[str]:
+        status = captured.get("status") if isinstance(captured, dict) else None
+        return [] if status in ("ok", "degraded", "error") else [f"unexpected status {status!r}"]
+
+
+adapter: FeatureAdapter = Adapter()

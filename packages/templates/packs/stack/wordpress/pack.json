@@ -1,0 +1,521 @@
+{
+  "$schema": "../../../schema/pack.schema.json",
+  "id": "stack/wordpress",
+  "version": "1.0.0",
+  "description": "WordPress plugin or block theme on PHP 8.3 with Composer PSR-4 autoload, PHPUnit 11 + Brain Monkey, PHP-CS-Fixer, PHPCS (WordPress security sniffs), Psalm, MariaDB 11 compose and a production image.",
+  "appliesWhen": "stack.pack == 'wordpress'",
+  "requires": ["base"],
+  "files": [
+    {
+      "src": "files/.distignore",
+      "dest": ".distignore"
+    },
+    {
+      "src": "files/.dockerignore",
+      "dest": ".dockerignore"
+    },
+    {
+      "src": "files/.php-cs-fixer.dist.php",
+      "dest": ".php-cs-fixer.dist.php"
+    },
+    {
+      "src": "files/Dockerfile.eta",
+      "dest": "Dockerfile"
+    },
+    {
+      "src": "files/compose.yaml.eta",
+      "dest": "compose.yaml"
+    },
+    {
+      "src": "files/composer.json.eta",
+      "dest": "composer.json"
+    },
+    {
+      "src": "files/config/scaffold.json.eta",
+      "dest": "config/scaffold.json"
+    },
+    {
+      "src": "files/docker/healthcheck.php.eta",
+      "dest": "docker/healthcheck.php"
+    },
+    {
+      "src": "files/docker/mu-plugin.php.eta",
+      "dest": "docker/mu-plugin.php",
+      "when": "stack.framework == 'wordpress-plugin'"
+    },
+    {
+      "src": "files/phpcs.xml.dist.eta",
+      "dest": "phpcs.xml.dist"
+    },
+    {
+      "src": "files/psalm.xml.eta",
+      "dest": "psalm.xml"
+    },
+    {
+      "src": "files/phpunit.xml.dist.eta",
+      "dest": "phpunit.xml.dist",
+      "role": "tests"
+    },
+    {
+      "src": "files/plugin/plugin.php.eta",
+      "dest": "<%= it.names.slug %>.php",
+      "when": "stack.framework == 'wordpress-plugin'"
+    },
+    {
+      "src": "files/theme/functions.php.eta",
+      "dest": "functions.php",
+      "when": "stack.framework == 'wordpress-theme'"
+    },
+    {
+      "src": "files/theme/style.css.eta",
+      "dest": "style.css",
+      "when": "stack.framework == 'wordpress-theme'"
+    },
+    {
+      "src": "files/theme/theme.json",
+      "dest": "theme.json",
+      "when": "stack.framework == 'wordpress-theme'"
+    },
+    {
+      "src": "files/theme/templates/index.html",
+      "dest": "templates/index.html",
+      "when": "stack.framework == 'wordpress-theme'"
+    },
+    {
+      "src": "files/theme/parts/header.html",
+      "dest": "parts/header.html",
+      "when": "stack.framework == 'wordpress-theme'"
+    },
+    {
+      "src": "files/theme/parts/footer.html",
+      "dest": "parts/footer.html",
+      "when": "stack.framework == 'wordpress-theme'"
+    },
+    {
+      "src": "files/scripts/db/bootstrap.mjs",
+      "dest": "scripts/db/bootstrap.mjs",
+      "mode": "0755"
+    },
+    {
+      "src": "files/scripts/php/composer.mjs",
+      "dest": "scripts/php/composer.mjs",
+      "mode": "0755"
+    },
+    {
+      "src": "files/scripts/php/phpunit-coverage.mjs.eta",
+      "dest": "scripts/php/phpunit-coverage.mjs",
+      "mode": "0755",
+      "role": "tests"
+    },
+    {
+      "src": "files/scripts/scaffold/templates/Adapter.php.tmpl.eta",
+      "dest": "scripts/scaffold/templates/Adapter.php.tmpl",
+      "when": "testing.home == 'in-repo'"
+    },
+    {
+      "src": "files/scripts/scaffold/templates/Feature.php.tmpl.eta",
+      "dest": "scripts/scaffold/templates/Feature.php.tmpl"
+    },
+    {
+      "src": "files/scripts/scaffold/templates/route.php.tmpl",
+      "dest": "scripts/scaffold/templates/route.php.tmpl"
+    },
+    {
+      "src": "files/security/fixtures/incubator.php-no-eval/bad.php",
+      "dest": "security/fixtures/incubator.php-no-eval/bad.php"
+    },
+    {
+      "src": "files/security/fixtures/incubator.php-no-eval/good.php",
+      "dest": "security/fixtures/incubator.php-no-eval/good.php"
+    },
+    {
+      "src": "files/security/fixtures/incubator.php-no-shell-exec/bad.php",
+      "dest": "security/fixtures/incubator.php-no-shell-exec/bad.php"
+    },
+    {
+      "src": "files/security/fixtures/incubator.php-no-shell-exec/good.php",
+      "dest": "security/fixtures/incubator.php-no-shell-exec/good.php"
+    },
+    {
+      "src": "files/security/fixtures/incubator.php-wpdb-unprepared/bad.php",
+      "dest": "security/fixtures/incubator.php-wpdb-unprepared/bad.php"
+    },
+    {
+      "src": "files/security/fixtures/incubator.php-wpdb-unprepared/good.php",
+      "dest": "security/fixtures/incubator.php-wpdb-unprepared/good.php"
+    },
+    {
+      "src": "files/security/rules/incubator.php-no-eval.yml",
+      "dest": "security/rules/incubator.php-no-eval.yml"
+    },
+    {
+      "src": "files/security/rules/incubator.php-no-shell-exec.yml",
+      "dest": "security/rules/incubator.php-no-shell-exec.yml"
+    },
+    {
+      "src": "files/security/rules/incubator.php-wpdb-unprepared.yml",
+      "dest": "security/rules/incubator.php-wpdb-unprepared.yml"
+    },
+    {
+      "src": "files/src/Features/Endpoint.php.eta",
+      "dest": "src/Features/Endpoint.php"
+    },
+    {
+      "src": "files/src/Features/Health.php.eta",
+      "dest": "src/Features/Health.php"
+    },
+    {
+      "src": "files/src/Plugin.php.eta",
+      "dest": "src/Plugin.php",
+      "when": "stack.framework == 'wordpress-plugin'"
+    },
+    {
+      "src": "files/src/Theme.php.eta",
+      "dest": "src/Theme.php",
+      "when": "stack.framework == 'wordpress-theme'"
+    },
+    {
+      "src": "files/src/Routes.php.eta",
+      "dest": "src/Routes.php"
+    },
+    {
+      "src": "files/tests/Adapters/FeatureAdapter.php.eta",
+      "dest": "tests/Adapters/FeatureAdapter.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/Adapters/HealthAdapter.php.eta",
+      "dest": "tests/Adapters/HealthAdapter.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/Integration/DatabaseTest.php.eta",
+      "dest": "tests/Integration/DatabaseTest.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/Live/HealthTest.php.eta",
+      "dest": "tests/Live/HealthTest.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/ScenariosTest.php.eta",
+      "dest": "tests/ScenariosTest.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/Support/BlockedStream.php.eta",
+      "dest": "tests/Support/BlockedStream.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/Support/NetworkGuard.php.eta",
+      "dest": "tests/Support/NetworkGuard.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/Support/Scenario.php.eta",
+      "dest": "tests/Support/Scenario.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/Support/Undefined.php.eta",
+      "dest": "tests/Support/Undefined.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/Unit/FeaturesTest.php.eta",
+      "dest": "tests/Unit/FeaturesTest.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/Unit/HealthTest.php.eta",
+      "dest": "tests/Unit/HealthTest.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/Unit/NetworkGuardTest.php.eta",
+      "dest": "tests/Unit/NetworkGuardTest.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/Unit/RoutesTest.php.eta",
+      "dest": "tests/Unit/RoutesTest.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/Unit/ScenarioAssertionTest.php.eta",
+      "dest": "tests/Unit/ScenarioAssertionTest.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/bootstrap.php.eta",
+      "dest": "tests/bootstrap.php",
+      "role": "tests"
+    },
+    {
+      "src": "files/src/Features/Feature.php.eta",
+      "dest": "src/Features/<%= it.h.pascal(it.feature.id) %>.php",
+      "each": "spec.intent.coreFeatures",
+      "as": "feature"
+    },
+    {
+      "src": "files/tests/Adapters/FeatureAdapterStub.php.eta",
+      "dest": "tests/Adapters/<%= it.h.pascal(it.feature.id) %>Adapter.php",
+      "each": "spec.intent.coreFeatures",
+      "role": "tests",
+      "as": "feature"
+    },
+    {
+      "src": "files/paired/composer.json.eta",
+      "dest": "@paired/composer.json",
+      "when": "testing.home == 'paired-repo'"
+    },
+    {
+      "src": "files/paired/psalm.xml.eta",
+      "dest": "@paired/psalm.xml",
+      "when": "testing.home == 'paired-repo'"
+    }
+  ],
+  "markerPatches": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "region": "ci-jobs",
+      "entries": [
+        {
+          "id": "check",
+          "src": "patches/ci-check.yml.eta"
+        },
+        {
+          "id": "integration",
+          "src": "patches/ci-integration.yml.eta",
+          "when": "testing.home == 'in-repo'"
+        }
+      ]
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "region": "gate-needs",
+      "entries": [
+        {
+          "id": "check",
+          "text": "      - check"
+        },
+        {
+          "id": "integration",
+          "text": "      - integration",
+          "when": "testing.home == 'in-repo'"
+        }
+      ]
+    },
+    {
+      "file": "lefthook.yml",
+      "region": "lefthook-pre-commit",
+      "entries": [
+        {
+          "id": "php",
+          "src": "patches/lefthook.yml"
+        }
+      ]
+    },
+    {
+      "file": ".env.example",
+      "region": "env",
+      "entries": [
+        {
+          "id": "wordpress",
+          "src": "patches/env.eta"
+        }
+      ]
+    },
+    {
+      "file": ".gitignore",
+      "region": "gitignore-stack",
+      "entries": [
+        {
+          "id": "wordpress",
+          "text": "vendor/\n.phpunit.cache/\n.php-cs-fixer.cache"
+        }
+      ]
+    },
+    {
+      "file": "README.md",
+      "region": "readme-commands",
+      "entries": [
+        {
+          "id": "wordpress",
+          "src": "patches/readme.md.eta"
+        }
+      ]
+    },
+    {
+      "file": "@paired/.github/workflows/ci.yml",
+      "region": "ci-jobs",
+      "when": "testing.home == 'paired-repo'",
+      "entries": [
+        {
+          "id": "test",
+          "src": "patches/paired-ci-test.yml.eta"
+        }
+      ]
+    },
+    {
+      "file": "@paired/.github/workflows/ci.yml",
+      "region": "gate-needs",
+      "when": "testing.home == 'paired-repo'",
+      "entries": [
+        {
+          "id": "test",
+          "text": "      - test"
+        }
+      ]
+    },
+    {
+      "file": "@paired/README.md",
+      "region": "readme-commands",
+      "when": "testing.home == 'paired-repo'",
+      "entries": [
+        {
+          "id": "wordpress",
+          "src": "patches/paired-readme.md"
+        }
+      ]
+    }
+  ],
+  "jsonPatches": [
+    {
+      "file": "config/checks.json",
+      "ops": [
+        {
+          "op": "merge",
+          "pointer": "/steps",
+          "value": {
+            "format": {
+              "cmd": [
+                "php",
+                "vendor/bin/php-cs-fixer",
+                "check",
+                "--config",
+                ".php-cs-fixer.dist.php",
+                "--show-progress",
+                "none",
+                "--diff"
+              ]
+            },
+            "lint": {
+              "cmd": ["php", "vendor/bin/phpcs"]
+            },
+            "typecheck": {
+              "cmd": ["php", "vendor/bin/psalm", "--no-progress", "--no-suggestions"]
+            },
+            "unit": {
+              "cmd": [
+                "php",
+                "vendor/bin/phpunit",
+                "--testsuite",
+                "unit",
+                "--log-junit",
+                ".reports/unit.xml"
+              ]
+            },
+            "unit-coverage": {
+              "script": "scripts/php/phpunit-coverage.mjs"
+            },
+            "tests-collected": {
+              "guard": "tests-collected",
+              "args": ["--report", ".reports/unit.xml", "--format", "junit", "--min", "1"]
+            },
+            "audit": {
+              "script": "scripts/php/composer.mjs",
+              "args": ["audit", "--no-interaction"]
+            }
+          }
+        },
+        {
+          "op": "append-unique",
+          "pointer": "/profiles/quick",
+          "value": ["format", "lint", "typecheck", "unit", "tests-collected", "completeness"]
+        },
+        {
+          "op": "append-unique",
+          "pointer": "/profiles/full",
+          "value": [
+            "format",
+            "lint",
+            "typecheck",
+            "unit-coverage",
+            "tests-collected",
+            "completeness",
+            "audit"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "config/run-profiles.json",
+      "ops": [
+        {
+          "op": "set",
+          "pointer": "/runner",
+          "value": {
+            "cmd": ["php", "vendor/bin/phpunit"],
+            "args": [],
+            "suiteFlag": "--testsuite"
+          }
+        }
+      ]
+    },
+    {
+      "file": "@paired/config/checks.json",
+      "when": "testing.home == 'paired-repo'",
+      "ops": [
+        {
+          "op": "merge",
+          "pointer": "/steps",
+          "value": {
+            "typecheck": {
+              "cmd": ["php", "vendor/bin/psalm", "--no-progress", "--no-suggestions"]
+            },
+            "unit": {
+              "cmd": [
+                "php",
+                "vendor/bin/phpunit",
+                "--testsuite",
+                "unit",
+                "--log-junit",
+                ".reports/unit.xml"
+              ]
+            },
+            "unit-coverage": {
+              "script": "scripts/php/phpunit-coverage.mjs"
+            },
+            "tests-collected": {
+              "guard": "tests-collected",
+              "args": ["--report", ".reports/unit.xml", "--format", "junit", "--min", "1"]
+            }
+          }
+        },
+        {
+          "op": "append-unique",
+          "pointer": "/profiles/quick",
+          "value": ["typecheck", "unit", "tests-collected"]
+        },
+        {
+          "op": "append-unique",
+          "pointer": "/profiles/full",
+          "value": ["typecheck", "unit-coverage", "tests-collected"]
+        }
+      ]
+    },
+    {
+      "file": "config/drift.json",
+      "ops": [
+        {
+          "op": "append-unique",
+          "pointer": "/registries/0/expect",
+          "value": ["src/Features/{id_pascal}.php", "tests/Adapters/{id_pascal}Adapter.php"]
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,8 @@
-# Git hooks (installed by the lefthook package on `pnpm install`).
+# Git hooks, installed by lefthook.
+output:
+  - failure
+  - summary
+
 pre-commit:
   parallel: true
   commands:
@@ -6,12 +10,15 @@ pre-commit:
       run: node scripts/guard/bom.mjs --quiet {staged_files}
     abs-path:
       run: node scripts/guard/abs-path.mjs --quiet {staged_files}
+    # <scaffold:lefthook-pre-commit>
+    # @node
     format:
       glob: '*.{ts,tsx,js,mjs,cjs,json,md,yml,yaml,css,html}'
       run: pnpm exec prettier --check {staged_files}
     lint:
       glob: '*.{ts,tsx,js,mjs,cjs}'
       run: pnpm exec eslint --config eslint.config.js --max-warnings=0 --no-warn-ignored {staged_files}
+    # </scaffold:lefthook-pre-commit>
 
 pre-push:
   commands:

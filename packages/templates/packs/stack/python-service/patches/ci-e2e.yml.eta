@@ -1,0 +1,10 @@
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+      - uses: <%= it.h.action('astral-sh/setup-uv') %>
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run pytest -m e2e

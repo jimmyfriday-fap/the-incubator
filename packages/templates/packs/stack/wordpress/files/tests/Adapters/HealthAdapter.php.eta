@@ -1,0 +1,51 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Adapters;
+
+use <%= it.names.pascal %>\Features\Health;
+
+/**
+ * Drives the health endpoint the way the REST route does; `fault` inputs become failing dependencies.
+ */
+final class HealthAdapter implements FeatureAdapter
+{
+    public function name(): string
+    {
+        return 'health';
+    }
+
+    public function seedContext(array $scenario): mixed
+    {
+        return [];
+    }
+
+    public function runStage(array $stage, mixed $ctx, array $scenario): mixed
+    {
+        $input = is_array($stage['input'] ?? null) ? $stage['input'] : [];
+        $health = ($input['fault'] ?? null) === 'dependency-down'
+            ? new Health(static function (): bool {
+                throw new \RuntimeException('database down');
+            })
+            : new Health();
+        $params = array_key_exists('probe', $input) ? ['probe' => $input['probe']] : [];
+        [$status, $body] = $health->respond($params);
+
+        return ['httpStatus' => $status, 'body' => $body];
+    }
+
+    public function captureOutput(mixed $out, mixed $ctx): mixed
+    {
+        return is_array($out) ? $out['body'] ?? null : null;
+    }
+
+    public function validate(mixed $captured, array $stage): array
+    {
+        $status = is_array($captured) ? $captured['status'] ?? null : null;
+
+        return in_array($status, ['ok', 'degraded', 'error'], true)
+            ? []
+            : [sprintf('unexpected status %s', (string) json_encode($status))];
+    }
+}

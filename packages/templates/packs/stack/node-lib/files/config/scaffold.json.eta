@@ -1,0 +1,20 @@
+<% const cli = it.spec.platform === 'cli';
+const cfg = {
+  format: { nodeBin: ['prettier', 'prettier'], args: ['--write', '--log-level', 'warn', '--ignore-unknown'] },
+  feature: {
+    files: [
+      { template: 'scripts/scaffold/templates/feature.ts.tmpl', dest: 'src/features/{{FEATURE_ID}}.ts' },
+      { template: 'scripts/scaffold/templates/adapter.ts.tmpl', dest: 'tests/adapters/{{FEATURE_ID}}.ts' },
+    ],
+    markers: [
+      { file: 'src/index.ts', region: 'feature-exports', template: 'scripts/scaffold/templates/export.ts.tmpl' },
+      ...(cli
+        ? [
+            { file: 'src/cli.ts', region: 'cli-imports', template: 'scripts/scaffold/templates/cli-import.ts.tmpl' },
+            { file: 'src/cli.ts', region: 'cli-commands', template: 'scripts/scaffold/templates/cli-command.ts.tmpl' },
+          ]
+        : []),
+    ],
+  },
+}; -%>
+<%~ it.h.json(cfg) %>

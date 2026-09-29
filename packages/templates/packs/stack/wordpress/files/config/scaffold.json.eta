@@ -1,0 +1,17 @@
+<% const files = [
+  { template: 'scripts/scaffold/templates/Feature.php.tmpl', dest: 'src/Features/{{FEATURE_PASCAL}}.php' },
+];
+if (it.spec.testing.home !== 'paired-repo')
+  files.push({ template: 'scripts/scaffold/templates/Adapter.php.tmpl', dest: 'tests/Adapters/{{FEATURE_PASCAL}}Adapter.php' });
+const cfg = {
+  format: {
+    cmd: ['php', 'vendor/bin/php-cs-fixer'],
+    args: ['fix', '--quiet', '--config', '.php-cs-fixer.dist.php', '--path-mode', 'intersection'],
+    extensions: ['.php'],
+  },
+  feature: {
+    files,
+    markers: [{ file: 'src/Routes.php', region: 'routes', template: 'scripts/scaffold/templates/route.php.tmpl' }],
+  },
+}; -%>
+<%~ it.h.json(cfg) %>

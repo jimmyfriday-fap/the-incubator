@@ -1,0 +1,37 @@
+<% const P = it.h.pascal(it.feature.id);
+const words = it.feature.summary.split('*/').join('* /').split(' ');
+const lines = words.reduce((acc, w) => {
+  const last = acc.length ? acc[acc.length - 1] : null;
+  if (last !== null && (last + ' ' + w).length <= 96) acc[acc.length - 1] = last + ' ' + w;
+  else acc.push(w);
+  return acc;
+}, []); -%>
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Features;
+
+/**
+<% for (const l of lines) { -%>
+ * <%= l %>
+<% } -%>
+ */
+final class <%= P %> implements Endpoint
+{
+    public const FEATURE = <%~ it.h.phpStr(it.feature.id) %>;
+
+    /**
+     * @return array{status: 'todo', feature: string}
+     */
+    public function run(): array
+    {
+        // TODO(scaffold): implement <%= it.feature.id %> (see docs/plans/000-bootstrap.md).
+        return ['status' => 'todo', 'feature' => self::FEATURE];
+    }
+
+    public function respond(array $params): array
+    {
+        return [501, $this->run()];
+    }
+}

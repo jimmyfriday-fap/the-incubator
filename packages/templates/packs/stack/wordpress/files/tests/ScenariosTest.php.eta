@@ -1,0 +1,120 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests;
+
+use <%= it.names.pascal %>\Tests\Adapters\FeatureAdapter;
+use <%= it.names.pascal %>\Tests\Support\Scenario;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Scenario contract layer: every tests/scenarios/<feature>/*.json runs through
+ * tests/Adapters/<Feature>Adapter.php. INCUBATOR_SCENARIO_TAGS (set by
+ * `node scripts/test-profile.mjs <name>`) narrows the set; `live` scenarios need INCUBATOR_LIVE=1;
+ * `"status": "todo"` scenarios are reported as incomplete until an agent activates them.
+ *
+ * @psalm-import-type LoadedScenario from Scenario
+ */
+final class ScenariosTest extends TestCase
+{
+    private const ADAPTER_NAMESPACE = <%~ it.h.phpStr(it.names.pascal + '\\Tests\\Adapters\\') %>;
+    private const FEATURE_NAMESPACE = <%~ it.h.phpStr(it.names.pascal + '\\Features\\') %>;
+
+    public static function root(): string
+    {
+        return dirname(__DIR__);
+    }
+
+    /**
+     * @return array<string, array{0: LoadedScenario}>
+     */
+    public static function scenarios(): array
+    {
+        $env = getenv('INCUBATOR_SCENARIO_TAGS');
+        $wanted = array_values(array_filter(explode(',', is_string($env) && $env !== '' ? $env : '*')));
+        $out = [];
+        foreach (Scenario::load(self::root()) as $s) {
+            if ($s['data'] === null) {
+                continue;
+            }
+            $tags = is_array($s['data']['tags'] ?? null) ? $s['data']['tags'] : [];
+            if (!in_array('*', $wanted, true) && array_intersect($tags, $wanted) === []) {
+                continue;
+            }
+            $out[$s['file']] = [$s];
+        }
+
+        return $out;
+    }
+
+    public function testFoundScenariosToRun(): void
+    {
+        self::assertNotEmpty(self::scenarios(), 'no scenario matches INCUBATOR_SCENARIO_TAGS');
+    }
+
+    public function testEveryRegisteredFeatureHasAnEndpointAndAnAdapter(): void
+    {
+        $json = (string) file_get_contents(self::root() . '/config/features.json');
+        $catalog = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        self::assertIsArray($catalog);
+        self::assertIsArray($catalog['features'] ?? null);
+        foreach ($catalog['features'] as $feature) {
+            self::assertIsArray($feature);
+            $id = (string) ($feature['id'] ?? '');
+            $endpoint = self::FEATURE_NAMESPACE . Scenario::pascal($id);
+            $adapter = self::ADAPTER_NAMESPACE . Scenario::pascal($id) . 'Adapter';
+            $pascal = Scenario::pascal($id);
+            self::assertTrue(class_exists($endpoint), sprintf('feature "%s" expects src/Features/%s.php', $id, $pascal));
+            self::assertTrue(
+                class_exists($adapter) && is_subclass_of($adapter, FeatureAdapter::class),
+                sprintf('feature "%s" expects tests/Adapters/%sAdapter.php (a FeatureAdapter)', $id, $pascal),
+            );
+        }
+    }
+
+    /**
+     * @param LoadedScenario $loaded
+     */
+    #[DataProvider('scenarios')]
+    public function testScenario(array $loaded): void
+    {
+        $scenario = $loaded['data'] ?? [];
+        if (($scenario['status'] ?? 'active') === 'todo') {
+            self::markTestIncomplete(sprintf('%s is still a scaffold stub', $loaded['file']));
+        }
+        $tags = is_array($scenario['tags'] ?? null) ? $scenario['tags'] : [];
+        if (in_array('live', $tags, true) && getenv('INCUBATOR_LIVE') !== '1') {
+            self::markTestSkipped('live scenario: set INCUBATOR_LIVE=1');
+        }
+        self::assertSame([], $loaded['errors'], $loaded['file']);
+        $adapter = self::adapterFor((string) ($scenario['feature'] ?? ''));
+        $ctx = $adapter->seedContext($scenario);
+        foreach (is_array($scenario['stages'] ?? null) ? $scenario['stages'] : [] as $stage) {
+            self::assertIsArray($stage);
+            $captured = $adapter->captureOutput($adapter->runStage($stage, $ctx, $scenario), $ctx);
+            $failures = [];
+            $assertions = is_array($stage['assertions'] ?? null) ? $stage['assertions'] : [];
+            foreach ($assertions as $assertion) {
+                $failure = Scenario::evaluateAssertion($captured, is_array($assertion) ? $assertion : []);
+                if ($failure !== null) {
+                    $failures[] = $failure;
+                }
+            }
+            $failures = [...$failures, ...$adapter->validate($captured, $stage)];
+            $where = sprintf('%s stage %s', $loaded['file'], (string) ($stage['name'] ?? '?'));
+            self::assertSame([], $failures, $where);
+        }
+    }
+
+    private static function adapterFor(string $feature): FeatureAdapter
+    {
+        $class = self::ADAPTER_NAMESPACE . Scenario::pascal($feature) . 'Adapter';
+        self::assertTrue(class_exists($class), sprintf('no adapter %s for feature "%s"', $class, $feature));
+        $adapter = new $class();
+        self::assertInstanceOf(FeatureAdapter::class, $adapter);
+
+        return $adapter;
+    }
+}

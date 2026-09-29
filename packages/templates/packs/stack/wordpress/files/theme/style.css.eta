@@ -1,0 +1,14 @@
+<% const text = (s) => s.split('*/').join('* /'); -%>
+/*
+Theme Name: <%= text(it.names.title) %>
+Description: <%= text(it.names.description || it.names.title) %>
+Version: 0.1.0
+Requires at least: 6.6
+Tested up to: 6.8
+Requires PHP: <%= it.v.php %>
+License: GPL-2.0-or-later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
+Text Domain: <%= it.names.slug %>
+*/
+
+/* Block theme: styles live in theme.json; this file only carries the theme header. */

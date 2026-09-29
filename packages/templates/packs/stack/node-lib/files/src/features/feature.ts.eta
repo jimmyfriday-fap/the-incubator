@@ -1,0 +1,7 @@
+export const FEATURE = <%~ it.h.yamlStr(it.feature.id) %>;
+
+/** <%= it.feature.summary %> */
+export function <%= it.h.camel(it.feature.id) %>(): { status: 'todo'; feature: string } {
+  // TODO(scaffold): implement <%= it.feature.id %> (see docs/plans/000-bootstrap.md).
+  return { status: 'todo', feature: FEATURE };
+}

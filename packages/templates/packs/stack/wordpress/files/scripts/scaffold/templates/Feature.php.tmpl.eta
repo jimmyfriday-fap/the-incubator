@@ -1,0 +1,27 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Features;
+
+/**
+ * {{FEATURE_SUMMARY}}
+ */
+final class {{FEATURE_PASCAL}} implements Endpoint
+{
+    public const FEATURE = '{{FEATURE_ID}}';
+
+    /**
+     * @return array{status: 'todo', feature: string}
+     */
+    public function run(): array
+    {
+        // TODO(scaffold): implement {{FEATURE_ID}}.
+        return ['status' => 'todo', 'feature' => self::FEATURE];
+    }
+
+    public function respond(array $params): array
+    {
+        return [501, $this->run()];
+    }
+}

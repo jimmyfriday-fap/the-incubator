@@ -1,0 +1,18 @@
+rules:
+  - id: incubator.php-wpdb-unprepared
+    languages: [php]
+    severity: ERROR
+    message: >-
+      SQL built from variables reaches $wpdb without $wpdb->prepare(). Put placeholders in the query
+      and pass the values to prepare(), inline in the same call.
+    patterns:
+      - pattern: $DB->$METHOD($SQL, ...)
+      - metavariable-regex:
+          metavariable: $DB
+          regex: ^\$wpdb$
+      - metavariable-regex:
+          metavariable: $METHOD
+          regex: ^(query|get_var|get_row|get_col|get_results)$
+      - pattern-not: $DB->$METHOD($DB->prepare(...), ...)
+      - pattern-not: $DB->$METHOD('...', ...)
+      - pattern-not: $DB->$METHOD("...", ...)

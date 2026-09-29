@@ -1,0 +1,92 @@
+<% const features = it.h.sortBy(it.features.filter((f) => !f.builtin), 'id'); -%>
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>;
+
+use <%= it.names.pascal %>\Features\Endpoint;
+
+/**
+ * The WordPress glue: every feature endpoint is served as `GET /wp-json/<%= it.names.slug %>/v1/<route>`
+ * (or `/?rest_route=/<%= it.names.slug %>/v1/<route>`). Features stay plain PHP classes; new ones are
+ * registered through the `routes` scaffold markers (node scripts/scaffold.mjs feature <id>).
+ */
+final class Routes
+{
+    public const REST_NAMESPACE = <%~ it.h.phpStr(it.names.slug + '/v1') %>;
+
+    /**
+     * @return array<non-falsy-string, \Closure(): Endpoint> route => endpoint factory
+     */
+    public static function endpoints(): array
+    {
+        $routes = [];
+        $routes['/health'] = static fn (): Endpoint => new Features\Health(self::databaseProbe());
+        // <scaffold:routes>
+<% for (const f of features) { -%>
+        // @<%= f.id %>
+        $routes['/<%= f.id %>'] = static fn (): Endpoint => new Features\<%= it.h.pascal(f.id) %>();
+<% } -%>
+        // </scaffold:routes>
+
+        return $routes;
+    }
+
+    public static function boot(): void
+    {
+        add_action('rest_api_init', [self::class, 'register']);
+        add_action('parse_request', [self::class, 'serveHealthAlias']);
+    }
+
+    public static function register(): void
+    {
+        foreach (self::endpoints() as $route => $factory) {
+            register_rest_route(self::REST_NAMESPACE, $route, [
+                'methods' => 'GET',
+                'callback' => static function (\WP_REST_Request $request) use ($factory): \WP_REST_Response {
+                    [$status, $body] = $factory()->respond($request->get_params());
+
+                    return new \WP_REST_Response($body, $status);
+                },
+                // Read-only public routes; a feature that changes data gets its own capability check.
+                'permission_callback' => '__return_true',
+            ]);
+        }
+    }
+
+    /**
+     * Answers `GET /health` (the deploy smoke path) with the same body as the REST health route.
+     */
+    public static function serveHealthAlias(): void
+    {
+        $uri = isset($_SERVER['REQUEST_URI']) ? sanitize_text_field(wp_unslash($_SERVER['REQUEST_URI'])) : '';
+        $path = wp_parse_url($uri, PHP_URL_PATH);
+        $home = wp_parse_url(home_url('/'), PHP_URL_PATH);
+        if (!self::isHealthPath(is_string($path) ? $path : '', is_string($home) ? $home : '/')) {
+            return;
+        }
+        [$status, $body] = self::endpoints()['/health']()->respond([]);
+        wp_send_json($body, $status);
+    }
+
+    public static function isHealthPath(string $path, string $homePath): bool
+    {
+        return rtrim($path, '/') === rtrim($homePath, '/') . '/health';
+    }
+
+    /**
+     * @return \Closure(): bool
+     */
+    private static function databaseProbe(): \Closure
+    {
+        return static function (): bool {
+            global $wpdb;
+            if (!$wpdb instanceof \wpdb) {
+                return false;
+            }
+            // phpcs:ignore WordPress.DB.DirectDatabaseQuery -- a liveness probe must reach the database, uncached.
+            return (string) $wpdb->get_var('SELECT 1') === '1';
+        };
+    }
+}

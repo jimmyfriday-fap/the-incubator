@@ -1,0 +1,22 @@
+import { describe, expect, it } from 'vitest';
+import { health } from '@app/features/health.js';
+
+describe('health', () => {
+  it('reports ok with one runtime check', async () => {
+    await expect(health()).resolves.toMatchObject({ status: 'ok', name: <%~ it.h.yamlStr(it.names.slug) %>, checks: [{ name: 'runtime', ok: true }] });
+  });
+
+  it('degrades when the runtime check fails or throws', async () => {
+    await expect(health({}, { checkRuntime: () => Promise.resolve(false) })).resolves.toMatchObject({ status: 'degraded' });
+    await expect(health({}, { checkRuntime: () => Promise.reject(new Error('broken')) })).resolves.toMatchObject({
+      status: 'degraded',
+      checks: [{ ok: false }],
+    });
+  });
+
+  it('validates probes', async () => {
+    await expect(health({ probe: '' })).resolves.toMatchObject({ status: 'error', error: { code: 'invalid_probe' } });
+    await expect(health({ probe: 'nope' })).resolves.toMatchObject({ status: 'error', error: { code: 'unknown_check' } });
+    await expect(health({ probe: 'runtime' })).resolves.toMatchObject({ status: 'ok' });
+  });
+});

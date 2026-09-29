@@ -1,10 +1,10 @@
 {
   "files": {
-    ".incubator/agent-profile.json": "bd9de008f10d275ce76f4de060b0c370df70445cb2e8584217c57820eb081615",
+    ".incubator/agent-profile.json": "b38bbca023178825818e24af03e2affc4b77178cd4e437781d62d881ce9d685a",
     "config/completeness.json": "b666ff23be57489ff53a66e7c8784980068a19588f2a95ef093a9c901cb63446",
     "packages/spec/schema/discovery-turn.schema.json": "77a64b52239766e5f6283f3445074aa34e575eb7c0105b78b90bbf0cc0704def",
-    "packages/spec/schema/incubator.schema.json": "9f856f8ebbb8a6cf5d486f0c39d33efef5db5ca2368c78e0696a790282c6284c",
-    "packages/templates/schema/pack.schema.json": "9b1a165cedfcf32f8f34cb729d6baaf0c0fea0ee561f3c06898543d0d2c01be6",
+    "packages/spec/schema/incubator.schema.json": "db1e88a5cb2155034c8f72a5038ed60c6465470d05c905c652264d06be58bba3",
+    "packages/templates/schema/pack.schema.json": "72f05e1c2760512dfd3a34178dac0247d9219ccd52a397ee722e72427f023226",
     "schemas/agent-profile.schema.json": "beb0b92032782749230d81660b853af48037ed6c68fc5f03bf0cf2026fcad5b2",
     "schemas/deploy-tasks.schema.json": "834da6ff7057384e76b30cc80ef423b0e96c6bd20b0245ab38c8e4b86297339d",
     "schemas/scenario.schema.json": "13da207e97ff1ac5e4e152de3d33d6cacbf99b0649be2a3c79c368f2ff59a09e"

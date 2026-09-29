@@ -1,0 +1,18 @@
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+      # why: the application under test lives in its own repository; a read-only token checks it out into app/.
+      - uses: <%= it.h.action('actions/checkout') %>
+        with:
+          repository: ${{ github.repository_owner }}/<%= it.names.slug %>
+          path: app
+          token: ${{ secrets.APP_REPO_READ_TOKEN }}
+      - uses: <%= it.h.action('pnpm/action-setup') %>
+      - uses: <%= it.h.action('actions/setup-node') %>
+        with:
+          node-version-file: .nvmrc
+      - run: pnpm --dir app install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/check.mjs full

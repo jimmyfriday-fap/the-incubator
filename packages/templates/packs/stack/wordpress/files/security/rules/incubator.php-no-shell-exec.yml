@@ -1,0 +1,17 @@
+rules:
+  - id: incubator.php-no-shell-exec
+    languages: [php]
+    severity: ERROR
+    message: >-
+      exec, shell_exec, system, passthru, popen, backticks and proc_open with a command string all
+      run through a shell. Pass an argument array to proc_open (or Symfony Process) instead.
+    pattern-either:
+      - pattern: exec(...)
+      - pattern: shell_exec(...)
+      - pattern: system(...)
+      - pattern: passthru(...)
+      - pattern: popen(...)
+      - pattern: '`...`'
+      - patterns:
+          - pattern: proc_open($CMD, ...)
+          - pattern-not: proc_open([...], ...)

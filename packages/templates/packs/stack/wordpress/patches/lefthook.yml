@@ -1,0 +1,6 @@
+    format:
+      glob: '*.php'
+      run: php vendor/bin/php-cs-fixer check --config .php-cs-fixer.dist.php --path-mode intersection {staged_files}
+    lint:
+      glob: '*.php'
+      run: php vendor/bin/phpcs {staged_files}

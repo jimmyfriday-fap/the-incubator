@@ -57,7 +57,8 @@ function tokenize(src: string): Tok[] {
 function lookup(ctx: unknown, path: string): unknown {
   let cur = ctx;
   for (const part of path.split('.')) {
-    if (cur === null || typeof cur !== 'object') return undefined;
+    // why: own properties only, so paths like `constructor` never reach the prototype chain.
+    if (cur === null || typeof cur !== 'object' || !Object.hasOwn(cur, part)) return undefined;
     cur = (cur as Record<string, unknown>)[part];
   }
   return cur;

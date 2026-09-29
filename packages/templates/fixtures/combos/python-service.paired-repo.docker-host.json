@@ -1,0 +1,32 @@
+{
+  "project": {
+    "name": "Hookline",
+    "slug": "hookline",
+    "description": "Receives payment webhooks and fans them out."
+  },
+  "intent": {
+    "personas": ["owner"],
+    "coreFeatures": [
+      {
+        "id": "webhook-intake",
+        "summary": "Validate and store incoming webhooks",
+        "lane": "enhancement/new"
+      },
+      {
+        "id": "fan-out",
+        "summary": "Deliver events to subscribers",
+        "lane": "enhancement/new"
+      }
+    ]
+  },
+  "platform": "service",
+  "stack": {
+    "pack": "python-service"
+  },
+  "testing": {
+    "home": "paired-repo"
+  },
+  "deploy": {
+    "target": "docker-host"
+  }
+}

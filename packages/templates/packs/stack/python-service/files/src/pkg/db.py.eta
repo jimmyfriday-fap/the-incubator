@@ -1,0 +1,118 @@
+"""Postgres access and the migration runner.
+
+    python -m <%= it.names.snake %>.db [--root db] [--reset] [--migrate-only]
+
+builds the database from scratch: the base schema, then every numbered migration exactly once
+(recorded in `_migrations`), then the seed data. Seeds never run when APP_ENV=prod.
+"""
+
+import argparse
+import os
+import re
+import sys
+from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager
+from pathlib import Path
+from typing import Any, Protocol
+
+import psycopg
+
+from .env import load_env
+
+MIGRATION = re.compile(r"^\d{4}_.+\.sql$")
+
+
+class RefusedError(RuntimeError):
+    """A policy refusal (for example resetting a production database): exit code 2."""
+
+
+class Cursor(Protocol):
+    def fetchall(self) -> list[tuple[Any, ...]]: ...
+
+
+class Connection(Protocol):
+    """The slice of `psycopg.Connection` the migration runner needs (fakes implement it in tests)."""
+
+    def execute(self, query: Any, params: Any = None) -> Cursor: ...
+
+    def transaction(self) -> AbstractContextManager[Any]: ...
+
+
+Connect = Callable[[str], AbstractContextManager[Connection]]
+
+
+def _connect(url: str) -> AbstractContextManager[Connection]:
+    return psycopg.connect(url, autocommit=True, connect_timeout=5)
+
+
+def check_database(url: str, connect: Connect | None = None) -> bool:
+    """True when the database answers `select 1`; connection errors propagate."""
+    with (connect or _connect)(url) as conn:
+        return conn.execute("select 1").fetchall() == [(1,)]
+
+
+def migrate(
+    conn: Connection, root: Path, *, reset: bool = False, seed: bool = True, app_env: str = ""
+) -> list[str]:
+    """Applies the base schema, pending migrations and (outside prod) seeds. Returns applied names."""
+    if reset:
+        if app_env == "prod":
+            raise RefusedError("refusing to reset a production database")
+        conn.execute("drop schema public cascade")
+        conn.execute("create schema public")
+    conn.execute(
+        "create table if not exists _migrations"
+        " (name text primary key, applied_at timestamptz not null default now())"
+    )
+    conn.execute((root / "schema" / "base.sql").read_text(encoding="utf-8"))
+    done = {row[0] for row in conn.execute("select name from _migrations").fetchall()}
+    applied: list[str] = []
+    for file in sorted((root / "migrations").iterdir()):
+        if not MIGRATION.match(file.name) or file.name in done:
+            continue
+        with conn.transaction():
+            conn.execute(file.read_text(encoding="utf-8"))
+            conn.execute("insert into _migrations (name) values (%s)", (file.name,))
+        applied.append(file.name)
+    seeds = root / "seed"
+    if seed and app_env != "prod" and seeds.is_dir():
+        for file in sorted(seeds.iterdir()):
+            if file.suffix == ".sql":
+                conn.execute(file.read_text(encoding="utf-8"))
+    return applied
+
+
+def main(argv: Sequence[str] | None = None, connect: Connect | None = None) -> int:
+    """CLI entry point. Exit codes: 0 ready, 1 the tool or the database broke, 2 refused."""
+    parser = argparse.ArgumentParser(prog="python -m <%= it.names.snake %>.db")
+    parser.add_argument("--root", default="db", help="holds schema/, migrations/ and seed/")
+    parser.add_argument("--reset", action="store_true", help="drop and rebuild (never in prod)")
+    parser.add_argument("--migrate-only", action="store_true", help="skip the seed data")
+    args = parser.parse_args(argv)
+    load_env()
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        sys.stderr.write("DATABASE_URL is not set (see .env.example)\n")
+        return 1
+    try:
+        with (connect or _connect)(url) as conn:
+            for name in migrate(
+                conn,
+                Path(args.root),
+                reset=args.reset,
+                seed=not args.migrate_only,
+                app_env=os.environ.get("APP_ENV", ""),
+            ):
+                sys.stdout.write(f"applied {name}\n")
+    except RefusedError as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
+    except psycopg.Error as e:
+        sys.stderr.write(f"database error: {e}\n")
+        return 1
+    sys.stdout.write("database ready\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,100 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Unit;
+
+use <%= it.names.pascal %>\Tests\Support\Scenario;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * The PHP port of scripts/guard/lib/scenario.mjs must agree with the JavaScript original, message
+ * for message.
+ */
+final class ScenarioAssertionTest extends TestCase
+{
+    private const OUTPUT = [
+        'status' => 'ok',
+        'name' => 'svc',
+        'count' => 3,
+        'none' => null,
+        'checks' => [['name' => 'database', 'ok' => true]],
+        'tags' => ['a', 'b'],
+    ];
+
+    /**
+     * @return array<string, array{0: array<string, mixed>, 1: string|null}>
+     */
+    public static function cases(): array
+    {
+        return [
+            'eq holds' => [['path' => 'status', 'op' => 'eq', 'value' => 'ok'], null],
+            'eq fails' => [['path' => 'status', 'op' => 'eq', 'value' => 'down'], 'status: expected "down", got "ok"'],
+            'eq on a missing path' => [['path' => 'nope', 'op' => 'eq', 'value' => 1], 'nope: expected 1, got undefined'],
+            'eq deep' => [['path' => 'checks[0]', 'op' => 'eq', 'value' => ['name' => 'database', 'ok' => true]], null],
+            'neq holds' => [['path' => 'status', 'op' => 'neq', 'value' => 'down'], null],
+            'neq fails' => [['path' => 'status', 'op' => 'neq', 'value' => 'ok'], 'status: expected not "ok"'],
+            'contains in a string' => [['path' => 'name', 'op' => 'contains', 'value' => 'v'], null],
+            'contains in a string fails' => [['path' => 'name', 'op' => 'contains', 'value' => 'x'], 'name: "svc" does not contain "x"'],
+            'contains in an array' => [['path' => 'tags', 'op' => 'contains', 'value' => 'b'], null],
+            'contains in an array fails' => [['path' => 'tags', 'op' => 'contains', 'value' => 'c'], 'tags: array lacks "c"'],
+            'contains on a number' => [['path' => 'count', 'op' => 'contains', 'value' => 3], 'count: cannot apply contains to 3'],
+            'matches' => [['path' => 'name', 'op' => 'matches', 'value' => '^s.c$'], null],
+            'matches with slashes' => [['path' => 'name', 'op' => 'matches', 'value' => 's/?v'], null],
+            'matches fails' => [['path' => 'name', 'op' => 'matches', 'value' => '^x'], 'name: "svc" does not match /^x/'],
+            'exists' => [['path' => 'checks[0].ok', 'op' => 'exists'], null],
+            'exists on null' => [['path' => 'none', 'op' => 'exists'], null],
+            'exists fails' => [['path' => 'checks[1].ok', 'op' => 'exists'], 'checks[1].ok: expected to exist'],
+            'absent' => [['path' => 'error.code', 'op' => 'absent'], null],
+            'absent fails' => [['path' => 'status', 'op' => 'absent'], 'status: expected to be absent, got "ok"'],
+            'gte' => [['path' => 'count', 'op' => 'gte', 'value' => 3], null],
+            'gte fails' => [['path' => 'count', 'op' => 'gte', 'value' => 4], 'count: expected >= 4, got 3'],
+            'lte' => [['path' => 'count', 'op' => 'lte', 'value' => 3], null],
+            'lte on a string' => [['path' => 'name', 'op' => 'lte', 'value' => 3], 'name: expected <= 3, got "svc"'],
+            'length of an array' => [['path' => 'checks', 'op' => 'length', 'value' => 1], null],
+            'length of a string' => [['path' => 'name', 'op' => 'length', 'value' => 3], null],
+            'length fails' => [['path' => 'tags', 'op' => 'length', 'value' => 3], 'tags: expected length 3, got 2'],
+            'length of a number' => [['path' => 'count', 'op' => 'length', 'value' => 1], 'count: expected length 1, got undefined'],
+            'length of a missing path' => [['path' => 'nope', 'op' => 'length', 'value' => 0], 'nope: expected length 0, got undefined'],
+            'unknown op' => [['path' => 'status', 'op' => 'like', 'value' => 'ok'], 'status: unknown op like'],
+            'whole output' => [['path' => '$', 'op' => 'exists'], null],
+            'array length as a path' => [['path' => 'tags.length', 'op' => 'eq', 'value' => 2], null],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $assertion
+     */
+    #[DataProvider('cases')]
+    public function testEvaluateAssertion(array $assertion, ?string $expected): void
+    {
+        self::assertSame($expected, Scenario::evaluateAssertion(self::OUTPUT, $assertion));
+    }
+
+    public function testPascalMatchesTheScaffolder(): void
+    {
+        self::assertSame('GuestList', Scenario::pascal('guest-list'));
+        self::assertSame('Health', Scenario::pascal('health'));
+        self::assertSame('ExportJson2', Scenario::pascal('export-json2'));
+    }
+
+    public function testValidateReportsStructuralProblems(): void
+    {
+        self::assertSame(['scenario must be an object'], Scenario::validate([1, 2]));
+        $errors = Scenario::validate(['id' => 'Bad Id', 'feature' => '', 'tags' => [], 'seed' => [], 'context' => [], 'mocks' => [], 'stages' => []]);
+        self::assertContains('id must be kebab-case', $errors);
+        self::assertContains('feature is required', $errors);
+        self::assertContains('tags must be a non-empty array', $errors);
+        self::assertContains('stages must be a non-empty array', $errors);
+    }
+
+    public function testLoadsTheShippedScenarios(): void
+    {
+        $loaded = Scenario::load(dirname(__DIR__, 2));
+        self::assertNotEmpty($loaded);
+        foreach ($loaded as $s) {
+            self::assertSame([], $s['errors'], $s['file']);
+        }
+    }
+}

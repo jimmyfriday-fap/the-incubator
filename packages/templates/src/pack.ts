@@ -37,6 +37,14 @@ export interface PackManifest {
   relocate?: { role: string; to: string; when?: string }[];
   copy?: { role: string; to: string; when?: string }[];
   canonical?: string;
+  settings?: { variables?: SettingDecl[]; secrets?: SettingDecl[] };
+}
+
+export interface SettingDecl {
+  name: string;
+  description: string;
+  when?: string;
+  target?: 'app' | 'paired';
 }
 
 export interface Pack {
@@ -52,8 +60,21 @@ const packSchema = JSON.parse(
   readFileSync(new URL('../schema/pack.schema.json', import.meta.url), 'utf8'),
 ) as Record<string, unknown>;
 
+/** Tool caches and OS litter are never pack content (they would also make the integrity hash unstable). */
+const IGNORED = new Set([
+  '__pycache__',
+  '.ruff_cache',
+  '.mypy_cache',
+  '.pytest_cache',
+  '.phpunit.cache',
+  'node_modules',
+  '.DS_Store',
+  'Thumbs.db',
+]);
+
 function walk(dir: string, rel: string, out: Map<string, Buffer>): void {
   for (const name of readdirSync(path.join(dir, rel)).sort()) {
+    if (IGNORED.has(name)) continue;
     const r = rel ? `${rel}/${name}` : name;
     if (statSync(path.join(dir, r)).isDirectory()) walk(dir, r, out);
     else out.set(r, readFileSync(path.join(dir, r)));

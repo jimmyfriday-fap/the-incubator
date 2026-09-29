@@ -1,0 +1,1 @@
+<%~ it.h.json(['tests/adapters/{id_snake}.py', 'src/' + it.names.snake + '/features/{id_snake}.py']) %>

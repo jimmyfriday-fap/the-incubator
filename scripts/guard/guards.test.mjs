@@ -1,5 +1,5 @@
 // Unit tests for the guard toolkit. Each guard is exercised against a throwaway repo tree.
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -8,7 +8,7 @@ import { findBoms } from './bom.mjs';
 import { evaluateNeeds } from './ci-gate.mjs';
 import { checkPins, updatePins } from './contracts-pin.mjs';
 import { checkBoundaries } from './deps-boundary.mjs';
-import { checkDrift } from './drift.mjs';
+import { checkDrift, expandId } from './drift.mjs';
 import { findIsolationIssues } from './isolation.mjs';
 import { checkLanes } from './lane-contract.mjs';
 import { globToRegExp, parseArgs } from './lib/common.mjs';
@@ -20,6 +20,7 @@ import { evaluateAssertion, getPath, validateScenario } from './lib/scenario.mjs
 import { lintPlan, lintPlans } from './plan-lint.mjs';
 import { gate, validateRegister } from './policy-gate.mjs';
 import { checkQuarantine } from './quarantine.mjs';
+import { checkSyntax } from './syntax.mjs';
 import { countTests } from './tests-collected.mjs';
 import { validateResults } from './validate-scan-results.mjs';
 import { lintWorkflow } from './workflow-lint.mjs';
@@ -377,7 +378,12 @@ describe('tests-collected, ci-gate', () => {
   it('counts tests in vitest and junit reports', () => {
     expect(countTests('{"numTotalTests": 5}', 'vitest-json')).toBe(5);
     expect(countTests('<testsuites tests="7"></testsuites>', 'junit')).toBe(7);
-    expect(countTests('<testsuite tests="2"/><testsuite tests="3"/>', 'junit')).toBe(5);
+    expect(countTests('<testsuite tests="2"/><testsuite tests="3"/>', 'junit')).toBe(0);
+    // PHPUnit nests suites; each test case counts once.
+    const nested =
+      '<testsuites><testsuite name="all" tests="2"><testsuite name="unit" tests="2">' +
+      '<testcase name="a"/><testcase name="b"></testcase></testsuite></testsuite></testsuites>';
+    expect(countTests(nested, 'junit')).toBe(2);
     expect(() => countTests('', 'tap')).toThrow(/unknown/);
   });
   it('fails unless every needed job succeeded', () => {
@@ -500,5 +506,33 @@ describe('security: findings, register, gate', () => {
       'gitleaks: unexpected report shape',
       `missing: ${path.join(dir, 'missing.json')} is missing`,
     ]);
+  });
+});
+
+describe('language layouts', () => {
+  it('expands registry id placeholders for each language', () => {
+    expect(expandId('tests/adapters/{id}.ts', 'reorder-alerts')).toBe(
+      'tests/adapters/reorder-alerts.ts',
+    );
+    expect(expandId('tests/adapters/{id_snake}.py', 'reorder-alerts')).toBe(
+      'tests/adapters/reorder_alerts.py',
+    );
+    expect(expandId('tests/Adapters/{id_pascal}Adapter.php', 'guest-list')).toBe(
+      'tests/Adapters/GuestListAdapter.php',
+    );
+    expect(expandId('{id_camel}', 'guest-list')).toBe('guestList');
+  });
+
+  it('checks Python syntax without writing .pyc files', async () => {
+    const root = repo({
+      'ok.py': 'x = 1\n',
+      'pkg/bad.py': 'def broken(:\n',
+      'm.mjs': 'export const a = 1;\n',
+    });
+    const { findings, missingTools } = await checkSyntax(root, ['ok.py', 'pkg/bad.py', 'm.mjs']);
+    if (missingTools.includes('python')) return;
+    expect(findings).toEqual([expect.stringMatching(/^pkg\/bad\.py:1: /)]);
+    expect(existsSync(path.join(root, '__pycache__'))).toBe(false);
+    expect(existsSync(path.join(root, 'pkg/__pycache__'))).toBe(false);
   });
 });

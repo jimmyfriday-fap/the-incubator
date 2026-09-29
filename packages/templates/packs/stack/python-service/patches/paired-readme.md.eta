@@ -1,0 +1,2 @@
+1. Put the application in `app/` (`git clone <app repository> app`), install [uv](https://docs.astral.sh/uv/) and Node 22, then run `uv sync` (the app is an editable path dependency). Commit the `uv.lock` it writes.
+2. `node scripts/check.mjs quick` runs the guards and the unit and scenario suites against `app/`; `uv run pytest -m e2e` starts the app and drives it over HTTP.

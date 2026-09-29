@@ -1,0 +1,71 @@
+<% const theme = it.spec.stack.framework === 'wordpress-theme'; const dir = (theme ? 'themes/' : 'plugins/') + it.names.slug; const db = it.names.snake; -%>
+# Local lane (and the vps-tailscale deploy): WordPress + MariaDB 11 with this <%= theme ? 'theme' : 'plugin' %> mounted from
+# the checkout at wp-content/<%= dir %>.
+#   docker compose up -d --wait            WordPress on http://localhost:${WP_PORT:-8080}
+#   docker compose run --rm cli wp core install --url=http://localhost:8080 --title=<%= it.names.slug %> \
+#     --admin_user=admin --admin_email=admin@example.test --skip-email
+<% if (theme) { -%>
+#   docker compose run --rm cli wp theme activate <%= it.names.slug %>
+<% } -%>
+# The image (Dockerfile) already bakes the <%= theme ? 'theme' : 'plugin' %> in; the bind mount makes local edits live.
+# The WORDPRESS_DB_* defaults are for local use: staging and prod set them (and WP_PORT) in the runner
+# environment or in a .env next to this file.
+x-db-env: &db-env
+  WORDPRESS_DB_HOST: db:3306
+  WORDPRESS_DB_USER: ${WORDPRESS_DB_USER:-wordpress}
+  WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD:-wordpress}
+  WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME:-<%= db %>}
+
+services:
+  db:
+    image: mariadb:11
+    environment:
+      MARIADB_DATABASE: ${WORDPRESS_DB_NAME:-<%= db %>}
+      MARIADB_USER: ${WORDPRESS_DB_USER:-wordpress}
+      MARIADB_PASSWORD: ${WORDPRESS_DB_PASSWORD:-wordpress}
+      MARIADB_RANDOM_ROOT_PASSWORD: '1'
+    ports:
+      - '127.0.0.1:${DB_PORT:-3306}:3306'
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']
+      interval: 5s
+      retries: 20
+
+  wordpress:
+    build: .
+    environment:
+      <<: *db-env
+      APP_ENV: ${APP_ENV:-local}
+    ports:
+      - '${WP_PORT:-8080}:80'
+    volumes:
+      - wordpress:/var/www/html
+      - ./:/var/www/html/wp-content/<%= dir %>
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'php', '/var/www/html/wp-content/<%= dir %>/docker/healthcheck.php']
+      interval: 10s
+      start_period: 30s
+      retries: 10
+
+  # WP-CLI for installs and scripts/db/bootstrap.mjs; not started by `up` (profile "tools").
+  cli:
+    image: wordpress:cli-php<%= it.v.php %>
+    profiles: [tools]
+    user: '33:33'
+    environment:
+      <<: *db-env
+    volumes:
+      - wordpress:/var/www/html
+      - ./:/var/www/html/wp-content/<%= dir %>
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  wordpress:

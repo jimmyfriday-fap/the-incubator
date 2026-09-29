@@ -37,8 +37,47 @@ jobs:
         continue-on-error: true
         run: node scripts/agent/tracker.mjs ci-failure --job "check-${{ matrix.os }}" --run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
+  packs:
+    name: packs (${{ matrix.combo }})
+    strategy:
+      fail-fast: false
+      matrix:
+        combo:
+          - node-lib.in-repo.package-release
+          - node-lib.paired-repo.package-release
+          - node-web.in-repo.docker-host
+          - node-web.in-repo.vps-tailscale
+          - node-web.paired-repo.vps-tailscale
+          - python-service.in-repo.vps-tailscale
+          - python-service.paired-repo.docker-host
+          - wordpress-plugin.in-repo.vps-tailscale
+          - wordpress-plugin.paired-repo.vps-tailscale
+          - wordpress-theme.in-repo.docker-host
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # why: python-service cells run the generated repository's uv/pytest/ruff/mypy checks.
+      - if: startsWith(matrix.combo, 'python-service')
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      # why: WordPress cells run the generated repository's Composer/PHPUnit/PHPCS/PHPStan checks.
+      - if: startsWith(matrix.combo, 'wordpress')
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.3'
+          tools: composer
+          coverage: pcov
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: node scripts/packs-matrix.mjs "${{ matrix.combo }}" --profile full
+
   gate:
-    needs: [check]
+    needs: [check, packs]
     # why: the gate always runs so a failed or cancelled upstream job fails the workflow explicitly.
     if: always()
     runs-on: ubuntu-latest

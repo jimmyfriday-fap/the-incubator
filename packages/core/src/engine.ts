@@ -1,6 +1,8 @@
+import path from 'node:path';
 import {
   InterruptedError,
   ParkError,
+  PolicyError,
   ToolError,
   type Clock,
   type Logger,
@@ -31,6 +33,8 @@ import {
 } from './state.js';
 import type { RunInput, RunStore } from './store.js';
 import { INCUBATOR_VERSION } from './version.js';
+import { Publisher, type PublishDeps, type PublishSummary, type StepContext } from './publish.js';
+import { scaffoldSpec } from './scaffold.js';
 
 export interface LlmSelector {
   select(
@@ -45,6 +49,8 @@ export interface EngineDeps {
   log: Logger;
   llm: LlmSelector;
   llmTimeoutMs?: number;
+  /** GitHub, git and verification; required to go past SCAFFOLD into VERIFY/PUBLISH. */
+  publish?: PublishDeps;
 }
 
 export interface RunEvent {
@@ -100,6 +106,118 @@ export class Engine {
     this.enter(runId, 'INTAKE');
     this.writeRevision(runId, { intent: { narrative: input.narrative ?? '' }, decisions: [] });
     return runId;
+  }
+
+  /** A run that starts from an existing, complete spec (for `publish <spec>` and scaffold runs). */
+  startFromSpec(spec: IncubatorSpec, input: RunInput): string {
+    const runId = this.start({ ...input, narrative: spec.intent.narrative });
+    const issues = [
+      ...validateSpec(spec).issues,
+      ...(validateSpec(spec).ok ? validateSemantics(spec) : []),
+    ];
+    if (issues.length)
+      throw new ParkError('spec_invalid', `the spec is invalid (${issues.length} issue(s))`, {
+        issues,
+      });
+    this.writeRevision(runId, spec as unknown as Draft, { final: true, hash: specHash(spec) });
+    this.approve(runId);
+    return runId;
+  }
+
+  private stepContext(runId: string, spec: IncubatorSpec): StepContext {
+    const s = this.state(runId);
+    return {
+      runId,
+      spec,
+      workspace: path.join(this.deps.store.runDir(runId), 'workspace'),
+      steps: s.steps,
+      record: (type, fields) => {
+        this.record(runId, type, fields);
+      },
+      clock: this.deps.clock,
+      log: this.deps.log,
+      ...(s.input.keep ? { keep: true } : {}),
+    };
+  }
+
+  #publisher: Publisher | undefined;
+  private publisher(): Publisher {
+    if (!this.deps.publish)
+      throw new ToolError(
+        'publishing is not configured for this engine (no GitHub/git dependencies)',
+      );
+    return (this.#publisher ??= new Publisher(this.deps.publish));
+  }
+
+  /** The approved spec (the final revision). */
+  approvedSpec(runId: string): IncubatorSpec {
+    return this.draft(runId) as unknown as IncubatorSpec;
+  }
+
+  /** PolicyErrors in effectful states park the run so it can be fixed and resumed (exit 2). */
+  private async effect(runId: string, fn: () => Promise<void>): Promise<void> {
+    try {
+      await fn();
+    } catch (e) {
+      if (e instanceof PolicyError)
+        throw new ParkError((e as PolicyError & { code?: string }).code ?? 'policy', e.message);
+      throw e;
+    }
+  }
+
+  private async scaffoldStep(runId: string, s: RunState): Promise<void> {
+    const spec = this.approvedSpec(runId);
+    if (s.input.out) {
+      const r = await scaffoldSpec(spec, { out: s.input.out });
+      this.record(runId, 'step.ok', {
+        step: 'render',
+        data: { out: s.input.out, files: r.report?.written.length ?? 0 },
+      });
+      this.record(runId, 'run.done', { scaffoldOnly: true });
+      return;
+    }
+    await this.effect(runId, async () => {
+      const p = this.publisher();
+      await p.preflight(this.stepContext(runId, spec));
+      await p.render(this.stepContext(runId, spec));
+    });
+    this.enter(runId, 'VERIFY');
+  }
+
+  private async verifyStep(runId: string): Promise<void> {
+    const spec = this.approvedSpec(runId);
+    await this.effect(runId, () => this.publisher().verify(this.stepContext(runId, spec)));
+    this.enter(runId, 'PUBLISH');
+  }
+
+  private async publishStep(runId: string): Promise<void> {
+    const spec = this.approvedSpec(runId);
+    let summary: PublishSummary | undefined;
+    await this.effect(runId, async () => {
+      const p = this.publisher();
+      if (!this.state(runId).steps['token.resolve'])
+        await p.preflight(this.stepContext(runId, spec));
+      const rendered = await p.render(this.stepContext(runId, spec));
+      summary = await p.publish(this.stepContext(runId, spec), rendered);
+    });
+    this.record(runId, 'publish.summary', { summary });
+    this.enter(runId, 'HANDOFF');
+  }
+
+  private handoffStep(runId: string): void {
+    const spec = this.approvedSpec(runId);
+    // Local tickets are rendered into the repository at SCAFFOLD; remote trackers sync here.
+    this.record(runId, 'step.ok', {
+      step: 'handoff.tickets',
+      data: { tracker: spec.tracker.type },
+    });
+    this.record(runId, 'run.done', {});
+  }
+
+  /** The publish summary recorded for a run, if it got that far. */
+  publishSummary(runId: string): PublishSummary | null {
+    const e = this.entries(runId).findLast((x) => x.type === 'publish.summary');
+    return (e?.['summary'] as PublishSummary | undefined) ?? null;
   }
 
   private answers(runId: string): { answers: Answer[]; questions: Map<string, string> } {
@@ -282,11 +400,20 @@ export class Engine {
               this.record(runId, 'run.done', { specOnly: true, hash: s.approvedHash });
               break;
             }
-            return s;
+            this.enter(runId, 'SCAFFOLD');
+            break;
           case 'SCAFFOLD':
+            await this.scaffoldStep(runId, s);
+            break;
           case 'VERIFY':
+            await this.verifyStep(runId);
+            break;
           case 'PUBLISH':
+            await this.publishStep(runId);
+            break;
           case 'HANDOFF':
+            this.handoffStep(runId);
+            break;
           case 'DONE':
           case 'PARKED':
             return s;

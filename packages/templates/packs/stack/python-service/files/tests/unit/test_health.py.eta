@@ -1,0 +1,44 @@
+from fastapi.testclient import TestClient
+
+from <%= it.names.snake %>.app import AppDeps, build_app
+from <%= it.names.snake %>.features.health import HealthDeps, health
+
+
+def _down() -> bool:
+    return False
+
+
+def _refused() -> bool:
+    raise ConnectionRefusedError("refused")
+
+
+def test_reports_ok_with_one_database_check() -> None:
+    result = health()
+    assert result["status"] == "ok"
+    assert result["name"] == <%~ it.h.pyStr(it.names.slug) %>
+    assert result["checks"] == [{"name": "database", "ok": True}]
+
+
+def test_degrades_when_the_database_is_down_or_raises() -> None:
+    assert health(deps=HealthDeps(check_database=_down))["status"] == "degraded"
+    refused = health(deps=HealthDeps(check_database=_refused))
+    assert refused["status"] == "degraded"
+    assert refused["checks"] == [{"name": "database", "ok": False}]
+
+
+def test_validates_probes() -> None:
+    empty = health("")
+    assert empty["status"] == "error"
+    assert empty.get("error", {}).get("code") == "invalid_probe"
+    unknown = health("nope")
+    assert unknown["status"] == "error"
+    assert unknown.get("error", {}).get("code") == "unknown_check"
+    assert health("database")["status"] == "ok"
+
+
+def test_maps_statuses_to_http_codes() -> None:
+    degraded = TestClient(build_app(AppDeps(health=HealthDeps(check_database=_down))))
+    assert degraded.get("/health").status_code == 503
+    assert degraded.get("/health", params={"probe": "nope"}).status_code == 400
+    assert degraded.get("/health", params={"probe": ""}).status_code == 400
+    assert TestClient(build_app()).get("/health").status_code == 200

@@ -1,0 +1,16 @@
+import { describe, expect, it } from 'vitest';
+import * as api from '@app/index.js';
+
+// Features scaffolded by the Incubator report `todo` until they are implemented (TODO(scaffold) markers).
+const FEATURES: [string, string][] = <%~ it.h.json(it.features.filter((f) => !f.builtin).map((f) => [f.id, it.h.camel(f.id)])) %>;
+
+describe('scaffolded features', () => {
+  it('the public entry point exports health', () => {
+    expect(typeof api.health).toBe('function');
+  });
+
+  it.each(FEATURES)('%s reports todo until implemented', (id, fn) => {
+    const feature = (api as unknown as Record<string, () => unknown>)[fn];
+    expect(feature?.()).toEqual({ status: 'todo', feature: id });
+  });
+});

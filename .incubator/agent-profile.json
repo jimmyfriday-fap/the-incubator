@@ -2,17 +2,41 @@
   "$schema": "../schemas/agent-profile.schema.json",
   "version": 1,
   "actions": [
-    { "id": "read-repo", "kind": "read", "description": "Read any tracked file." },
+    {
+      "id": "read-repo",
+      "kind": "read",
+      "description": "Read any tracked file."
+    },
     {
       "id": "edit-source",
       "kind": "generate",
       "description": "Edit source, tests, docs and templates."
     },
-    { "id": "check-quick", "kind": "gate", "command": "pnpm check:quick" },
-    { "id": "check-full", "kind": "gate", "command": "pnpm check" },
-    { "id": "test-profile", "kind": "gate", "command": "pnpm test:profile quick" },
-    { "id": "commit", "kind": "save", "description": "Commit to a feature branch." },
-    { "id": "push-feature-branch", "kind": "save", "description": "Push a non-protected branch." }
+    {
+      "id": "check-quick",
+      "kind": "gate",
+      "command": "node scripts/check.mjs quick"
+    },
+    {
+      "id": "check-full",
+      "kind": "gate",
+      "command": "node scripts/check.mjs full"
+    },
+    {
+      "id": "test-profile",
+      "kind": "gate",
+      "command": "node scripts/test-profile.mjs quick"
+    },
+    {
+      "id": "commit",
+      "kind": "save",
+      "description": "Commit to a feature branch."
+    },
+    {
+      "id": "push-feature-branch",
+      "kind": "save",
+      "description": "Push a non-protected branch."
+    }
   ],
   "denied_actions": [
     "force-push",
@@ -35,7 +59,12 @@
     "change-run-ceilings",
     "merge-to-production"
   ],
-  "run_ceilings": { "turns": 60, "tool_calls": 400, "minutes": 45, "usd": 10 },
+  "run_ceilings": {
+    "turns": 60,
+    "tool_calls": 400,
+    "minutes": 45,
+    "usd": 10
+  },
   "runner": {
     "stages": [
       "selected",

@@ -16,6 +16,7 @@ import {
   validateDiscoveryTurn,
   validateDraft,
   validateSemantics,
+  identifierClash,
   validateSpec,
   type IncubatorSpec,
 } from './index.js';
@@ -232,5 +233,17 @@ describe('version and generated types', () => {
     expect(await gen.generate()).toBe(
       readFileSync(new URL('./types.gen.ts', import.meta.url), 'utf8'),
     );
+  });
+});
+
+describe('feature identifiers', () => {
+  it('rejects feature ids that render to reserved words in the stack language', () => {
+    expect(identifierClash('node-web', 'delete')).toContain('"delete"');
+    expect(identifierClash('node-lib', 'reorder-alerts')).toBeNull();
+    expect(identifierClash('python-service', 'import')).toContain('"import"');
+    expect(identifierClash('python-service', 'app')).toContain('"app"');
+    expect(identifierClash('python-service', 'fan-out')).toBeNull();
+    expect(identifierClash('wordpress', 'list')).toContain('"List"');
+    expect(identifierClash('wordpress', 'guest-list')).toBeNull();
   });
 });

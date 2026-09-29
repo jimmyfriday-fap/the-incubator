@@ -1,0 +1,26 @@
+{
+  "project": {
+    "name": "Stockroom",
+    "slug": "stockroom",
+    "description": "Stock tracking for independent cafes."
+  },
+  "intent": {
+    "personas": ["owner"],
+    "coreFeatures": [
+      {
+        "id": "inventory",
+        "summary": "Track stock levels per item",
+        "lane": "enhancement/new"
+      },
+      {
+        "id": "reorder-alerts",
+        "summary": "Alert when an item falls below its reorder level",
+        "lane": "enhancement/new"
+      }
+    ]
+  },
+  "platform": "web",
+  "stack": {
+    "pack": "node-web"
+  }
+}

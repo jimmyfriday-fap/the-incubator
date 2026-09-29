@@ -282,7 +282,7 @@
             "additionalProperties": false,
             "required": ["id", "version"],
             "properties": {
-              "id": { "type": "string", "pattern": "^[a-z]+(/[a-z0-9-]+)?$" },
+              "id": { "type": "string", "pattern": "^[a-z][a-z-]*(/[a-z0-9-]+)?$" },
               "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" }
             }
           }

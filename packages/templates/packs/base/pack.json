@@ -441,5 +441,14 @@
       "dest": "scripts/deploy/verify-promote-target.mjs",
       "mode": "0755"
     }
-  ]
+  ],
+  "settings": {
+    "secrets": [
+      {
+        "name": "SECURITY_RIG_TOKEN",
+        "description": "Token allowed to dispatch the central security rig workflow.",
+        "when": "security.centralRig.enabled"
+      }
+    ]
+  }
 }

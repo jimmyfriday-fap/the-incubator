@@ -1,0 +1,89 @@
+<% const reg = it.spec.deploy.registry || 'ghcr.io'; const ghcr = reg === 'ghcr.io';
+const healthPath = it.spec.stack.pack === 'wordpress' ? `/?rest_route=/${it.names.slug}/v1/health` : '/health'; -%>
+name: deploy-production
+
+# No push trigger: promote-to-production.yml dispatches this after merging into <%= it.spec.lanes.branches.prod %>.
+on:
+  workflow_dispatch:
+    inputs:
+      promote_run:
+        description: Run id of the promote-to-production run that dispatched this deploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.ref.outputs.image }}
+    steps:
+      # why: only the prod branch may build a production image.
+      - if: github.ref != 'refs/heads/<%= it.spec.lanes.branches.prod %>'
+        run: |
+          echo "deploy-production must run on <%= it.spec.lanes.branches.prod %>, not $GITHUB_REF"
+          exit 2
+      - uses: <%= it.h.action('actions/checkout') %>
+      - uses: <%= it.h.action('docker/setup-buildx-action') %>
+      - uses: <%= it.h.action('docker/login-action') %>
+        with:
+          registry: <%= reg %>
+          username: <%= ghcr ? '${{ github.actor }}' : '${{ secrets.REGISTRY_USERNAME }}' %>
+          password: <%= ghcr ? '${{ secrets.GITHUB_TOKEN }}' : '${{ secrets.REGISTRY_PASSWORD }}' %>
+      - id: name
+        run: echo "name=<%= reg %>/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - id: build
+        uses: <%= it.h.action('docker/build-push-action') %>
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.name.outputs.name }}:${{ github.sha }}
+      # why: deploys pin the pushed digest, never a mutable tag, so prod runs exactly what was built.
+      - id: ref
+        run: echo "image=${{ steps.name.outputs.name }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    env:
+      APP_ENV: prod
+      IMAGE_REF: ${{ needs.build.outputs.image }}
+      DEPLOY_SSH_TARGET: ${{ vars.PROD_SSH_TARGET }}
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+      PROD_URL: ${{ vars.PROD_URL }}
+      COMPOSE_PROJECT: <%= it.names.slug %>-prod
+      SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_KEY }}
+      SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+      - uses: <%= it.h.action('actions/setup-node') %>
+        with:
+          node-version-file: .nvmrc
+      - run: node scripts/deploy/preflight.mjs --require DEPLOY_SSH_TARGET,DEPLOY_DIR,PROD_URL,SSH_PRIVATE_KEY,SSH_KNOWN_HOSTS
+      # why: the key and the pinned known_hosts come from secrets and live only in the runner's temp dir.
+      - run: |
+          install -m 700 -d "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/ssh/key"
+          chmod 600 "$RUNNER_TEMP/ssh/key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          echo "SSH_KEY_FILE=$RUNNER_TEMP/ssh/key" >> "$GITHUB_ENV"
+          echo "SSH_KNOWN_HOSTS_FILE=$RUNNER_TEMP/ssh/known_hosts" >> "$GITHUB_ENV"
+      - run: node scripts/deploy/docker-remote.mjs deploy --image "$IMAGE_REF" --sha "$GITHUB_SHA"
+      # why: the task log lives on the host so runOnce tasks stay once-only across ephemeral runners.
+      - run: |
+          node scripts/deploy/docker-remote.mjs fetch-log "$RUNNER_TEMP/deploy-tasks.log.jsonl"
+          node scripts/run-deploy-tasks.mjs --env prod --sha "$GITHUB_SHA" --yes --log "$RUNNER_TEMP/deploy-tasks.log.jsonl"
+          node scripts/deploy/docker-remote.mjs push-log "$RUNNER_TEMP/deploy-tasks.log.jsonl"
+      - run: node scripts/deploy/smoke.mjs --url "$PROD_URL" --path "<%= healthPath %>" --attempts 10

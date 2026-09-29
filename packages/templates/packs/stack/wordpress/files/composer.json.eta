@@ -1,0 +1,42 @@
+<% const v = it.v.composer;
+const paired = it.spec.testing.home === 'paired-repo';
+const theme = it.spec.stack.framework === 'wordpress-theme';
+const owner = (it.spec.project.owner.login || 'incubator').toLowerCase().replace(/[^a-z0-9_.-]/g, '-');
+const dev = {
+  'friendsofphp/php-cs-fixer': v['friendsofphp/php-cs-fixer'],
+  'php-stubs/wordpress-stubs': v['php-stubs/wordpress-stubs'],
+  'squizlabs/php_codesniffer': v['squizlabs/php_codesniffer'],
+  'vimeo/psalm': v['vimeo/psalm'],
+  'wp-coding-standards/wpcs': v['wp-coding-standards/wpcs'],
+};
+if (!paired) {
+  dev['brain/monkey'] = v['brain/monkey'];
+  dev['phpunit/phpunit'] = v['phpunit/phpunit'];
+}
+const sorted = Object.fromEntries(Object.keys(dev).sort().map((k) => [k, dev[k]]));
+const pkg = {
+  name: `${owner}/${it.names.slug}`,
+  description: it.names.description || it.names.title,
+  type: theme ? 'wordpress-theme' : 'wordpress-plugin',
+  license: 'GPL-2.0-or-later',
+  'require': { php: `>=${it.v.php}` },
+  'require-dev': sorted,
+  autoload: { 'psr-4': { [`${it.names.pascal}\\`]: 'src/' } },
+  ...(paired ? {} : { 'autoload-dev': { 'psr-4': { [`${it.names.pascal}\\Tests\\`]: 'tests/' } } }),
+  config: {
+    'sort-packages': true,
+    'allow-plugins': { 'dealerdirect/phpcodesniffer-composer-installer': true },
+  },
+  scripts: {
+    check: 'node scripts/check.mjs full',
+    'check:quick': 'node scripts/check.mjs quick',
+    test: paired ? 'node scripts/tests-pointer.mjs' : 'phpunit --testsuite unit',
+    ...(paired ? {} : { 'test:profile': 'node scripts/test-profile.mjs' }),
+    format: 'php-cs-fixer fix',
+    lint: 'phpcs',
+    typecheck: 'psalm --no-progress',
+  },
+  'minimum-stability': 'stable',
+  'prefer-stable': true,
+}; -%>
+<%~ it.h.json(pkg) %>

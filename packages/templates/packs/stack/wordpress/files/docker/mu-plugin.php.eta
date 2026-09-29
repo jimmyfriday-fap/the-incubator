@@ -1,0 +1,19 @@
+<?php
+
+/**
+ * Plugin Name: <%= it.names.slug %> loader
+ * Description: Container-only must-use loader: the image always runs this plugin, so its REST
+ * routes and the /health alias answer without a manual activation.
+ */
+
+declare(strict_types=1);
+
+if (!defined('ABSPATH') || !defined('WP_CONTENT_DIR')) {
+    exit;
+}
+
+$<%= it.names.snake %>_main = WP_CONTENT_DIR . <%~ it.h.phpStr('/plugins/' + it.names.slug + '/' + it.names.slug + '.php') %>;
+if (is_readable($<%= it.names.snake %>_main)) {
+    /** @psalm-suppress UnresolvableInclude the plugin is mounted or baked in at run time */
+    require_once $<%= it.names.snake %>_main;
+}

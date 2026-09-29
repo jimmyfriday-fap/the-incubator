@@ -21,6 +21,10 @@ export interface RunInput {
   yes?: boolean;
   adapter?: string;
   surface: 'cli' | 'web' | 'desktop' | 'test';
+  /** Scaffold-only: write the rendered tree here and stop (no verify, no publish). */
+  out?: string;
+  /** Keep the run workspace after publishing. */
+  keep?: boolean;
 }
 
 /** `~/.incubator` layout (TDD §2.5): config.json, runs/<id>/{run.json,journal.jsonl,spec/,workspace/,logs/}, cache/. */

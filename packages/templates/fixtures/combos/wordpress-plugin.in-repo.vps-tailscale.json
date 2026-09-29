@@ -1,0 +1,26 @@
+{
+  "project": {
+    "name": "Event RSVP",
+    "slug": "event-rsvp",
+    "description": "RSVPs and guest lists for WordPress events."
+  },
+  "intent": {
+    "personas": ["owner"],
+    "coreFeatures": [
+      {
+        "id": "rsvp",
+        "summary": "Let visitors RSVP to an event",
+        "lane": "enhancement/new"
+      },
+      {
+        "id": "guest-list",
+        "summary": "Show organisers the guest list",
+        "lane": "enhancement/new"
+      }
+    ]
+  },
+  "platform": "wordpress-plugin",
+  "stack": {
+    "pack": "wordpress"
+  }
+}

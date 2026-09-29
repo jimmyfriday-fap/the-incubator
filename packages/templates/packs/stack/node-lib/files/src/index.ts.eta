@@ -1,0 +1,7 @@
+export { health, NAME, VERSION, type HealthDeps, type HealthResult } from './features/health.js';
+// <scaffold:feature-exports>
+<% for (const f of it.features.filter((x) => !x.builtin)) { -%>
+// @<%= f.id %>
+export { <%= it.h.camel(f.id) %> } from './features/<%= f.id %>.js';
+<% } -%>
+// </scaffold:feature-exports>

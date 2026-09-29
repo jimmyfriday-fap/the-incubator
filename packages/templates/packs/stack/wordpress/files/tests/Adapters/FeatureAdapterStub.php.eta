@@ -1,0 +1,37 @@
+<% const P = it.h.pascal(it.feature.id); -%>
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Adapters;
+
+use <%= it.names.pascal %>\Features\<%= P %>;
+
+// TODO(scaffold): drive <%= it.feature.id %> the way a user does, then activate its scenarios.
+final class <%= P %>Adapter implements FeatureAdapter
+{
+    public function name(): string
+    {
+        return <%~ it.h.phpStr(it.feature.id) %>;
+    }
+
+    public function seedContext(array $scenario): mixed
+    {
+        return [];
+    }
+
+    public function runStage(array $stage, mixed $ctx, array $scenario): mixed
+    {
+        return (new <%= P %>())->respond(is_array($stage['input'] ?? null) ? $stage['input'] : []);
+    }
+
+    public function captureOutput(mixed $out, mixed $ctx): mixed
+    {
+        return is_array($out) ? $out[1] ?? null : $out;
+    }
+
+    public function validate(mixed $captured, array $stage): array
+    {
+        return [];
+    }
+}

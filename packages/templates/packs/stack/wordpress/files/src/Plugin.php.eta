@@ -1,0 +1,20 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>;
+
+/**
+ * Plugin bootstrap, called once from <%= it.names.slug %>.php: registers the REST routes under
+ * `<%= it.names.slug %>/v1` and the `/health` alias. Keep this thin; behaviour lives in src/Features/.
+ */
+final class Plugin
+{
+    public const VERSION = '0.1.0';
+    public const TEXT_DOMAIN = <%~ it.h.phpStr(it.names.slug) %>;
+
+    public static function boot(): void
+    {
+        Routes::boot();
+    }
+}

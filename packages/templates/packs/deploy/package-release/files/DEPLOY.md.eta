@@ -1,0 +1,31 @@
+# Deploy
+
+## Deploy class
+
+**`package-release`**: <%= it.names.slug %> ships as an npm package<%= it.spec.platform === 'cli' ? ' with a command-line entry point' : '' %>. Every release is the exact
+tarball that was installed into an empty project and smoke-tested, published <%= it.spec.project.visibility === 'public' ? 'with npm provenance' : 'with restricted access' %> and attached, with its
+`SHA256SUMS`, to a GitHub release tagged `v<version>`.
+
+| Lane | Branch | What happens |
+| --- | --- | --- |
+| local | any | `pnpm build`, then `node scripts/release/package-smoke.mjs` packs and smoke-tests the tarball. |
+| staging | `<%= it.spec.lanes.branches.staging %>` | Every push runs `deploy-staging.yml`: build, pack, install into a scratch project, smoke, upload the tarball as a workflow artifact. Nothing is published. |
+| prod | `<%= it.spec.lanes.branches.prod %>` | Only `promote-to-production.yml` (manual, dry run by default) merges and dispatches `deploy-production.yml`, which has no push trigger. |
+
+## Promotion rules
+
+1. Promotion and rollback are human-only actions (`.incubator/agent-profile.json`).
+2. Bump `version` in `package.json` on `<%= it.spec.lanes.branches.staging %>` before promoting:
+   `scripts/release/version-gate.mjs` refuses a version the registry already has (exit 2).
+3. `deploy-production.yml` runs `check full`, builds, gates the version, smoke-tests the tarball,
+   publishes that tarball and creates the GitHub release.
+4. Published versions are never unpublished. `rollback-production.yml` moves the `latest` dist-tag
+   back to an earlier published version.
+5. Post-release tasks live in `.deploy-tasks.json` and run through `scripts/run-deploy-tasks.mjs`.
+
+## Required settings
+
+Create this as a GitHub Actions **secret** in the `production` environment (never committed):
+`NPM_TOKEN` (an npm automation token allowed to publish `<%= it.names.slug %>`).
+
+`deploy-production.yml` runs `scripts/deploy/preflight.mjs` first and fails with exit 2 when it is unset.

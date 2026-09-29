@@ -1,0 +1,18 @@
+<?php
+
+// PHPUnit bootstrap: Composer autoload, then the unit-suite network guard (off for INCUBATOR_LIVE=1).
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../vendor/autoload.php';
+<% if (it.spec.testing.home === 'paired-repo') { -%>
+
+// The application under test lives in app/ (its runtime dependencies, if any, in app/vendor/).
+if (is_readable(__DIR__ . '/../app/vendor/autoload.php')) {
+    require_once __DIR__ . '/../app/vendor/autoload.php';
+}
+<% } -%>
+
+if (getenv('INCUBATOR_LIVE') !== '1') {
+    \<%= it.names.pascal %>\Tests\Support\NetworkGuard::install();
+}

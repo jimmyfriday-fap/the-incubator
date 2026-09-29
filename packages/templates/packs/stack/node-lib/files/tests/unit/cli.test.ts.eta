@@ -1,0 +1,44 @@
+import { describe, expect, it } from 'vitest';
+import { run } from '@app/cli.js';
+
+function io() {
+  const out: string[] = [];
+  const err: string[] = [];
+  return { out, err, io: { out: (t: string) => void out.push(t), err: (t: string) => void err.push(t) } };
+}
+
+describe('cli', () => {
+  it('prints the version and help', async () => {
+    const a = io();
+    expect(await run(['--version'], a.io)).toBe(0);
+    expect(a.out.join('')).toBe('0.1.0\n');
+    const b = io();
+    expect(await run(['--help'], b.io)).toBe(0);
+    expect(b.out.join('')).toContain('usage: <%= it.names.slug %>');
+  });
+
+  it('exits 2 on usage errors', async () => {
+    const a = io();
+    expect(await run([], a.io)).toBe(2);
+    const b = io();
+    expect(await run(['nope'], b.io)).toBe(2);
+    expect(b.err.join('')).toContain('unknown command');
+  });
+
+  it('runs health as JSON and maps statuses to exit codes', async () => {
+    const a = io();
+    expect(await run(['health'], a.io)).toBe(0);
+    expect(JSON.parse(a.out.join(''))).toMatchObject({ status: 'ok', name: <%~ it.h.yamlStr(it.names.slug) %> });
+    const b = io();
+    expect(await run(['health', '--probe', 'nope'], b.io)).toBe(2);
+    expect(JSON.parse(b.out.join(''))).toMatchObject({ error: { code: 'unknown_check' } });
+  });
+<% for (const f of it.features.filter((x) => !x.builtin)) { -%>
+
+  it(<%~ it.h.yamlStr(f.id + ' reports todo until implemented') %>, async () => {
+    const a = io();
+    expect(await run([<%~ it.h.yamlStr(f.id) %>], a.io)).toBe(2);
+    expect(JSON.parse(a.out.join(''))).toEqual({ status: 'todo', feature: <%~ it.h.yamlStr(f.id) %> });
+  });
+<% } -%>
+});

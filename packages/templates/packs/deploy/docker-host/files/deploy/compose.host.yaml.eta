@@ -1,0 +1,47 @@
+<% const pack = it.spec.stack.pack;
+const port = { 'node-web': 3000, 'python-service': 8000, wordpress: 80 }[pack];
+const wp = pack === 'wordpress'; -%>
+# Docker-host lane. scripts/deploy/docker-remote.mjs copies this file to $DEPLOY_DIR/compose.yaml and
+# runs it with IMAGE_REF set to the pushed image digest; the compose project name picks the lane.
+# Secrets live in $DEPLOY_DIR/.env on the host (never committed); see DEPLOY.md for the keys.
+services:
+  db:
+<% if (wp) { -%>
+    image: mariadb:11
+    env_file: .env
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']
+      interval: 10s
+      retries: 10
+<% } else { -%>
+    image: postgres:17-alpine
+    env_file: .env
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}"']
+      interval: 10s
+      retries: 10
+<% } -%>
+    restart: unless-stopped
+  app:
+    image: ${IMAGE_REF:?IMAGE_REF is required}
+    env_file: .env
+    ports:
+      - '${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:<%= port %>'
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+<% if (wp) { -%>
+    volumes:
+      - wp-content:/var/www/html/wp-content/uploads
+<% } -%>
+
+volumes:
+  db-data:
+<% if (wp) { -%>
+  wp-content:
+<% } -%>

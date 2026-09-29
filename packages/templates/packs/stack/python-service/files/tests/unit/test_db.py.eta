@@ -1,0 +1,136 @@
+"""The migration runner against an in-memory fake connection (no database in the unit suite)."""
+
+from collections.abc import Iterator
+from contextlib import AbstractContextManager, contextmanager
+from pathlib import Path
+from typing import Any
+
+import psycopg
+import pytest
+from fastapi.testclient import TestClient
+
+from <%= it.names.snake %>.db import RefusedError, check_database, main, migrate
+from <%= it.names.snake %>.main import create_app
+
+from tests.conftest import NetworkBlockedError
+
+
+class FakeCursor:
+    def __init__(self, rows: list[tuple[Any, ...]]) -> None:
+        self.rows = rows
+
+    def fetchall(self) -> list[tuple[Any, ...]]:
+        return self.rows
+
+
+class FakeConnection:
+    def __init__(self, applied: tuple[str, ...] = ()) -> None:
+        self.applied = list(applied)
+        self.statements: list[str] = []
+        self.transactions = 0
+
+    def execute(self, query: Any, params: Any = None) -> FakeCursor:
+        text = str(query)
+        self.statements.append(text)
+        if text == "select name from _migrations":
+            return FakeCursor([(name,) for name in self.applied])
+        if text.startswith("insert into _migrations"):
+            self.applied.append(params[0])
+        return FakeCursor([(1,)])
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        self.transactions += 1
+        yield
+
+
+@pytest.fixture
+def db_root(tmp_path: Path) -> Path:
+    for sub in ("schema", "migrations", "seed"):
+        (tmp_path / sub).mkdir()
+    (tmp_path / "schema" / "base.sql").write_text("create table base ();", encoding="utf-8")
+    (tmp_path / "migrations" / "0001_first.sql").write_text("select 'first';", encoding="utf-8")
+    (tmp_path / "migrations" / "0002_second.sql").write_text("select 'second';", encoding="utf-8")
+    (tmp_path / "migrations" / "notes.txt").write_text("ignored", encoding="utf-8")
+    (tmp_path / "seed" / "001_seed.sql").write_text("select 'seed';", encoding="utf-8")
+    return tmp_path
+
+
+def test_applies_pending_migrations_once_in_order(db_root: Path) -> None:
+    conn = FakeConnection(applied=("0001_first.sql",))
+    assert migrate(conn, db_root) == ["0002_second.sql"]
+    assert conn.transactions == 1
+    assert "select 'seed';" in conn.statements
+    assert migrate(conn, db_root) == []
+
+
+def test_never_seeds_or_resets_production(db_root: Path) -> None:
+    conn = FakeConnection()
+    assert migrate(conn, db_root, app_env="prod") == ["0001_first.sql", "0002_second.sql"]
+    assert "select 'seed';" not in conn.statements
+    with pytest.raises(RefusedError, match="production"):
+        migrate(FakeConnection(), db_root, reset=True, app_env="prod")
+
+
+def test_reset_rebuilds_the_schema(db_root: Path) -> None:
+    conn = FakeConnection()
+    migrate(conn, db_root, reset=True, seed=False)
+    assert conn.statements[:2] == ["drop schema public cascade", "create schema public"]
+    assert "select 'seed';" not in conn.statements
+
+
+@contextmanager
+def fake_connect(url: str) -> Iterator[FakeConnection]:
+    yield FakeConnection()
+
+
+def test_check_database_answers_through_the_connection() -> None:
+    assert check_database("postgresql://fake", connect=fake_connect) is True
+
+
+def test_cli_needs_database_url(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    assert main([]) == 1
+
+
+def test_cli_migrates(
+    monkeypatch: pytest.MonkeyPatch, db_root: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(db_root)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://fake")
+    assert main(["--root", str(db_root), "--migrate-only"], connect=fake_connect) == 0
+    assert "database ready" in capsys.readouterr().out
+
+
+def test_cli_refuses_a_production_reset_with_exit_2(
+    monkeypatch: pytest.MonkeyPatch, db_root: Path
+) -> None:
+    monkeypatch.chdir(db_root)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://fake")
+    monkeypatch.setenv("APP_ENV", "prod")
+    assert main(["--root", str(db_root), "--reset"], connect=fake_connect) == 2
+
+
+def unreachable(url: str) -> AbstractContextManager[FakeConnection]:
+    raise psycopg.OperationalError("connection refused")
+
+
+def test_cli_reports_database_errors_with_exit_1(
+    monkeypatch: pytest.MonkeyPatch, db_root: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(db_root)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://fake")
+    assert main(["--root", str(db_root)], connect=unreachable) == 1
+    assert "connection refused" in capsys.readouterr().err
+
+
+def test_the_unit_suite_cannot_reach_a_real_database() -> None:
+    with pytest.raises(NetworkBlockedError):
+        check_database("postgresql://app:app@db.invalid:5432/app")
+
+
+def test_the_served_app_reports_an_unreachable_database_as_degraded() -> None:
+    client = TestClient(create_app({"DATABASE_URL": "postgresql://app:app@db.invalid:5432/app"}))
+    assert client.get("/health").status_code == 503
+    assert TestClient(create_app({})).get("/health").status_code == 200

@@ -1,0 +1,15 @@
+<% const pkg = it.names.snake;
+const cfg = {
+  format: { cmd: ['uv', 'run', 'ruff', 'format'], args: ['--quiet'], extensions: ['.py'] },
+  feature: {
+    files: [
+      { template: 'scripts/scaffold/templates/feature.py.tmpl', dest: `src/${pkg}/features/{{FEATURE_SNAKE}}.py` },
+      { template: 'scripts/scaffold/templates/adapter.py.tmpl', dest: 'tests/adapters/{{FEATURE_SNAKE}}.py' },
+    ],
+    markers: [
+      { file: `src/${pkg}/app.py`, region: 'feature-imports', template: 'scripts/scaffold/templates/import.py.tmpl' },
+      { file: `src/${pkg}/app.py`, region: 'routes', template: 'scripts/scaffold/templates/route.py.tmpl' },
+    ],
+  },
+}; -%>
+<%~ it.h.json(cfg) %>

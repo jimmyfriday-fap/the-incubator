@@ -1,0 +1,60 @@
+import { health } from './features/health.js';
+// <scaffold:cli-imports>
+<% for (const f of it.features.filter((x) => !x.builtin)) { -%>
+// @<%= f.id %>
+import { <%= it.h.camel(f.id) %> } from './features/<%= f.id %>.js';
+<% } -%>
+// </scaffold:cli-imports>
+
+export interface Io {
+  out: (text: string) => void;
+  err: (text: string) => void;
+}
+
+/** Exit codes: 0 success, 1 the tool broke, 2 usage or a failed check. */
+type Command = (args: string[], io: Io) => Promise<number>;
+
+const json = (io: Io, value: unknown): void => io.out(`${JSON.stringify(value, null, 2)}\n`);
+
+const COMMANDS: Record<string, Command> = {
+  async health(args, io) {
+    const i = args.indexOf('--probe');
+    const result = await health(i >= 0 ? { probe: args[i + 1] ?? '' } : {});
+    json(io, result);
+    return result.status === 'ok' ? 0 : 2;
+  },
+  // <scaffold:cli-commands>
+<% for (const f of it.features.filter((x) => !x.builtin)) { -%>
+  // @<%= f.id %>
+  <%~ it.h.yamlStr(f.id) %>: (_args, io) => {
+    json(io, <%= it.h.camel(f.id) %>());
+    return Promise.resolve(2);
+  },
+<% } -%>
+  // </scaffold:cli-commands>
+};
+
+const USAGE = `usage: <%= it.names.slug %> <command> [options]\n\ncommands: ${Object.keys(COMMANDS).join(', ')}\n`;
+
+export async function run(argv: string[], io: Io): Promise<number> {
+  const [name, ...rest] = argv;
+  if (name === '--version' || name === '-v') {
+    io.out('0.1.0\n');
+    return 0;
+  }
+  if (name === undefined || name === '--help' || name === '-h') {
+    io.out(USAGE);
+    return name === undefined ? 2 : 0;
+  }
+  const command = COMMANDS[name];
+  if (!command) {
+    io.err(`unknown command "${name}"\n${USAGE}`);
+    return 2;
+  }
+  try {
+    return await command(rest, io);
+  } catch (error) {
+    io.err(`${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  }
+}

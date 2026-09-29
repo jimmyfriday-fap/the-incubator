@@ -1,0 +1,24 @@
+<% const theme = it.spec.stack.framework === 'wordpress-theme'; const dir = (theme ? 'themes/' : 'plugins/') + it.names.slug; -%>
+# Production image: WordPress on PHP <%= it.v.php %> + Apache with this <%= theme ? 'theme' : 'plugin' %> baked in at
+# wp-content/<%= dir %> (runtime vendor/ from `composer install --no-dev`). Serves HTTP on port 80;
+# the database comes from WORDPRESS_DB_HOST, WORDPRESS_DB_USER, WORDPRESS_DB_PASSWORD and
+# WORDPRESS_DB_NAME. Persist wp-content/uploads only: a volume over /var/www/html would pin old code.
+FROM composer:2.8 AS vendor
+WORKDIR /app
+COPY composer.json composer.lock* ./
+# Dev tools are not installed here, so their PHP extension requirements do not apply.
+RUN composer install --no-dev --no-interaction --no-progress --prefer-dist --no-autoloader --no-scripts --ignore-platform-reqs
+COPY . .
+RUN composer dump-autoload --no-dev --optimize --classmap-authoritative
+
+FROM wordpress:6.8-php<%= it.v.php %>-apache
+COPY --from=vendor --chown=www-data:www-data /app /var/www/html/wp-content/<%= dir %>
+<% if (theme) { -%>
+# A fresh install activates this theme, so its REST routes and /health answer without a manual step.
+ENV WORDPRESS_CONFIG_EXTRA="define('WP_DEFAULT_THEME', '<%= it.names.slug %>');"
+<% } else { -%>
+COPY --chown=www-data:www-data docker/mu-plugin.php /var/www/html/wp-content/mu-plugins/<%= it.names.slug %>-loader.php
+<% } -%>
+EXPOSE 80
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
+  CMD ["php", "/var/www/html/wp-content/<%= dir %>/docker/healthcheck.php"]

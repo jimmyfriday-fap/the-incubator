@@ -1,0 +1,25 @@
+{
+  "project": {
+    "name": "Harbour",
+    "slug": "harbour",
+    "description": "A calm block theme for a harbour cafe."
+  },
+  "intent": {
+    "personas": ["owner"],
+    "coreFeatures": [
+      {
+        "id": "opening-hours",
+        "summary": "Show opening hours",
+        "lane": "enhancement/new"
+      }
+    ]
+  },
+  "platform": "wordpress-theme",
+  "stack": {
+    "pack": "wordpress",
+    "framework": "wordpress-theme"
+  },
+  "deploy": {
+    "target": "docker-host"
+  }
+}

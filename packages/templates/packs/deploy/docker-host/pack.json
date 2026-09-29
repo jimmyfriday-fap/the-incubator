@@ -1,0 +1,101 @@
+{
+  "$schema": "../../../schema/pack.schema.json",
+  "id": "deploy/docker-host",
+  "version": "1.0.0",
+  "description": "Docker host lanes: build and push the image, deploy the recorded digest over SSH with pinned host keys, compose healthcheck gating, digest rollback.",
+  "appliesWhen": "deploy.target == 'docker-host'",
+  "requires": ["base"],
+  "files": [
+    {
+      "src": "files/.deploy-tasks.json.eta",
+      "dest": ".deploy-tasks.json"
+    },
+    {
+      "src": "files/.github/workflows/deploy-production.yml.eta",
+      "dest": ".github/workflows/deploy-production.yml"
+    },
+    {
+      "src": "files/.github/workflows/deploy-staging.yml.eta",
+      "dest": ".github/workflows/deploy-staging.yml"
+    },
+    {
+      "src": "files/.github/workflows/rollback-production.yml.eta",
+      "dest": ".github/workflows/rollback-production.yml"
+    },
+    {
+      "src": "files/DEPLOY.md.eta",
+      "dest": "DEPLOY.md"
+    },
+    {
+      "src": "files/deploy/compose.host.yaml.eta",
+      "dest": "deploy/compose.host.yaml"
+    },
+    {
+      "src": "files/scripts/deploy/docker-remote.mjs",
+      "dest": "scripts/deploy/docker-remote.mjs",
+      "mode": "0755"
+    }
+  ],
+  "settings": {
+    "variables": [
+      {
+        "name": "STAGING_SSH_TARGET",
+        "description": "user@host of the staging Docker host."
+      },
+      {
+        "name": "PROD_SSH_TARGET",
+        "description": "user@host of the production Docker host."
+      },
+      {
+        "name": "DEPLOY_DIR",
+        "description": "Directory on each host that holds compose.yaml, .env and releases.log."
+      },
+      {
+        "name": "STAGING_URL",
+        "description": "Base URL of the staging lane."
+      },
+      {
+        "name": "PROD_URL",
+        "description": "Base URL of production."
+      }
+    ],
+    "secrets": [
+      {
+        "name": "STAGING_SSH_KEY",
+        "description": "Private SSH key of the staging deploy user."
+      },
+      {
+        "name": "STAGING_SSH_KNOWN_HOSTS",
+        "description": "Pinned known_hosts line(s) for the staging host."
+      },
+      {
+        "name": "PROD_SSH_KEY",
+        "description": "Private SSH key of the production deploy user."
+      },
+      {
+        "name": "PROD_SSH_KNOWN_HOSTS",
+        "description": "Pinned known_hosts line(s) for the production host."
+      },
+      {
+        "name": "TS_OAUTH_CLIENT_ID",
+        "description": "Tailscale OAuth client id, to reach the tailnet-only staging host from GitHub runners.",
+        "when": "deploy.staging.tailnetOnly"
+      },
+      {
+        "name": "TS_OAUTH_SECRET",
+        "description": "Tailscale OAuth client secret (pairs with TS_OAUTH_CLIENT_ID).",
+        "when": "deploy.staging.tailnetOnly"
+      },
+      {
+        "name": "REGISTRY_USERNAME",
+        "description": "Container registry user (deploy.registry is not ghcr.io).",
+        "when": "deploy.registry && deploy.registry != 'ghcr.io'"
+      },
+      {
+        "name": "REGISTRY_PASSWORD",
+        "description": "Container registry token (deploy.registry is not ghcr.io).",
+        "when": "deploy.registry && deploy.registry != 'ghcr.io'"
+      }
+    ]
+  }
+}

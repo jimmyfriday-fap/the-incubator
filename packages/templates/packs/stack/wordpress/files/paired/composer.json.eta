@@ -1,0 +1,32 @@
+<% const v = it.v.composer;
+const owner = (it.spec.project.owner.login || 'incubator').toLowerCase().replace(/[^a-z0-9_.-]/g, '-');
+const pkg = {
+  name: `${owner}/${it.names.pairedName}`,
+  description: `Tests for ${it.names.slug}`,
+  type: 'project',
+  license: 'GPL-2.0-or-later',
+  'require': { php: `>=${it.v.php}` },
+  'require-dev': {
+    'brain/monkey': v['brain/monkey'],
+    'php-stubs/wordpress-stubs': v['php-stubs/wordpress-stubs'],
+    'phpunit/phpunit': v['phpunit/phpunit'],
+    'vimeo/psalm': v['vimeo/psalm'],
+  },
+  'autoload-dev': {
+    'psr-4': {
+      [`${it.names.pascal}\\`]: 'app/src/',
+      [`${it.names.pascal}\\Tests\\`]: 'tests/',
+    },
+  },
+  config: { 'sort-packages': true },
+  scripts: {
+    check: 'node scripts/check.mjs full',
+    'check:quick': 'node scripts/check.mjs quick',
+    test: 'phpunit --testsuite unit',
+    'test:profile': 'node scripts/test-profile.mjs',
+    typecheck: 'psalm --no-progress',
+  },
+  'minimum-stability': 'stable',
+  'prefer-stable': true,
+}; -%>
+<%~ it.h.json(pkg) %>

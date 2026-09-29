@@ -1,0 +1,22 @@
+"""The <%= it.feature.id %> feature. It answers 501 until it is implemented."""
+
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+# Summary: <%= it.feature.summary %>
+FEATURE = <%~ it.h.pyStr(it.feature.id) %>
+
+
+def handle() -> dict[str, str]:
+    """Runs the feature."""
+    # TODO(scaffold): implement <%= it.feature.id %> (see docs/plans/000-bootstrap.md).
+    return {"status": "todo", "feature": FEATURE}
+
+
+def register(app: FastAPI) -> None:
+    """Mounts the feature's routes on the app."""
+
+    def endpoint() -> JSONResponse:
+        return JSONResponse(handle(), status_code=501)
+
+    app.add_api_route(f"/api/{FEATURE}", endpoint, methods=["GET"])

@@ -4,6 +4,7 @@ import { ExitCode, exitCodeFor, formatError } from '@incubator/runtime';
 import { runDoctor } from './commands/doctor.js';
 import { runNew, type NewOptions } from './commands/new.js';
 import { runResume } from './commands/resume.js';
+import { runScaffold, type ScaffoldCliOptions } from './commands/scaffold.js';
 import { liveDeps, type CliDeps, type DepsFactory } from './deps.js';
 import type { Io } from './io.js';
 
@@ -54,6 +55,17 @@ export async function main(
     .option('--adapter <id>', 'switch the LLM adapter for the rest of the run')
     .action(async (runId: string, opts: { yes?: boolean; adapter?: string; out?: string }) => {
       code = await runResume(getDeps(), io, runId, opts);
+    });
+
+  program
+    .command('scaffold <spec>')
+    .description('render a canonical repository from an incubator.json (deterministic, no LLM)')
+    .option('-o, --out <dir>', 'target directory (must be empty unless --force)')
+    .option('--dry-run', 'list the files that would be written, with hashes; write nothing')
+    .option('--validate-only', 'validate the spec and render in memory; write nothing')
+    .option('--force', 'write into a non-empty directory')
+    .action(async (spec: string, opts: ScaffoldCliOptions) => {
+      code = await runScaffold(io, spec, opts);
     });
 
   program

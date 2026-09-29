@@ -1,0 +1,73 @@
+<% const v = it.v.pypi; const dep = (n) => it.h.json(n + v[n]); const pkg = it.names.snake; -%>
+# The application under test lives in app/ (a clone of <%= it.names.slug %>), installed as an editable
+# path dependency. `uv sync` resolves everything into uv.lock (commit it after the first sync).
+[project]
+name = <%~ it.h.json(it.names.pairedName) %>
+version = "0.1.0"
+description = <%~ it.h.json('Tests for ' + it.names.slug) %>
+requires-python = ">=<%= it.v.python %>"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  <%~ it.h.json(it.names.slug) %>,
+  <%~ dep('httpx2') %>,
+  <%~ dep('mypy') %>,
+  <%~ dep('pytest') %>,
+  <%~ dep('pytest-cov') %>,
+  <%~ dep('ruff') %>,
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+<%~ it.h.json(it.names.slug) %> = { path = "app", editable = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["app"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "S", "C4", "PT", "RUF", "N"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+"tests/e2e/**" = ["S101", "S603"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["<%= pkg %>"]
+known-local-folder = ["tests"]
+
+[tool.mypy]
+python_version = "<%= it.v.python %>"
+strict = true
+warn_unreachable = true
+mypy_path = "app/src"
+explicit_package_bases = true
+files = ["tests"]
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+junit_family = "xunit2"
+markers = [
+  "unit: fast and isolated (no network, no database); every check:quick",
+  "integration: needs DATABASE_URL (the Postgres service in CI)",
+  "e2e: drives the HTTP server over real HTTP",
+  "live: touches a deployed lane (INCUBATOR_LIVE=1 and BASE_URL)",
+]
+
+[tool.coverage.run]
+source_pkgs = ["<%= pkg %>"]
+branch = true
+data_file = ".reports/.coverage"
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

@@ -1,0 +1,37 @@
+<% const v = it.v.npm;
+const cli = it.spec.platform === 'cli';
+const pkg = {
+  name: it.names.slug,
+  version: '0.1.0',
+  description: it.names.description,
+  license: 'UNLICENSED',
+  type: 'module',
+  packageManager: `pnpm@${it.v.pnpm}`,
+  engines: { node: '>=22.12' },
+  exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } },
+  ...(cli ? { bin: { [it.names.slug]: './dist/bin.js' } } : {}),
+  files: ['dist', '!dist/**/*.map'],
+  publishConfig: { access: it.spec.project.visibility === 'public' ? 'public' : 'restricted', provenance: it.spec.project.visibility === 'public' },
+  scripts: {
+    build: 'tsc -p tsconfig.build.json',
+    check: 'node scripts/check.mjs full',
+    'check:quick': 'node scripts/check.mjs quick',
+    test: 'vitest run --project unit',
+    'test:profile': 'node scripts/test-profile.mjs',
+    format: 'prettier --write .',
+  },
+  devDependencies: {
+    '@eslint/js': v['@eslint/js'],
+    '@types/node': v['@types/node'],
+    '@vitest/coverage-v8': v['@vitest/coverage-v8'],
+    eslint: v.eslint,
+    globals: v.globals,
+    lefthook: v.lefthook,
+    prettier: v.prettier,
+    typescript: v.typescript,
+    'typescript-eslint': v['typescript-eslint'],
+    vitest: v.vitest,
+  },
+  pnpm: { onlyBuiltDependencies: ['esbuild', 'lefthook'] },
+}; -%>
+<%~ it.h.json(pkg) %>

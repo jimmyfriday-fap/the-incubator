@@ -1,0 +1,11 @@
+<% const pytest = ['uv', 'run', 'pytest', '-m', 'unit', '-q', '--junitxml', '.reports/unit.xml'];
+const steps = {
+  format: { cmd: ['uv', 'run', 'ruff', 'format', '--check', '.'] },
+  lint: { cmd: ['uv', 'run', 'ruff', 'check', '.'] },
+  typecheck: { cmd: ['uv', 'run', 'mypy'] },
+  unit: { cmd: pytest },
+  'unit-coverage': { cmd: [...pytest, '--cov', '--cov-report', 'term', '--cov-fail-under', String(it.spec.testing.coverageThreshold)] },
+  'tests-collected': { guard: 'tests-collected', args: ['--report', '.reports/unit.xml', '--format', 'junit', '--min', '1'] },
+  audit: { cmd: ['uv', 'run', 'pip-audit', '--skip-editable', '--progress-spinner', 'off'] },
+}; -%>
+<%~ it.h.json(steps) %>

@@ -1,7 +1,19 @@
 #!/usr/bin/env node
-// Syntax lint: `node --check` for JS modules, `php -l` for PHP, `python -m py_compile` for Python.
+// Syntax lint: `node --check` for JS modules, `php -l` for PHP, `compile()` for Python (no .pyc written).
 import { EXIT, isMain, listFiles, report, runGuard } from './lib/common.mjs';
 import { run, which } from './lib/proc.mjs';
+
+const PY_CHECK = [
+  'import sys',
+  'bad = 0',
+  'for f in sys.argv[1:]:',
+  '    try:',
+  "        compile(open(f, 'rb').read(), f, 'exec', dont_inherit=True)",
+  '    except (SyntaxError, ValueError) as e:',
+  '        print(f\'{f}:{getattr(e, "lineno", 0)}: {getattr(e, "msg", e)}\')',
+  '        bad = 1',
+  'sys.exit(bad)',
+].join('\n');
 
 async function pool(items, size, fn) {
   const out = [];
@@ -44,11 +56,14 @@ export async function checkSyntax(root, files) {
     const bin = which('python3') ?? which('python');
     if (!bin) missingTools.push('python');
     else {
-      const r = await run(bin[0], [...bin[1], '-m', 'py_compile', ...py], {
-        cwd: root,
-        capture: true,
-      });
-      if (r.code !== 0) findings.push(`python: ${r.stderr.trim().split('\n').slice(-1)[0]}`);
+      // why: compile() in memory; `-m py_compile` would litter the tree with __pycache__/*.pyc.
+      const r = await run(bin[0], [...bin[1], '-c', PY_CHECK, ...py], { cwd: root, capture: true });
+      if (r.code !== 0) {
+        const lines = r.stdout.trim().split('\n').filter(Boolean);
+        findings.push(
+          ...(lines.length ? lines : [`python: ${r.stderr.trim().split('\n').slice(-1)[0]}`]),
+        );
+      }
     }
   }
   return { findings, missingTools };

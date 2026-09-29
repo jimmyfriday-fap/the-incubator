@@ -1,3 +1,4 @@
+<% const healthPath = it.spec.stack.pack === 'wordpress' ? `/?rest_route=/${it.names.slug}/v1/health` : '/health'; -%>
 <% const node = it.spec.stack.pack === 'node-web'; -%>
 name: rollback-production
 
@@ -38,4 +39,4 @@ jobs:
 <% } else { -%>
       - run: docker compose -f "$DEPLOY_ROOT/prod/current/compose.yaml" -p <%= it.names.slug %>-prod up -d --wait
 <% } -%>
-      - run: node scripts/deploy/smoke.mjs --url "$PROD_URL" --attempts 10
+      - run: node scripts/deploy/smoke.mjs --url "$PROD_URL" --path "<%= healthPath %>" --attempts 10

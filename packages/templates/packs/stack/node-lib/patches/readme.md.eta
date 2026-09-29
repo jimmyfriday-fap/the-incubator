@@ -1,0 +1,7 @@
+1. Install Node 22 and enable pnpm with `corepack enable`, then run `pnpm install`.
+2. `pnpm test` runs the unit and scenario suites; `pnpm build` compiles `src/` to `dist/`.
+<% if (it.spec.platform === 'cli') { -%>
+3. `node dist/bin.js --help` runs the built CLI (`pnpm build` first).
+<% } else { -%>
+3. Import the public API from the package entry point (`src/index.ts`).
+<% } -%>

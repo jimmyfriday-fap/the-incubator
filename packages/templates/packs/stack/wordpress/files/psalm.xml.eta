@@ -1,0 +1,30 @@
+<% const paired = it.spec.testing.home === 'paired-repo'; const theme = it.spec.stack.framework === 'wordpress-theme'; -%>
+<?xml version="1.0"?>
+<!-- Static analysis (the `typecheck` step): WordPress APIs are typed by php-stubs/wordpress-stubs. -->
+<psalm xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns="https://getpsalm.org/schema/config"
+       xsi:schemaLocation="https://getpsalm.org/schema/config vendor/vimeo/psalm/config.xsd"
+       errorLevel="2"
+       phpVersion="<%= it.v.php %>"
+       resolveFromConfigFile="true"
+       findUnusedCode="false"
+       findUnusedBaselineEntry="false"
+       ensureOverrideAttribute="false">
+    <projectFiles>
+        <directory name="src"/>
+<% if (!paired) { -%>
+        <directory name="tests"/>
+<% } -%>
+        <directory name="docker"/>
+        <file name="<%= theme ? 'functions.php' : it.names.slug + '.php' %>"/>
+        <ignoreFiles>
+            <directory name="vendor"/>
+        </ignoreFiles>
+    </projectFiles>
+    <stubs>
+        <file name="vendor/php-stubs/wordpress-stubs/wordpress-stubs.php"/>
+    </stubs>
+    <globals>
+        <var name="wpdb" type="\wpdb"/>
+    </globals>
+</psalm>

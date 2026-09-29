@@ -1,0 +1,50 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Unit;
+
+use <%= it.names.pascal %>\Features\Health;
+use PHPUnit\Framework\TestCase;
+
+final class HealthTest extends TestCase
+{
+    public function testReportsOkWithOneDatabaseCheck(): void
+    {
+        $result = (new Health())->check();
+
+        self::assertSame('ok', $result['status']);
+        self::assertSame(<%~ it.h.phpStr(it.names.slug) %>, $result['name']);
+        self::assertSame([['name' => 'database', 'ok' => true]], $result['checks']);
+    }
+
+    public function testDegradesWhenTheDatabaseIsDownOrThrows(): void
+    {
+        self::assertSame('degraded', (new Health(static fn (): bool => false))->check()['status']);
+
+        $throwing = (new Health(static function (): bool {
+            throw new \RuntimeException('refused');
+        }))->check();
+        self::assertSame('degraded', $throwing['status']);
+        self::assertSame([['name' => 'database', 'ok' => false]], $throwing['checks']);
+    }
+
+    public function testValidatesProbes(): void
+    {
+        $health = new Health();
+
+        self::assertSame('invalid_probe', $health->check(['probe' => ''])['error']['code'] ?? null);
+        self::assertSame('invalid_probe', $health->check(['probe' => '   '])['error']['code'] ?? null);
+        self::assertSame('invalid_probe', $health->check(['probe' => ['database']])['error']['code'] ?? null);
+        self::assertSame('unknown_check', $health->check(['probe' => 'nope'])['error']['code'] ?? null);
+        self::assertSame('ok', $health->check(['probe' => 'database'])['status']);
+        self::assertSame('ok', $health->check(['probe' => 'all'])['status']);
+    }
+
+    public function testMapsStatusesToHttpCodes(): void
+    {
+        self::assertSame(200, (new Health())->respond([])[0]);
+        self::assertSame(503, (new Health(static fn (): bool => false))->respond([])[0]);
+        self::assertSame(400, (new Health())->respond(['probe' => 'nope'])[0]);
+    }
+}

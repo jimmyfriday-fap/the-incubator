@@ -1,0 +1,16 @@
+# gitleaks configuration: the default rules plus narrowly scoped allowances for test data.
+# Each allowance matches one known shape of non-secret value; real secrets never match these.
+title = "the-incubator"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Recorded LLM fixtures are keyed by the SHA-256 of the request (packages/core/fixtures)."
+regexTarget = "line"
+regexes = ['''^\s*"key": "[0-9a-f]{64}",?$''']
+
+[[allowlists]]
+description = "Keychain/env precedence tests use obviously fake keys (packages/llm/src/llm.test.ts)."
+regexTarget = "match"
+regexes = ['''(?:env|kc)-key-123456''']

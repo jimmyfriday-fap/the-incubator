@@ -1,0 +1,94 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Features;
+
+/**
+ * Service health and readiness: `ok` when every dependency answers, `degraded` when one is down,
+ * `error` for an invalid probe. WordPress only supplies the database probe (see Routes).
+ */
+final class Health implements Endpoint
+{
+    public const SERVICE_NAME = <%~ it.h.phpStr(it.names.slug) %>;
+    public const VERSION = '0.1.0';
+    public const STATUS_CODES = ['ok' => 200, 'degraded' => 503, 'error' => 400];
+    private const PROBES = ['all', 'database'];
+
+    /** @var (\Closure(): bool)|null */
+    private ?\Closure $checkDatabase;
+
+    /**
+     * @param (callable(): bool)|null $checkDatabase true when the database answers; a throw counts as down
+     */
+    public function __construct(?callable $checkDatabase = null)
+    {
+        $this->checkDatabase = $checkDatabase === null ? null : \Closure::fromCallable($checkDatabase);
+    }
+
+    /**
+     * @param array<array-key, mixed> $input `probe` (optional): `all` or `database`
+     * @return array{
+     *     name: string,
+     *     version: string,
+     *     status: 'ok'|'degraded'|'error',
+     *     checks: list<array{name: string, ok: bool}>,
+     *     error?: array{code: 'invalid_probe'|'unknown_check', message: string},
+     * }
+     */
+    public function check(array $input = []): array
+    {
+        if (array_key_exists('probe', $input)) {
+            $probe = $input['probe'];
+            if (!is_string($probe) || trim($probe) === '') {
+                return $this->error('invalid_probe', 'probe must not be empty');
+            }
+            if (!in_array($probe, self::PROBES, true)) {
+                return $this->error('unknown_check', sprintf('unknown probe "%s"', $probe));
+            }
+        }
+        $database = true;
+        if ($this->checkDatabase !== null) {
+            try {
+                $database = ($this->checkDatabase)();
+            } catch (\Throwable) {
+                $database = false;
+            }
+        }
+
+        return [
+            'name' => self::SERVICE_NAME,
+            'version' => self::VERSION,
+            'status' => $database ? 'ok' : 'degraded',
+            'checks' => [['name' => 'database', 'ok' => $database]],
+        ];
+    }
+
+    public function respond(array $params): array
+    {
+        $result = $this->check($params);
+
+        return [self::STATUS_CODES[$result['status']], $result];
+    }
+
+    /**
+     * @param 'invalid_probe'|'unknown_check' $code
+     * @return array{
+     *     name: string,
+     *     version: string,
+     *     status: 'error',
+     *     checks: list<never>,
+     *     error: array{code: 'invalid_probe'|'unknown_check', message: string},
+     * }
+     */
+    private function error(string $code, string $message): array
+    {
+        return [
+            'name' => self::SERVICE_NAME,
+            'version' => self::VERSION,
+            'status' => 'error',
+            'checks' => [],
+            'error' => ['code' => $code, 'message' => $message],
+        ];
+    }
+}

@@ -1,0 +1,269 @@
+{
+  "incubatorVersion": "1.0",
+  "mode": "greenfield",
+  "project": {
+    "name": "The Incubator",
+    "slug": "the-incubator",
+    "description": "Turns a plain-English idea and/or an existing repository into a canonical GitHub repository.",
+    "owner": {
+      "type": "user",
+      "login": ""
+    },
+    "visibility": "private"
+  },
+  "intent": {
+    "narrative": "",
+    "personas": ["developer starting a project", "maintainer adopting a repository"],
+    "coreFeatures": [
+      {
+        "id": "exit-codes",
+        "summary": "Every CLI command honours the 0/1/2/130 exit-code contract.",
+        "lane": "enhancement/new"
+      },
+      {
+        "id": "discovery",
+        "summary": "A narrative becomes an approved incubator.json with at most 5 questions per round and 2 rounds.",
+        "lane": "enhancement/new"
+      }
+    ]
+  },
+  "platform": "cli",
+  "stack": {
+    "pack": "node-lib",
+    "framework": "typescript-lib",
+    "database": "none",
+    "auth": "none",
+    "packageManager": "pnpm"
+  },
+  "lanes": {
+    "environments": ["local", "staging", "prod"],
+    "branches": {
+      "staging": "main",
+      "prod": "production"
+    },
+    "workLanes": [
+      "workspace",
+      "security",
+      "support/existing",
+      "testing",
+      "infra",
+      "enhancement/existing",
+      "enhancement/new",
+      "ui/fix",
+      "ui/feature"
+    ]
+  },
+  "deploy": {
+    "target": "package-release",
+    "staging": {
+      "host": "",
+      "tailnetOnly": false
+    },
+    "prod": {
+      "host": ""
+    }
+  },
+  "testing": {
+    "home": "in-repo",
+    "profiles": ["quick", "full", "chaos", "hardening", "release", "live"],
+    "coverageThreshold": 80,
+    "completenessThreshold": 70,
+    "e2e": "none"
+  },
+  "security": {
+    "scanners": ["semgrep", "trivy", "gitleaks"],
+    "policyGate": "HIGH",
+    "centralRig": {
+      "enabled": false,
+      "repo": ""
+    }
+  },
+  "agents": {
+    "primary": "claude",
+    "also": ["copilot", "cursor"],
+    "runCeilings": {
+      "turns": 60,
+      "toolCalls": 400,
+      "minutes": 45,
+      "usd": 10
+    },
+    "deniedActions": [
+      "force-push",
+      "rewrite-history",
+      "delete-or-skip-test",
+      "disable-or-weaken-gate",
+      "quarantine-without-owner-and-expiry",
+      "edit-incubator-lock",
+      "commit-secrets",
+      "absolute-machine-paths",
+      "plan-files-at-repo-root",
+      "shell-true-subprocess"
+    ],
+    "humanOnlyActions": [
+      "promote-to-production",
+      "rollback-production",
+      "rotate-secrets",
+      "edit-accepted-risks",
+      "contracts-pin",
+      "change-run-ceilings",
+      "merge-to-production"
+    ]
+  },
+  "tracker": {
+    "type": "local"
+  },
+  "templates": {
+    "packs": []
+  },
+  "source": {
+    "type": "none",
+    "ref": ""
+  },
+  "gapReport": [],
+  "decisions": [
+    {
+      "key": "agents.also",
+      "question": "Default for agents.also",
+      "answer": "[\"copilot\",\"cursor\"]",
+      "source": "default"
+    },
+    {
+      "key": "agents.deniedActions",
+      "question": "Default for agents.deniedActions",
+      "answer": "[\"force-push\",\"rewrite-history\",\"delete-or-skip-test\",\"disable-or-weaken-gate\",\"quarantine-without-owner-and-expiry\",\"edit-incubator-lock\",\"commit-secrets\",\"absolute-machine-paths\",\"plan-files-at-repo-root\",\"shell-true-subprocess\"]",
+      "source": "default"
+    },
+    {
+      "key": "agents.humanOnlyActions",
+      "question": "Default for agents.humanOnlyActions",
+      "answer": "[\"promote-to-production\",\"rollback-production\",\"rotate-secrets\",\"edit-accepted-risks\",\"contracts-pin\",\"change-run-ceilings\",\"merge-to-production\"]",
+      "source": "default"
+    },
+    {
+      "key": "agents.primary",
+      "question": "Default for agents.primary",
+      "answer": "\"claude\"",
+      "source": "default"
+    },
+    {
+      "key": "agents.runCeilings.minutes",
+      "question": "Default for agents.runCeilings.minutes",
+      "answer": "45",
+      "source": "default"
+    },
+    {
+      "key": "agents.runCeilings.toolCalls",
+      "question": "Default for agents.runCeilings.toolCalls",
+      "answer": "400",
+      "source": "default"
+    },
+    {
+      "key": "agents.runCeilings.turns",
+      "question": "Default for agents.runCeilings.turns",
+      "answer": "60",
+      "source": "default"
+    },
+    {
+      "key": "agents.runCeilings.usd",
+      "question": "Default for agents.runCeilings.usd",
+      "answer": "10",
+      "source": "default"
+    },
+    {
+      "key": "deploy.prod.host",
+      "question": "Default for deploy.prod.host",
+      "answer": "\"\"",
+      "source": "default"
+    },
+    {
+      "key": "deploy.staging.host",
+      "question": "Default for deploy.staging.host",
+      "answer": "\"\"",
+      "source": "default"
+    },
+    {
+      "key": "deploy.staging.tailnetOnly",
+      "question": "Default for deploy.staging.tailnetOnly",
+      "answer": "false",
+      "source": "default"
+    },
+    {
+      "key": "project.owner.login",
+      "question": "Default for project.owner.login",
+      "answer": "\"\"",
+      "source": "default"
+    },
+    {
+      "key": "project.owner.type",
+      "question": "Default for project.owner.type",
+      "answer": "\"user\"",
+      "source": "default"
+    },
+    {
+      "key": "security.centralRig.enabled",
+      "question": "Default for security.centralRig.enabled",
+      "answer": "false",
+      "source": "default"
+    },
+    {
+      "key": "security.centralRig.repo",
+      "question": "Default for security.centralRig.repo",
+      "answer": "\"\"",
+      "source": "default"
+    },
+    {
+      "key": "security.policyGate",
+      "question": "Default for security.policyGate",
+      "answer": "\"HIGH\"",
+      "source": "default"
+    },
+    {
+      "key": "stack.auth",
+      "question": "Default for stack.auth",
+      "answer": "\"none\"",
+      "source": "default"
+    },
+    {
+      "key": "stack.database",
+      "question": "Default for stack.database",
+      "answer": "\"none\"",
+      "source": "default"
+    },
+    {
+      "key": "stack.framework",
+      "question": "Default for stack.framework",
+      "answer": "\"typescript-lib\"",
+      "source": "default"
+    },
+    {
+      "key": "stack.packageManager",
+      "question": "Default for stack.packageManager",
+      "answer": "\"pnpm\"",
+      "source": "default"
+    },
+    {
+      "key": "testing.completenessThreshold",
+      "question": "Default for testing.completenessThreshold",
+      "answer": "70",
+      "source": "default"
+    },
+    {
+      "key": "testing.coverageThreshold",
+      "question": "Default for testing.coverageThreshold",
+      "answer": "80",
+      "source": "default"
+    },
+    {
+      "key": "testing.home",
+      "question": "Default for testing.home",
+      "answer": "\"in-repo\"",
+      "source": "default"
+    },
+    {
+      "key": "tracker.type",
+      "question": "Default for tracker.type",
+      "answer": "\"local\"",
+      "source": "default"
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+<% const pub = it.spec.project.visibility === 'public'; -%>
+name: deploy-production
+
+# No push trigger: promote-to-production.yml dispatches this after merging into <%= it.spec.lanes.branches.prod %>.
+on:
+  workflow_dispatch:
+    inputs:
+      promote_run:
+        description: Run id of the promote-to-production run that dispatched this release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    permissions:
+      contents: write
+<% if (pub) { -%>
+      id-token: write
+<% } -%>
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      # why: only the prod branch may publish a release.
+      - if: github.ref != 'refs/heads/<%= it.spec.lanes.branches.prod %>'
+        run: |
+          echo "deploy-production must run on <%= it.spec.lanes.branches.prod %>, not $GITHUB_REF"
+          exit 2
+      - uses: <%= it.h.action('actions/checkout') %>
+      - run: node scripts/deploy/preflight.mjs --require NODE_AUTH_TOKEN
+      - uses: <%= it.h.action('pnpm/action-setup') %>
+      - uses: <%= it.h.action('actions/setup-node') %>
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/check.mjs full
+      - run: pnpm run build
+      - run: node scripts/release/version-gate.mjs
+      - run: node scripts/release/package-smoke.mjs --out release-assets
+      # why: publishes the tarball that was just smoke-tested, so the registry gets exactly what was verified.
+      - run: |
+          tarball="$(find release-assets -name '*.tgz' -print -quit)"
+          npm publish "$tarball"<%= pub ? ' --provenance' : '' %>
+      # why: the GitHub release carries the same tarball and its SHA256SUMS; the tag is the package version.
+      - run: |
+          version="$(node -p "require('./package.json').version")"
+          gh release create "v${version}" release-assets/* --target "$GITHUB_SHA" --title "v${version}" --notes "Promote run ${{ inputs.promote_run }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: node scripts/run-deploy-tasks.mjs --env prod --sha "$GITHUB_SHA" --yes

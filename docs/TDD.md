@@ -273,6 +273,18 @@ item** with a stable ID; packs declare them and brownfield detectors check them.
   comes from a secret; `StrictHostKeyChecking` uses a pinned `known_hosts` secret) and run
   `docker compose pull && docker compose up -d --wait`. Health-check gating uses the compose
   `healthcheck` plus a post-deploy HTTP probe.
+  - `scripts/deploy/docker-remote.mjs` does this without a remote shell: `ssh`/`scp` get argv arrays
+    and every remote argument must match `[A-Za-z0-9@%+=:,./_-]+`, so workflow inputs can never be
+    read as shell syntax on the host. Each deploy appends `{sha, image, at}` to `releases.log` on the
+    host (through `tee -a`); rollback redeploys the latest earlier digest that was never rolled back.
+  - Post-deploy tasks run inside the app container (`docker compose exec -T app …`), and the task log
+    lives on the host so `runOnce` holds across ephemeral runners.
+- **`deploy/package-release`** (ADR-016). Staging builds the exact tarball a release would publish,
+  installs it into an empty project, imports it, runs every `bin --version`, and uploads it with
+  `SHA256SUMS`; nothing is published. Prod (dispatch-only, like the other classes) runs `check full`,
+  refuses an already-published version, smoke-tests the tarball, publishes _that_ tarball (with npm
+  provenance for public packages) and creates the GitHub release. Rollback moves the `latest`
+  dist-tag; published versions are never unpublished.
 - **Workflow hygiene** is enforced by `scripts/guard/workflow-lint.mjs` plus actionlint:
   - every `uses:` must match `@[0-9a-f]{40}` followed by a `# vX.Y.Z` comment. SHAs come from
     `packages/templates/actions-lock.json`, which `pnpm actions:refresh` updates;
@@ -443,6 +455,13 @@ fileCiFailure }`, implemented by `leantime`, `local` and `fake`. See §4.4 and A
 - **JSON files can't hold comments.** `package.json`, `composer.json` and `tsconfig.json` are patched
   through declarative **JSON patches** in `pack.json` (`{file, pointer, op: set|merge|append-unique}`),
   applied in composition order with sorted-key output.
+- **Formatting.** `config/scaffold.json` may declare a `format` step (`nodeBin` or `cmd`, `args`,
+  optional `extensions`); the generated scaffolder runs it over the files it wrote, so a freshly
+  scaffolded feature passes the repository's own `format` check.
+- **Registry placeholders.** Drift registries expand `{id}`, `{id_snake}`, `{id_pascal}` and
+  `{id_camel}`, matching each stack's file layout (`tests/adapters/{id_snake}.py`,
+  `tests/Adapters/{id_pascal}Adapter.php`). Feature ids that would become reserved words in the stack's
+  language are rejected by spec semantics (`feature_identifier`).
 - **`TODO(scaffold): <what>`** marks every spot left for an agent. The completeness score counts
   these markers.
 - **Drift check** runs after every render: every declared marker region exists exactly once, and

@@ -1,0 +1,292 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Support;
+
+/**
+ * Scenario contract layer: loading, structural validation and assertion evaluation. A faithful PHP
+ * port of scripts/guard/lib/scenario.mjs (same operators, same failure messages); keep them in step.
+ * Scenario JSON decodes to arrays, so a JSON object and a JSON array are both PHP arrays here.
+ *
+ * @psalm-type LoadedScenario = array{
+ *     file: string,
+ *     dirFeature: string,
+ *     data: array<array-key, mixed>|null,
+ *     errors: list<string>,
+ * }
+ */
+final class Scenario
+{
+    public const OPS = ['eq', 'neq', 'contains', 'matches', 'exists', 'absent', 'gte', 'lte', 'length'];
+    public const ONBOARDING_MINIMUM = ['happy' => 1, 'validation' => 2, 'fault' => 1];
+
+    /** `kebab-id` → `KebabId`, the same rule as scripts/scaffold.mjs (FEATURE_PASCAL). */
+    public static function pascal(string $id): string
+    {
+        $words = preg_split('/[^A-Za-z0-9]+/', $id, -1, PREG_SPLIT_NO_EMPTY);
+
+        return implode('', array_map(
+            static fn (string $w): string => strtoupper($w[0]) . strtolower(substr($w, 1)),
+            $words === false ? [] : $words,
+        ));
+    }
+
+    /** Reads `a.b[0].c` style paths; returns Undefined::Value when there is nothing there. */
+    public static function getPath(mixed $obj, string $path): mixed
+    {
+        if ($path === '' || $path === '$') {
+            return $obj;
+        }
+        $normalized = (string) preg_replace('/\[(\d+)\]/', '.$1', $path);
+        $cur = $obj;
+        foreach (explode('.', $normalized) as $part) {
+            if ($part === '') {
+                continue;
+            }
+            if ($cur === null || $cur === Undefined::Value) {
+                return Undefined::Value;
+            }
+            $cur = self::member($cur, $part);
+        }
+
+        return $cur;
+    }
+
+    /**
+     * Returns null when the assertion holds, else a human-readable failure.
+     *
+     * @param array<array-key, mixed> $assertion {path, op, value}
+     */
+    public static function evaluateAssertion(mixed $output, array $assertion): ?string
+    {
+        $p = is_string($assertion['path'] ?? null) ? $assertion['path'] : '';
+        $op = $assertion['op'] ?? null;
+        $value = array_key_exists('value', $assertion) ? $assertion['value'] : Undefined::Value;
+        $actual = self::getPath($output, $p);
+        switch ($op) {
+            case 'eq':
+                return self::deepEqual($actual, $value)
+                    ? null
+                    : sprintf('%s: expected %s, got %s', $p, self::show($value), self::show($actual));
+            case 'neq':
+                return !self::deepEqual($actual, $value)
+                    ? null
+                    : sprintf('%s: expected not %s', $p, self::show($value));
+            case 'contains':
+                if (is_string($actual)) {
+                    return str_contains($actual, self::jsString($value))
+                        ? null
+                        : sprintf('%s: %s does not contain %s', $p, self::show($actual), self::show($value));
+                }
+                if (is_array($actual) && array_is_list($actual)) {
+                    foreach ($actual as $item) {
+                        if (self::deepEqual($item, $value)) {
+                            return null;
+                        }
+                    }
+
+                    return sprintf('%s: array lacks %s', $p, self::show($value));
+                }
+
+                return sprintf('%s: cannot apply contains to %s', $p, self::show($actual));
+            case 'matches':
+                return is_string($actual) && self::regexTest(self::jsString($value), $actual)
+                    ? null
+                    : sprintf('%s: %s does not match /%s/', $p, self::show($actual), self::jsString($value));
+            case 'exists':
+                return $actual !== Undefined::Value ? null : sprintf('%s: expected to exist', $p);
+            case 'absent':
+                return $actual === Undefined::Value
+                    ? null
+                    : sprintf('%s: expected to be absent, got %s', $p, self::show($actual));
+            case 'gte':
+                return (is_int($actual) || is_float($actual)) && $actual >= $value
+                    ? null
+                    : sprintf('%s: expected >= %s, got %s', $p, self::jsString($value), self::show($actual));
+            case 'lte':
+                return (is_int($actual) || is_float($actual)) && $actual <= $value
+                    ? null
+                    : sprintf('%s: expected <= %s, got %s', $p, self::jsString($value), self::show($actual));
+            case 'length':
+                $length = $actual === null || $actual === Undefined::Value
+                    ? Undefined::Value
+                    : self::member($actual, 'length');
+
+                return $length !== Undefined::Value && $length === $value
+                    ? null
+                    : sprintf('%s: expected length %s, got %s', $p, self::jsString($value), self::show($length));
+            default:
+                return sprintf('%s: unknown op %s', $p, self::jsString($op ?? Undefined::Value));
+        }
+    }
+
+    /**
+     * Structural check mirroring schemas/scenario.schema.json.
+     *
+     * @return list<string>
+     */
+    public static function validate(mixed $s): array
+    {
+        if (!is_array($s) || ($s !== [] && array_is_list($s))) {
+            return ['scenario must be an object'];
+        }
+        $errors = [];
+        if (!is_string($s['id'] ?? null) || preg_match('/^[a-z0-9][a-z0-9-]*$/', $s['id']) !== 1) {
+            $errors[] = 'id must be kebab-case';
+        }
+        if (!is_string($s['feature'] ?? null) || $s['feature'] === '') {
+            $errors[] = 'feature is required';
+        }
+        if (!is_array($s['tags'] ?? null) || $s['tags'] === []) {
+            $errors[] = 'tags must be a non-empty array';
+        }
+        if (array_key_exists('status', $s) && !in_array($s['status'], ['active', 'todo'], true)) {
+            $errors[] = 'status must be active or todo';
+        }
+        foreach (['seed', 'context', 'mocks'] as $k) {
+            if (!is_array($s[$k] ?? null) || ($s[$k] !== [] && array_is_list($s[$k]))) {
+                $errors[] = sprintf('%s must be an object', $k);
+            }
+        }
+        if (is_array($s['mocks'] ?? null) && array_key_exists('ai', $s['mocks']) && !is_array($s['mocks']['ai'])) {
+            $errors[] = 'mocks.ai must be an array';
+        }
+        $stages = $s['stages'] ?? null;
+        if (!is_array($stages) || $stages === []) {
+            $errors[] = 'stages must be a non-empty array';
+
+            return $errors;
+        }
+        foreach (array_values($stages) as $i => $st) {
+            if (!is_array($st) || !is_string($st['name'] ?? null)) {
+                $errors[] = sprintf('stages[%d].name is required', $i);
+            }
+            $assertions = is_array($st) ? ($st['assertions'] ?? null) : null;
+            if (!is_array($assertions) || $assertions === []) {
+                $errors[] = sprintf('stages[%d].assertions must be non-empty', $i);
+                continue;
+            }
+            foreach (array_values($assertions) as $j => $a) {
+                if (!is_array($a) || !is_string($a['path'] ?? null)) {
+                    $errors[] = sprintf('stages[%d].assertions[%d].path is required', $i, $j);
+                }
+                if (!is_array($a) || !in_array($a['op'] ?? null, self::OPS, true)) {
+                    $ops = implode(', ', self::OPS);
+                    $errors[] = sprintf('stages[%d].assertions[%d].op must be one of %s', $i, $j, $ops);
+                }
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Loads every `<dir>/<feature>/*.json` scenario, sorted by feature then file name.
+     *
+     * @return list<LoadedScenario>
+     */
+    public static function load(string $root, string $dir = 'tests/scenarios'): array
+    {
+        $base = $root . '/' . $dir;
+        $features = is_dir($base) ? scandir($base) : false;
+        if ($features === false) {
+            return [];
+        }
+        $out = [];
+        foreach ($features as $feature) {
+            if ($feature === '.' || $feature === '..' || !is_dir($base . '/' . $feature)) {
+                continue;
+            }
+            $files = scandir($base . '/' . $feature);
+            foreach ($files === false ? [] : $files as $f) {
+                if (!str_ends_with($f, '.json')) {
+                    continue;
+                }
+                $rel = sprintf('%s/%s/%s', $dir, $feature, $f);
+                $text = (string) file_get_contents($base . '/' . $feature . '/' . $f);
+                try {
+                    $data = json_decode($text, true, 512, JSON_THROW_ON_ERROR);
+                } catch (\JsonException $e) {
+                    $errors = ['invalid JSON: ' . $e->getMessage()];
+                    $out[] = ['file' => $rel, 'dirFeature' => $feature, 'data' => null, 'errors' => $errors];
+                    continue;
+                }
+                $errors = self::validate($data);
+                if (is_array($data) && ($data['feature'] ?? null) !== $feature) {
+                    $declared = self::jsString($data['feature'] ?? Undefined::Value);
+                    $errors[] = sprintf('feature "%s" does not match directory "%s"', $declared, $feature);
+                }
+                $data = is_array($data) ? $data : null;
+                $out[] = ['file' => $rel, 'dirFeature' => $feature, 'data' => $data, 'errors' => $errors];
+            }
+        }
+
+        return $out;
+    }
+
+    private static function member(mixed $value, string $key): mixed
+    {
+        if (is_array($value)) {
+            if (array_key_exists($key, $value)) {
+                return $value[$key];
+            }
+
+            return $key === 'length' && array_is_list($value) ? count($value) : Undefined::Value;
+        }
+        if (is_string($value)) {
+            $chars = mb_str_split($value);
+            if ($key === 'length') {
+                return count($chars);
+            }
+
+            return ctype_digit($key) && isset($chars[(int) $key]) ? $chars[(int) $key] : Undefined::Value;
+        }
+
+        return Undefined::Value;
+    }
+
+    private static function deepEqual(mixed $a, mixed $b): bool
+    {
+        return self::encode($a) === self::encode($b);
+    }
+
+    /** JSON.stringify: `undefined` has no encoding (null here), everything else is JSON text. */
+    private static function encode(mixed $v): ?string
+    {
+        if ($v === Undefined::Value) {
+            return null;
+        }
+
+        $json = json_encode($v, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+
+        return $json === false ? 'null' : $json;
+    }
+
+    private static function show(mixed $v): string
+    {
+        return self::encode($v) ?? 'undefined';
+    }
+
+    /** String(v) in JavaScript, for message interpolation and string coercion. */
+    private static function jsString(mixed $v): string
+    {
+        return match (true) {
+            $v === Undefined::Value => 'undefined',
+            is_string($v) => $v,
+            is_array($v) && array_is_list($v) => implode(',', array_map(self::jsString(...), $v)),
+            is_array($v) => '[object Object]',
+            default => self::show($v),
+        };
+    }
+
+    private static function regexTest(string $pattern, string $subject): bool
+    {
+        $result = @preg_match("\x01" . $pattern . "\x01u", $subject);
+        if ($result === false) {
+            throw new \InvalidArgumentException(sprintf('invalid regular expression /%s/', $pattern));
+        }
+
+        return $result === 1;
+    }
+}

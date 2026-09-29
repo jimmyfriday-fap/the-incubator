@@ -1,3 +1,4 @@
+<% const healthPath = it.spec.stack.pack === 'wordpress' ? `/?rest_route=/${it.names.slug}/v1/health` : '/health'; -%>
 name: validate-staging
 
 on:
@@ -27,4 +28,4 @@ jobs:
           tags: tag:ci
 <% } -%>
       - run: node scripts/deploy/preflight.mjs --require STAGING_URL
-      - run: node scripts/deploy/smoke.mjs --url "$STAGING_URL" --attempts 10
+      - run: node scripts/deploy/smoke.mjs --url "$STAGING_URL" --path "<%= healthPath %>" --attempts 10

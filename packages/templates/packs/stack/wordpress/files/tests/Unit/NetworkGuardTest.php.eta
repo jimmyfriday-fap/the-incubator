@@ -1,0 +1,21 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Unit;
+
+use PHPUnit\Framework\TestCase;
+
+/**
+ * tests/bootstrap.php installs the network guard for the unit suite.
+ */
+final class NetworkGuardTest extends TestCase
+{
+    public function testStreamUrlsAreBlocked(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('unit tests must not touch the network (attempted example.com)');
+
+        file_get_contents('https://example.com/');
+    }
+}

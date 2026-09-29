@@ -1,0 +1,35 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Adapters;
+
+/**
+ * Per-feature adapter of the scenario contract layer (tests/ScenariosTest.php). The feature `foo-bar`
+ * is driven by tests/Adapters/FooBarAdapter.php; the JSON contract is schemas/scenario.schema.json.
+ */
+interface FeatureAdapter
+{
+    public function name(): string;
+
+    /**
+     * @param array<array-key, mixed> $scenario
+     */
+    public function seedContext(array $scenario): mixed;
+
+    /**
+     * @param array<array-key, mixed> $stage
+     * @param array<array-key, mixed> $scenario
+     */
+    public function runStage(array $stage, mixed $ctx, array $scenario): mixed;
+
+    public function captureOutput(mixed $out, mixed $ctx): mixed;
+
+    /**
+     * Extra, feature-specific checks on the captured output; each string is one failure.
+     *
+     * @param array<array-key, mixed> $stage
+     * @return list<string>
+     */
+    public function validate(mixed $captured, array $stage): array;
+}

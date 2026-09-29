@@ -6,12 +6,29 @@
   "additionalProperties": false,
   "required": ["id", "version", "description", "appliesWhen", "files"],
   "properties": {
-    "$schema": { "type": "string" },
-    "id": { "type": "string", "pattern": "^(base|(stack|deploy|test-home)/[a-z0-9-]+)$" },
-    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
-    "description": { "type": "string" },
-    "appliesWhen": { "type": "string" },
-    "requires": { "type": "array", "items": { "type": "string" } },
+    "$schema": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^(base|(stack|deploy|test-home)/[a-z0-9-]+)$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "appliesWhen": {
+      "type": "string"
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "files": {
       "type": "array",
       "items": {
@@ -22,18 +39,35 @@
           "src": {
             "type": "string",
             "pattern": "^files/[^\\\\]*$",
-            "not": { "pattern": "(^|/)\\.\\.(/|$)" }
+            "not": {
+              "pattern": "(^|/)\\.\\.(/|$)"
+            }
           },
           "dest": {
             "type": "string",
-            "not": { "pattern": "^(/|[A-Za-z]:)|(^|/)\\.\\.(/|$)|\\\\" }
+            "not": {
+              "pattern": "^(/|[A-Za-z]:)|(^|/)\\.\\.(/|$)|\\\\"
+            }
           },
-          "when": { "type": "string" },
-          "each": { "type": "string" },
-          "as": { "type": "string", "pattern": "^[a-z][a-zA-Z]*$" },
-          "mode": { "enum": ["0644", "0755"] },
-          "role": { "type": "string" },
-          "vars": { "type": "object" }
+          "when": {
+            "type": "string"
+          },
+          "each": {
+            "type": "string"
+          },
+          "as": {
+            "type": "string",
+            "pattern": "^[a-z][a-zA-Z]*$"
+          },
+          "mode": {
+            "enum": ["0644", "0755"]
+          },
+          "role": {
+            "type": "string"
+          },
+          "vars": {
+            "type": "object"
+          }
         }
       }
     },
@@ -44,9 +78,16 @@
         "additionalProperties": false,
         "required": ["file", "region", "entries"],
         "properties": {
-          "file": { "type": "string" },
-          "region": { "type": "string", "pattern": "^[a-z0-9-]+$" },
-          "when": { "type": "string" },
+          "file": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "when": {
+            "type": "string"
+          },
           "entries": {
             "type": "array",
             "items": {
@@ -54,10 +95,20 @@
               "additionalProperties": false,
               "required": ["id"],
               "properties": {
-                "id": { "type": "string", "pattern": "^[a-z0-9.-]+$" },
-                "src": { "type": "string", "pattern": "^patches/" },
-                "text": { "type": "string" },
-                "when": { "type": "string" }
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9.-]+$"
+                },
+                "src": {
+                  "type": "string",
+                  "pattern": "^patches/"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "when": {
+                  "type": "string"
+                }
               }
             }
           }
@@ -71,8 +122,12 @@
         "additionalProperties": false,
         "required": ["file", "ops"],
         "properties": {
-          "file": { "type": "string" },
-          "when": { "type": "string" },
+          "file": {
+            "type": "string"
+          },
+          "when": {
+            "type": "string"
+          },
           "ops": {
             "type": "array",
             "items": {
@@ -83,10 +138,17 @@
                 "op": {
                   "enum": ["set", "merge", "append-unique", "remove", "remove-values", "remove-ids"]
                 },
-                "pointer": { "type": "string" },
+                "pointer": {
+                  "type": "string"
+                },
                 "value": {},
-                "valueSrc": { "type": "string", "pattern": "^patches/" },
-                "when": { "type": "string" }
+                "valueSrc": {
+                  "type": "string",
+                  "pattern": "^patches/"
+                },
+                "when": {
+                  "type": "string"
+                }
               }
             }
           }
@@ -100,9 +162,16 @@
         "additionalProperties": false,
         "required": ["role", "to"],
         "properties": {
-          "role": { "type": "string" },
-          "to": { "type": "string", "pattern": "^@[a-z]+/$" },
-          "when": { "type": "string" }
+          "role": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^@[a-z]+/$"
+          },
+          "when": {
+            "type": "string"
+          }
         }
       }
     },
@@ -113,12 +182,78 @@
         "additionalProperties": false,
         "required": ["role", "to"],
         "properties": {
-          "role": { "type": "string" },
-          "to": { "type": "string", "pattern": "^@[a-z]+/$" },
-          "when": { "type": "string" }
+          "role": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^@[a-z]+/$"
+          },
+          "when": {
+            "type": "string"
+          }
         }
       }
     },
-    "canonical": { "type": "string" }
+    "canonical": {
+      "type": "string"
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "GitHub Actions settings the rendered workflows need. Publish creates variables with __INCUBATOR_UNSET__ and lists secrets (a secret cannot be created without a value).",
+      "properties": {
+        "variables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "description"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              },
+              "when": {
+                "type": "string"
+              },
+              "target": {
+                "enum": ["app", "paired"],
+                "description": "Which repository needs it (default app)."
+              }
+            }
+          }
+        },
+        "secrets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "description"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              },
+              "when": {
+                "type": "string"
+              },
+              "target": {
+                "enum": ["app", "paired"],
+                "description": "Which repository needs it (default app)."
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }

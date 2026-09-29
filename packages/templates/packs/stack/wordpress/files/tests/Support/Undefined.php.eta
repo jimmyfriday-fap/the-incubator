@@ -1,0 +1,14 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Support;
+
+/**
+ * "No value at this path" (JavaScript's `undefined` in scripts/guard/lib/scenario.mjs), distinct
+ * from a JSON `null`.
+ */
+enum Undefined
+{
+    case Value;
+}

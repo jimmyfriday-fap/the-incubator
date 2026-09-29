@@ -144,3 +144,86 @@ describe('incubator doctor', () => {
     expect(code).toBe(0);
   });
 });
+
+describe('incubator scaffold', () => {
+  const combo = (name: string) =>
+    path.resolve(import.meta.dirname, `../../../packages/templates/fixtures/combos/${name}.json`);
+  const lib = combo('node-lib.in-repo.package-release');
+
+  it('--validate-only renders in memory and reports the packs', async () => {
+    const t = io();
+    expect(await main(['scaffold', lib, '--validate-only'], t.io)).toBe(0);
+    expect(t.err.join('')).toMatch(
+      /spec is valid; \d+ files would be rendered \(base@1\.0\.0, stack\/node-lib@1\.0\.0/,
+    );
+  });
+
+  it('--dry-run lists files with hashes and writes nothing', async () => {
+    const t = io();
+    const out = path.join(mkdtempSync(path.join(tmpdir(), 'scaffold-')), 'app');
+    expect(await main(['scaffold', lib, '--dry-run', '--out', out], t.io)).toBe(0);
+    expect(t.out.join('')).toMatch(/^[0-9a-f]{12} {2}0644 {2}base\s+\.claude\/settings\.json$/m);
+    expect(() => readFileSync(path.join(out, 'package.json'))).toThrow();
+  });
+
+  it('writes the tree with pinned pack versions and refuses a non-empty target', async () => {
+    const out = path.join(mkdtempSync(path.join(tmpdir(), 'scaffold-')), 'app');
+    const t = io();
+    expect(await main(['scaffold', lib, '--out', out], t.io)).toBe(0);
+    const spec = JSON.parse(readFileSync(path.join(out, 'incubator.json'), 'utf8')) as {
+      templates: { packs: { id: string }[] };
+    };
+    expect(spec.templates.packs.map((p) => p.id)).toEqual([
+      'base',
+      'stack/node-lib',
+      'deploy/package-release',
+      'test-home/in-repo',
+    ]);
+    const again = io();
+    expect(await main(['scaffold', lib, '--out', out], again.io)).toBe(2);
+    expect(again.err.join('')).toContain('is not empty');
+    const lock = readFileSync(path.join(out, '.incubator/lock.json'), 'utf8');
+    expect(
+      await main(['scaffold', path.join(out, 'incubator.json'), '--out', out, '--force'], io().io),
+    ).toBe(0);
+    // Re-rendering from the generated incubator.json reproduces the tree byte for byte.
+    expect(readFileSync(path.join(out, '.incubator/lock.json'), 'utf8')).toBe(lock);
+  });
+
+  it('writes the paired tests repository next to the app', async () => {
+    const out = path.join(mkdtempSync(path.join(tmpdir(), 'scaffold-')), 'shipnote');
+    const t = io();
+    expect(
+      await main(['scaffold', combo('node-lib.paired-repo.package-release'), '--out', out], t.io),
+    ).toBe(0);
+    expect(
+      readFileSync(path.join(out, '..', 'shipnote-tests', 'tests', 'scenarios.test.ts'), 'utf8'),
+    ).toContain('scenario');
+  });
+
+  it('rejects invalid specs and bad usage with exit 2', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'scaffold-'));
+    const bad = path.join(dir, 'bad.json');
+    writeFileSync(
+      bad,
+      JSON.stringify({
+        project: { name: 'Xy', slug: 'xy', description: 'x' },
+        platform: 'library',
+        stack: { pack: 'node-lib' },
+        deploy: { target: 'vps-tailscale' },
+      }),
+    );
+    const t = io();
+    expect(await main(['scaffold', bad, '--validate-only'], t.io)).toBe(2);
+    expect(t.err.join('')).toContain('libraries and CLIs deploy as package-release');
+    writeFileSync(path.join(dir, 'broken.json'), '{ nope');
+    expect(
+      await main(['scaffold', path.join(dir, 'broken.json'), '--validate-only'], io().io),
+    ).toBe(2);
+    expect(await main(['scaffold', lib], io().io)).toBe(2);
+    writeFileSync(path.join(dir, 'array.json'), '[]');
+    expect(await main(['scaffold', path.join(dir, 'array.json'), '--validate-only'], io().io)).toBe(
+      2,
+    );
+  });
+});

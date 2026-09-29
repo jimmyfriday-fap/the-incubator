@@ -1,12 +1,38 @@
 {
+  "format": {
+    "nodeBin": [
+      "prettier",
+      "prettier"
+    ],
+    "args": [
+      "--write",
+      "--log-level",
+      "warn",
+      "--ignore-unknown"
+    ]
+  },
   "feature": {
     "files": [
-      { "template": "scripts/scaffold/templates/feature.ts.tmpl", "dest": "src/features/{{FEATURE_ID}}/index.ts" },
-      { "template": "scripts/scaffold/templates/adapter.ts.tmpl", "dest": "tests/adapters/{{FEATURE_ID}}.ts" }
+      {
+        "template": "scripts/scaffold/templates/feature.ts.tmpl",
+        "dest": "src/features/{{FEATURE_ID}}/index.ts"
+      },
+      {
+        "template": "scripts/scaffold/templates/adapter.ts.tmpl",
+        "dest": "tests/adapters/{{FEATURE_ID}}.ts"
+      }
     ],
     "markers": [
-      { "file": "src/server/app.ts", "region": "feature-imports", "template": "scripts/scaffold/templates/import.ts.tmpl" },
-      { "file": "src/server/app.ts", "region": "routes", "template": "scripts/scaffold/templates/route.ts.tmpl" }
+      {
+        "file": "src/server/app.ts",
+        "region": "feature-imports",
+        "template": "scripts/scaffold/templates/import.ts.tmpl"
+      },
+      {
+        "file": "src/server/app.ts",
+        "region": "routes",
+        "template": "scripts/scaffold/templates/route.ts.tmpl"
+      }
     ]
   }
 }

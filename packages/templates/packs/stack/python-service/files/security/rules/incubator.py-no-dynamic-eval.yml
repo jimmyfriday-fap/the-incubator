@@ -1,0 +1,12 @@
+rules:
+  - id: incubator.py-no-dynamic-eval
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Dynamic code evaluation (eval, exec, compile) runs whatever text reaches it and invites
+      injection. Parse data with json or ast.literal_eval instead.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+      - pattern: builtins.eval(...)
+      - pattern: builtins.exec(...)

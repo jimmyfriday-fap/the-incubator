@@ -91,5 +91,14 @@
         }
       ]
     }
-  ]
+  ],
+  "settings": {
+    "secrets": [
+      {
+        "name": "APP_REPO_READ_TOKEN",
+        "description": "Read-only token (contents:read on the app repository) so the tests repository can check out the app.",
+        "target": "paired"
+      }
+    ]
+  }
 }

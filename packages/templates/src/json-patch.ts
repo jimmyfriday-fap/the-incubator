@@ -39,9 +39,14 @@ export function applyJsonPatch(file: string, doc: unknown, ops: readonly JsonPat
       continue;
     }
     let parent: Record<string, unknown> | unknown[] = root as Record<string, unknown>;
+    let absent = false;
     for (const seg of segs.slice(0, -1)) {
       const next: unknown = Array.isArray(parent) ? parent[Number(seg)] : parent[seg];
-      if (next === undefined && op.op !== 'remove' && !Array.isArray(parent)) {
+      if (next === undefined && op.op === 'remove') {
+        absent = true;
+        break;
+      }
+      if (next === undefined && !Array.isArray(parent)) {
         parent[seg] = {};
       } else if (next === null || typeof next !== 'object') {
         throw new ToolError(`${file}: pointer ${op.pointer} crosses a non-object`);
@@ -49,6 +54,8 @@ export function applyJsonPatch(file: string, doc: unknown, ops: readonly JsonPat
       parent = (Array.isArray(parent) ? parent[Number(seg)] : parent[seg]) as
         Record<string, unknown> | unknown[];
     }
+    // Removing something that is not there is a no-op (keeps remove idempotent).
+    if (absent) continue;
     const key = segs[segs.length - 1]!;
     if (Array.isArray(parent))
       throw new ToolError(`${file}: pointer ${op.pointer} must end at an object key`);

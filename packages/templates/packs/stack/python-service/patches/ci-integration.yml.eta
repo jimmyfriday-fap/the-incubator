@@ -1,0 +1,25 @@
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: <%= it.names.snake %>
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app" --health-interval 5s --health-retries 10
+    env:
+      APP_ENV: ci
+      DATABASE_URL: postgresql://app:app@localhost:5432/<%= it.names.snake %>
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+      - uses: <%= it.h.action('astral-sh/setup-uv') %>
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run python -m <%= it.names.snake %>.db
+      - run: uv run pytest -m integration

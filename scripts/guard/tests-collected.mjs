@@ -7,12 +7,12 @@ import { EXIT, isMain, runGuard } from './lib/common.mjs';
 export function countTests(text, format) {
   if (format === 'vitest-json') return JSON.parse(text).numTotalTests ?? 0;
   if (format === 'junit') {
+    // why: count test cases, not suite totals; PHPUnit nests <testsuite> elements, so summing
+    // every suite's `tests` attribute counts each test once per nesting level.
+    const cases = text.match(/<testcase\b/g)?.length ?? 0;
+    if (cases > 0) return cases;
     const suites = /<testsuites[^>]*\btests="(\d+)"/.exec(text);
-    if (suites) return Number(suites[1]);
-    return [...text.matchAll(/<testsuite[^>]*\btests="(\d+)"/g)].reduce(
-      (a, m) => a + Number(m[1]),
-      0,
-    );
+    return suites ? Number(suites[1]) : 0;
   }
   throw new Error(`unknown report format ${format}`);
 }

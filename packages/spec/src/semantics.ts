@@ -95,6 +95,15 @@ export function validateSemantics(spec: IncubatorSpec): Issue[] {
   const ids = spec.intent.coreFeatures.map((f) => f.id);
   const dupFeature = ids.find((id, i) => ids.indexOf(id) !== i);
   if (dupFeature) add('feature_ids', '/intent/coreFeatures', `duplicate feature id ${dupFeature}`);
+  for (const id of ids) {
+    const clash = identifierClash(spec.stack.pack, id);
+    if (clash)
+      add(
+        'feature_identifier',
+        '/intent/coreFeatures',
+        `feature id "${id}" ${clash}; pick another id`,
+      );
+  }
   if (ids.includes('health'))
     add(
       'feature_reserved',
@@ -105,4 +114,59 @@ export function validateSemantics(spec: IncubatorSpec): Issue[] {
   const dupDecision = keys.find((k, i) => keys.indexOf(k) !== i);
   if (dupDecision) add('decision_keys', '/decisions', `decision ${dupDecision} is recorded twice`);
   return issues;
+}
+
+const words = (id: string): string[] => id.split(/[^A-Za-z0-9]+/).filter(Boolean);
+const pascal = (id: string): string =>
+  words(id)
+    .map((w) => w[0]!.toUpperCase() + w.slice(1).toLowerCase())
+    .join('');
+const camel = (id: string): string => {
+  const p = pascal(id);
+  return p ? p[0]!.toLowerCase() + p.slice(1) : p;
+};
+const snake = (id: string): string =>
+  words(id)
+    .map((w) => w.toLowerCase())
+    .join('_');
+
+const JS_RESERVED = new Set(
+  (
+    'await break case catch class const continue debugger default delete do else enum export extends ' +
+    'false finally for function if implements import in instanceof interface let new null package ' +
+    'private protected public return static super switch this throw true try typeof var void while ' +
+    'with yield arguments eval'
+  ).split(' '),
+);
+const PY_RESERVED = new Set(
+  (
+    'false none true and as assert async await break class continue def del elif else except finally ' +
+    'for from global if import in is lambda nonlocal not or pass raise return try while with yield ' +
+    'match case type app db env main features'
+  ).split(' '),
+);
+const PHP_RESERVED = new Set(
+  (
+    'abstract and array as break callable case catch class clone const continue declare default do ' +
+    'echo else elseif empty enddeclare endfor endforeach endif endswitch endwhile enum eval exit extends ' +
+    'final finally fn for foreach function global goto if implements include include_once instanceof ' +
+    'insteadof interface isset list match namespace new or print private protected public readonly ' +
+    'require require_once return static switch throw trait try unset use var while xor yield int float ' +
+    'bool string true false null void iterable object mixed never self parent plugin theme'
+  ).split(' '),
+);
+
+/**
+ * Feature ids become identifiers in generated code (camelCase functions in TypeScript, snake_case
+ * modules in Python, PascalCase classes in PHP). An id that turns into a reserved word, or into a
+ * name the pack itself uses, would render code that does not compile.
+ */
+export function identifierClash(pack: IncubatorSpec['stack']['pack'], id: string): string | null {
+  if (pack === 'python-service' && PY_RESERVED.has(snake(id)))
+    return `becomes the Python name "${snake(id)}", which is reserved`;
+  if (pack === 'wordpress' && PHP_RESERVED.has(pascal(id).toLowerCase()))
+    return `becomes the PHP class "${pascal(id)}", which is reserved`;
+  if ((pack === 'node-web' || pack === 'node-lib') && JS_RESERVED.has(camel(id)))
+    return `becomes the TypeScript name "${camel(id)}", which is reserved`;
+  return null;
 }

@@ -25,7 +25,7 @@ jobs:
       # why: p/default instead of "auto" because auto forces metrics on; fixtures are excluded because they fire by design.
       - run: |
           mkdir -p scan-results
-          .tools/venv/bin/semgrep scan --config p/default --config security/rules --exclude security/fixtures \
+          .tools/venv/bin/semgrep scan --config p/default --config security/rules --exclude '**/security/fixtures' \
             --metrics off --disable-version-check --json --output scan-results/semgrep.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

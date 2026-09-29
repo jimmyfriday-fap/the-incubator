@@ -1,0 +1,31 @@
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_DATABASE: <%= it.names.snake %>
+          MARIADB_USER: wordpress
+          MARIADB_PASSWORD: wordpress
+          MARIADB_RANDOM_ROOT_PASSWORD: '1'
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized" --health-interval 5s --health-retries 20
+    env:
+      APP_ENV: ci
+      WORDPRESS_DB_HOST: 127.0.0.1:3306
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: <%= it.names.snake %>
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+      - uses: <%= it.h.action('shivammathur/setup-php') %>
+        with:
+          php-version: '<%= it.v.php %>'
+          tools: composer:v2
+          extensions: pdo_mysql
+          coverage: none
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - run: php vendor/bin/phpunit --testsuite integration

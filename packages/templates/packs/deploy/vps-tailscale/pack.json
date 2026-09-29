@@ -44,5 +44,33 @@
       "dest": "scripts/deploy/vps-release.mjs",
       "mode": "0755"
     }
-  ]
+  ],
+  "settings": {
+    "variables": [
+      {
+        "name": "DEPLOY_ROOT",
+        "description": "Directory on the VPS that holds the staging/ and prod/ release trees."
+      },
+      {
+        "name": "STAGING_URL",
+        "description": "Base URL of the staging lane (smoke checks hit /health)."
+      },
+      {
+        "name": "PROD_URL",
+        "description": "Base URL of production."
+      }
+    ],
+    "secrets": [
+      {
+        "name": "TS_OAUTH_CLIENT_ID",
+        "description": "Tailscale OAuth client id, to reach the tailnet-only staging host from GitHub runners.",
+        "when": "deploy.staging.tailnetOnly"
+      },
+      {
+        "name": "TS_OAUTH_SECRET",
+        "description": "Tailscale OAuth client secret (pairs with TS_OAUTH_CLIENT_ID).",
+        "when": "deploy.staging.tailnetOnly"
+      }
+    ]
+  }
 }

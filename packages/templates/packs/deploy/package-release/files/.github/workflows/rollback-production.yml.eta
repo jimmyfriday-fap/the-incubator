@@ -1,0 +1,40 @@
+name: rollback-production
+
+# Published versions are immutable: rollback moves the `latest` dist-tag back to an earlier version.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Earlier published version that `latest` should point to again (for example 1.4.2)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      TARGET_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+        with:
+          ref: <%= it.spec.lanes.branches.prod %>
+      - run: node scripts/deploy/preflight.mjs --require NODE_AUTH_TOKEN,TARGET_VERSION
+      - uses: <%= it.h.action('actions/setup-node') %>
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+      # why: refuse anything that is not an already published version of this package.
+      - run: |
+          name="$(node -p "require('./package.json').name")"
+          npm view "${name}@${TARGET_VERSION}" version
+          npm dist-tag add "${name}@${TARGET_VERSION}" latest

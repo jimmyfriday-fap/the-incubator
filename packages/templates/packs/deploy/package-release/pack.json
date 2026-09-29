@@ -1,0 +1,48 @@
+{
+  "$schema": "../../../schema/pack.schema.json",
+  "id": "deploy/package-release",
+  "version": "1.0.0",
+  "description": "Package lanes: staging packs and smoke-tests the tarball, prod publishes that tarball to npm with a GitHub release, rollback moves the latest dist-tag.",
+  "appliesWhen": "deploy.target == 'package-release'",
+  "requires": ["base"],
+  "files": [
+    {
+      "src": "files/.deploy-tasks.json.eta",
+      "dest": ".deploy-tasks.json"
+    },
+    {
+      "src": "files/.github/workflows/deploy-production.yml.eta",
+      "dest": ".github/workflows/deploy-production.yml"
+    },
+    {
+      "src": "files/.github/workflows/deploy-staging.yml.eta",
+      "dest": ".github/workflows/deploy-staging.yml"
+    },
+    {
+      "src": "files/.github/workflows/rollback-production.yml.eta",
+      "dest": ".github/workflows/rollback-production.yml"
+    },
+    {
+      "src": "files/DEPLOY.md.eta",
+      "dest": "DEPLOY.md"
+    },
+    {
+      "src": "files/scripts/release/package-smoke.mjs",
+      "dest": "scripts/release/package-smoke.mjs",
+      "mode": "0755"
+    },
+    {
+      "src": "files/scripts/release/version-gate.mjs",
+      "dest": "scripts/release/version-gate.mjs",
+      "mode": "0755"
+    }
+  ],
+  "settings": {
+    "secrets": [
+      {
+        "name": "NPM_TOKEN",
+        "description": "npm automation token allowed to publish the package (production environment)."
+      }
+    ]
+  }
+}

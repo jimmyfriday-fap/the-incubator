@@ -1,0 +1,29 @@
+<?php
+
+/**
+ * Theme bootstrap: Composer autoload, then the theme supports and REST routes in src/.
+ */
+
+declare(strict_types=1);
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+if (is_readable(__DIR__ . '/vendor/autoload.php')) {
+    require_once __DIR__ . '/vendor/autoload.php';
+} else {
+    // No vendor/ (a bare checkout): the theme has no runtime dependencies, so map src/ directly.
+    spl_autoload_register(static function (string $class): void {
+        $prefix = <%~ it.h.phpStr(it.names.pascal + '\\') %>;
+        if (str_starts_with($class, $prefix)) {
+            $file = __DIR__ . '/src/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+            if (is_readable($file)) {
+                /** @psalm-suppress UnresolvableInclude a PSR-4 path computed from the class name */
+                require_once $file;
+            }
+        }
+    });
+}
+
+\<%= it.names.pascal %>\Theme::boot();

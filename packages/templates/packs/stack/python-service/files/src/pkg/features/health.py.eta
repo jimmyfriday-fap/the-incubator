@@ -1,0 +1,67 @@
+"""Health and readiness: `ok` when every dependency answers, `degraded` when one is down."""
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Literal, NotRequired, TypedDict
+
+SERVICE_NAME = <%~ it.h.pyStr(it.names.slug) %>
+VERSION = "0.1.0"
+PROBES = frozenset({"all", "database"})
+
+
+class HealthCheck(TypedDict):
+    name: str
+    ok: bool
+
+
+class HealthError(TypedDict):
+    code: Literal["invalid_probe", "unknown_check"]
+    message: str
+
+
+class HealthResult(TypedDict):
+    status: Literal["ok", "degraded", "error"]
+    name: str
+    version: str
+    checks: list[HealthCheck]
+    error: NotRequired[HealthError]
+
+
+@dataclass(frozen=True)
+class HealthDeps:
+    """Dependency probes. `check_database` returns True when the database answers; raising counts
+    as down."""
+
+    check_database: Callable[[], bool] | None = None
+
+
+def _error(code: Literal["invalid_probe", "unknown_check"], message: str) -> HealthResult:
+    return {
+        "status": "error",
+        "name": SERVICE_NAME,
+        "version": VERSION,
+        "checks": [],
+        "error": {"code": code, "message": message},
+    }
+
+
+def health(probe: str | None = None, deps: HealthDeps | None = None) -> HealthResult:
+    """Readiness report for `GET /health`, optionally narrowed to one probe."""
+    if probe is not None:
+        if probe.strip() == "":
+            return _error("invalid_probe", "probe must not be empty")
+        if probe not in PROBES:
+            return _error("unknown_check", f'unknown probe "{probe}"')
+    database = True
+    check = deps.check_database if deps is not None else None
+    if check is not None:
+        try:
+            database = bool(check())
+        except Exception:
+            database = False
+    return {
+        "status": "ok" if database else "degraded",
+        "name": SERVICE_NAME,
+        "version": VERSION,
+        "checks": [{"name": "database", "ok": database}],
+    }

@@ -1,0 +1,442 @@
+{
+  "$schema": "../../../schema/pack.schema.json",
+  "id": "stack/python-service",
+  "version": "1.0.0",
+  "description": "FastAPI service on Python 3.12 with uv, Postgres (psycopg 3), pytest, ruff, mypy (strict), compose and Docker.",
+  "appliesWhen": "stack.pack == 'python-service'",
+  "requires": ["base"],
+  "files": [
+    {
+      "src": "files/.dockerignore",
+      "dest": ".dockerignore"
+    },
+    {
+      "src": "files/.python-version.eta",
+      "dest": ".python-version"
+    },
+    {
+      "src": "files/Dockerfile.eta",
+      "dest": "Dockerfile"
+    },
+    {
+      "src": "files/compose.yaml.eta",
+      "dest": "compose.yaml"
+    },
+    {
+      "src": "files/pyproject.toml.eta",
+      "dest": "pyproject.toml"
+    },
+    {
+      "src": "files/config/scaffold.json.eta",
+      "dest": "config/scaffold.json"
+    },
+    {
+      "src": "files/db/schema/base.sql",
+      "dest": "db/schema/base.sql"
+    },
+    {
+      "src": "files/db/migrations/0001_init.sql",
+      "dest": "db/migrations/0001_init.sql"
+    },
+    {
+      "src": "files/db/seed/001_seed.sql",
+      "dest": "db/seed/001_seed.sql"
+    },
+    {
+      "src": "files/scripts/scaffold/templates/adapter.py.tmpl.eta",
+      "dest": "scripts/scaffold/templates/adapter.py.tmpl"
+    },
+    {
+      "src": "files/scripts/scaffold/templates/feature.py.tmpl",
+      "dest": "scripts/scaffold/templates/feature.py.tmpl"
+    },
+    {
+      "src": "files/scripts/scaffold/templates/import.py.tmpl",
+      "dest": "scripts/scaffold/templates/import.py.tmpl"
+    },
+    {
+      "src": "files/scripts/scaffold/templates/route.py.tmpl",
+      "dest": "scripts/scaffold/templates/route.py.tmpl"
+    },
+    {
+      "src": "files/security/fixtures/incubator.py-no-dynamic-eval/bad.py",
+      "dest": "security/fixtures/incubator.py-no-dynamic-eval/bad.py"
+    },
+    {
+      "src": "files/security/fixtures/incubator.py-no-dynamic-eval/good.py",
+      "dest": "security/fixtures/incubator.py-no-dynamic-eval/good.py"
+    },
+    {
+      "src": "files/security/rules/incubator.py-no-dynamic-eval.yml",
+      "dest": "security/rules/incubator.py-no-dynamic-eval.yml"
+    },
+    {
+      "src": "files/security/fixtures/incubator.py-no-os-system/bad.py",
+      "dest": "security/fixtures/incubator.py-no-os-system/bad.py"
+    },
+    {
+      "src": "files/security/fixtures/incubator.py-no-os-system/good.py",
+      "dest": "security/fixtures/incubator.py-no-os-system/good.py"
+    },
+    {
+      "src": "files/security/rules/incubator.py-no-os-system.yml",
+      "dest": "security/rules/incubator.py-no-os-system.yml"
+    },
+    {
+      "src": "files/security/fixtures/incubator.py-no-shell-true/bad.py",
+      "dest": "security/fixtures/incubator.py-no-shell-true/bad.py"
+    },
+    {
+      "src": "files/security/fixtures/incubator.py-no-shell-true/good.py",
+      "dest": "security/fixtures/incubator.py-no-shell-true/good.py"
+    },
+    {
+      "src": "files/security/rules/incubator.py-no-shell-true.yml",
+      "dest": "security/rules/incubator.py-no-shell-true.yml"
+    },
+    {
+      "src": "files/src/pkg/__init__.py.eta",
+      "dest": "src/<%= it.names.snake %>/__init__.py"
+    },
+    {
+      "src": "files/src/pkg/__main__.py",
+      "dest": "src/<%= it.names.snake %>/__main__.py"
+    },
+    {
+      "src": "files/src/pkg/app.py.eta",
+      "dest": "src/<%= it.names.snake %>/app.py"
+    },
+    {
+      "src": "files/src/pkg/db.py.eta",
+      "dest": "src/<%= it.names.snake %>/db.py"
+    },
+    {
+      "src": "files/src/pkg/env.py",
+      "dest": "src/<%= it.names.snake %>/env.py"
+    },
+    {
+      "src": "files/src/pkg/main.py",
+      "dest": "src/<%= it.names.snake %>/main.py"
+    },
+    {
+      "src": "files/src/pkg/py.typed",
+      "dest": "src/<%= it.names.snake %>/py.typed"
+    },
+    {
+      "src": "files/src/pkg/features/__init__.py",
+      "dest": "src/<%= it.names.snake %>/features/__init__.py"
+    },
+    {
+      "src": "files/src/pkg/features/health.py.eta",
+      "dest": "src/<%= it.names.snake %>/features/health.py"
+    },
+    {
+      "src": "files/src/pkg/features/feature.py.eta",
+      "dest": "src/<%= it.names.snake %>/features/<%= it.h.snake(it.feature.id) %>.py",
+      "each": "spec.intent.coreFeatures",
+      "as": "feature"
+    },
+    {
+      "src": "files/tests/__init__.py",
+      "dest": "tests/__init__.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/conftest.py",
+      "dest": "tests/conftest.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/scenario_contract.py",
+      "dest": "tests/scenario_contract.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/test_scenarios.py",
+      "dest": "tests/test_scenarios.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/adapters/__init__.py",
+      "dest": "tests/adapters/__init__.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/adapters/health.py.eta",
+      "dest": "tests/adapters/health.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/unit/__init__.py",
+      "dest": "tests/unit/__init__.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/unit/test_db.py.eta",
+      "dest": "tests/unit/test_db.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/unit/test_env.py.eta",
+      "dest": "tests/unit/test_env.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/unit/test_features.py.eta",
+      "dest": "tests/unit/test_features.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/unit/test_health.py.eta",
+      "dest": "tests/unit/test_health.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/unit/test_isolation.py",
+      "dest": "tests/unit/test_isolation.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/unit/test_scenario_contract.py",
+      "dest": "tests/unit/test_scenario_contract.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/integration/__init__.py",
+      "dest": "tests/integration/__init__.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/integration/test_db.py.eta",
+      "dest": "tests/integration/test_db.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/live/__init__.py",
+      "dest": "tests/live/__init__.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/live/test_health.py",
+      "dest": "tests/live/test_health.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/e2e/__init__.py",
+      "dest": "tests/e2e/__init__.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/e2e/test_http.py.eta",
+      "dest": "tests/e2e/test_http.py",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/adapters/feature.py.eta",
+      "dest": "tests/adapters/<%= it.h.snake(it.feature.id) %>.py",
+      "each": "spec.intent.coreFeatures",
+      "as": "feature",
+      "role": "tests"
+    },
+    {
+      "src": "files/paired/pyproject.toml.eta",
+      "dest": "@paired/pyproject.toml",
+      "when": "testing.home == 'paired-repo'"
+    },
+    {
+      "src": "files/.python-version.eta",
+      "dest": "@paired/.python-version",
+      "when": "testing.home == 'paired-repo'"
+    }
+  ],
+  "markerPatches": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "region": "ci-jobs",
+      "entries": [
+        {
+          "id": "check",
+          "src": "patches/ci-check.yml.eta"
+        },
+        {
+          "id": "integration",
+          "src": "patches/ci-integration.yml.eta",
+          "when": "testing.home == 'in-repo'"
+        },
+        {
+          "id": "e2e",
+          "src": "patches/ci-e2e.yml.eta",
+          "when": "testing.home == 'in-repo'"
+        }
+      ]
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "region": "gate-needs",
+      "entries": [
+        {
+          "id": "check",
+          "text": "      - check"
+        },
+        {
+          "id": "integration",
+          "text": "      - integration",
+          "when": "testing.home == 'in-repo'"
+        },
+        {
+          "id": "e2e",
+          "text": "      - e2e",
+          "when": "testing.home == 'in-repo'"
+        }
+      ]
+    },
+    {
+      "file": "lefthook.yml",
+      "region": "lefthook-pre-commit",
+      "entries": [
+        {
+          "id": "python",
+          "src": "patches/lefthook.yml"
+        }
+      ]
+    },
+    {
+      "file": ".env.example",
+      "region": "env",
+      "entries": [
+        {
+          "id": "python-service",
+          "src": "patches/env.eta"
+        }
+      ]
+    },
+    {
+      "file": "README.md",
+      "region": "readme-commands",
+      "entries": [
+        {
+          "id": "python-service",
+          "src": "patches/readme.md.eta"
+        }
+      ]
+    },
+    {
+      "file": ".gitignore",
+      "region": "gitignore-stack",
+      "entries": [
+        {
+          "id": "python",
+          "src": "patches/gitignore"
+        }
+      ]
+    },
+    {
+      "file": "@paired/.github/workflows/ci.yml",
+      "region": "ci-jobs",
+      "when": "testing.home == 'paired-repo'",
+      "entries": [
+        {
+          "id": "test",
+          "src": "patches/paired-ci-test.yml.eta"
+        }
+      ]
+    },
+    {
+      "file": "@paired/.github/workflows/ci.yml",
+      "region": "gate-needs",
+      "when": "testing.home == 'paired-repo'",
+      "entries": [
+        {
+          "id": "test",
+          "text": "      - test"
+        }
+      ]
+    },
+    {
+      "file": "@paired/README.md",
+      "region": "readme-commands",
+      "when": "testing.home == 'paired-repo'",
+      "entries": [
+        {
+          "id": "python-service",
+          "src": "patches/paired-readme.md.eta"
+        }
+      ]
+    }
+  ],
+  "jsonPatches": [
+    {
+      "file": "config/checks.json",
+      "ops": [
+        {
+          "op": "merge",
+          "pointer": "/steps",
+          "valueSrc": "patches/checks-steps.json.eta"
+        },
+        {
+          "op": "append-unique",
+          "pointer": "/profiles/quick",
+          "value": ["format", "lint", "typecheck", "unit", "tests-collected", "completeness"]
+        },
+        {
+          "op": "append-unique",
+          "pointer": "/profiles/full",
+          "value": [
+            "format",
+            "lint",
+            "typecheck",
+            "unit-coverage",
+            "tests-collected",
+            "completeness",
+            "audit"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "config/run-profiles.json",
+      "ops": [
+        {
+          "op": "set",
+          "pointer": "/runner",
+          "value": {
+            "cmd": ["uv", "run", "pytest"],
+            "args": ["-q"],
+            "suiteFlag": "-m"
+          }
+        }
+      ]
+    },
+    {
+      "file": "@paired/config/checks.json",
+      "when": "testing.home == 'paired-repo'",
+      "ops": [
+        {
+          "op": "merge",
+          "pointer": "/steps",
+          "valueSrc": "patches/paired-checks-steps.json.eta"
+        },
+        {
+          "op": "append-unique",
+          "pointer": "/profiles/quick",
+          "value": ["format", "lint", "typecheck", "unit", "tests-collected"]
+        },
+        {
+          "op": "append-unique",
+          "pointer": "/profiles/full",
+          "value": ["format", "lint", "typecheck", "unit-coverage", "tests-collected"]
+        }
+      ]
+    },
+    {
+      "file": "config/drift.json",
+      "ops": [
+        {
+          "op": "append-unique",
+          "pointer": "/registries/0/expect",
+          "valueSrc": "patches/drift-expect.json.eta"
+        }
+      ]
+    }
+  ]
+}

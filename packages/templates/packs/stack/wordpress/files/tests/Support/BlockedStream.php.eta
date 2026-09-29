@@ -1,0 +1,34 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Support;
+
+// phpcs:disable PSR1.Methods.CamelCapsMethodName.NotCamelCaps -- PHP's stream wrapper protocol fixes these names.
+
+/**
+ * Stream wrapper registered by NetworkGuard for network schemes: opening any URL throws.
+ */
+final class BlockedStream
+{
+    /** @var resource|null set by PHP for every stream wrapper instance */
+    public $context;
+
+    public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool
+    {
+        $host = parse_url($path, PHP_URL_HOST);
+
+        throw new \RuntimeException(sprintf(
+            'unit tests must not touch the network (attempted %s)',
+            is_string($host) ? $host : $path,
+        ));
+    }
+
+    /**
+     * @return array<array-key, mixed>|false
+     */
+    public function url_stat(string $path, int $flags): array|false
+    {
+        return false;
+    }
+}

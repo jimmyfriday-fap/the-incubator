@@ -1,0 +1,4 @@
+<% const tasks = [
+  { name: 'record-release', description: 'Print the released commit for the audit log.', env: ['staging', 'prod'], idempotent: true, runOnce: false, timeout: 30, command: ['node', '-e', 'process.stdout.write(`release recorded\\n`)'] },
+]; -%>
+<%~ it.h.json({ $schema: './schemas/deploy-tasks.schema.json', tasks }) %>

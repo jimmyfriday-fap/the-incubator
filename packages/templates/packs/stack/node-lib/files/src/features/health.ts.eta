@@ -1,0 +1,44 @@
+export interface HealthCheck {
+  name: string;
+  ok: boolean;
+}
+
+export interface HealthResult {
+  status: 'ok' | 'degraded' | 'error';
+  name: string;
+  version: string;
+  checks: HealthCheck[];
+  error?: { code: 'invalid_probe' | 'unknown_check'; message: string };
+}
+
+export interface HealthDeps {
+  /** Resolves true when the runtime the package needs is usable; rejections count as down. */
+  checkRuntime?: () => Promise<boolean>;
+}
+
+export const NAME = <%~ it.h.yamlStr(it.names.slug) %>;
+export const VERSION = '0.1.0';
+const PROBES = new Set(['all', 'runtime']);
+
+const nodeMajor = (): number => Number(process.versions.node.split('.')[0]);
+
+/** Self-check: `ok` when the runtime is supported, `degraded` when a dependency is down. */
+export async function health(input: { probe?: string } = {}, deps: HealthDeps = {}): Promise<HealthResult> {
+  const base = { name: NAME, version: VERSION };
+  if (input.probe !== undefined) {
+    if (input.probe.trim() === '') {
+      return { ...base, status: 'error', checks: [], error: { code: 'invalid_probe', message: 'probe must not be empty' } };
+    }
+    if (!PROBES.has(input.probe)) {
+      return { ...base, status: 'error', checks: [], error: { code: 'unknown_check', message: `unknown probe "${input.probe}"` } };
+    }
+  }
+  const check = deps.checkRuntime ?? (() => Promise.resolve(nodeMajor() >= 22));
+  let runtime: boolean;
+  try {
+    runtime = await check();
+  } catch {
+    runtime = false;
+  }
+  return { ...base, status: runtime ? 'ok' : 'degraded', checks: [{ name: 'runtime', ok: runtime }] };
+}

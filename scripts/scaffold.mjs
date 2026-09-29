@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { EXIT, isMain, parseArgs, readJson } from './guard/lib/common.mjs';
 import { applyMarkerPatch } from './guard/lib/markers.mjs';
+import { nodeBin, run, which } from './guard/lib/proc.mjs';
 
 const words = (s) => s.split(/[^A-Za-z0-9]+/).filter(Boolean);
 export function placeholders(id, summary, lane) {
@@ -139,11 +140,37 @@ async function main() {
     mkdirSync(path.dirname(path.join(out, c.path)), { recursive: true });
     writeFileSync(path.join(out, c.path), c.content);
   }
-  if (!flags['dry-run'])
-    process.stdout.write(
-      'next: fill every TODO(scaffold) marker, then run node scripts/check.mjs quick\n',
-    );
+  if (flags['dry-run']) return EXIT.OK;
+  const format = readJson(root, 'config/scaffold.json').format;
+  if (format) await formatChanged(root, out, format, changes);
+  process.stdout.write(
+    'next: fill every TODO(scaffold) marker, then run node scripts/check.mjs quick\n',
+  );
   return EXIT.OK;
+}
+
+/**
+ * Runs the repository's formatter (config/scaffold.json `format`: `nodeBin` or `cmd`, `args`,
+ * optional `extensions`) over the files the scaffold wrote, so they pass the `format` check as written.
+ */
+export async function formatChanged(root, out, format, changes) {
+  const files = changes
+    .map((c) => c.path)
+    .filter((f) => !format.extensions || format.extensions.includes(path.extname(f)));
+  if (!files.length) return;
+  const bin = format.nodeBin
+    ? nodeBin(root, format.nodeBin[0], format.nodeBin[1])
+    : which(format.cmd[0]);
+  const name = format.nodeBin ? format.nodeBin[1] : format.cmd[0];
+  if (!bin) {
+    process.stdout.write(
+      `! formatter ${name} is not installed; format the new files before committing\n`,
+    );
+    return;
+  }
+  const args = [...bin[1], ...(format.cmd?.slice(1) ?? []), ...(format.args ?? []), ...files];
+  const r = await run(bin[0], args, { cwd: out, capture: true });
+  if (r.code !== 0) process.stdout.write(`! ${name} exited ${r.code}: ${r.stderr.trim()}\n`);
 }
 
 if (isMain(import.meta.url)) {

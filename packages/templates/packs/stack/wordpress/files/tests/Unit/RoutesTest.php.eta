@@ -1,0 +1,121 @@
+<% const theme = it.spec.stack.framework === 'wordpress-theme'; const boot = theme ? 'Theme' : 'Plugin'; -%>
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Unit;
+
+use <%= it.names.pascal %>\<%= boot %>;
+use <%= it.names.pascal %>\Routes;
+use Brain\Monkey;
+use Brain\Monkey\Functions;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * The WordPress glue, with WordPress itself replaced by Brain Monkey.
+ */
+final class RoutesTest extends TestCase
+{
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Monkey\setUp();
+    }
+
+    protected function tearDown(): void
+    {
+        Monkey\tearDown();
+        unset($_SERVER['REQUEST_URI']);
+        parent::tearDown();
+    }
+
+    public function testBootHooksTheRestRoutesAndTheHealthAlias(): void
+    {
+        <%= boot %>::boot();
+
+        self::assertNotFalse(has_action('rest_api_init', [Routes::class, 'register']));
+        self::assertNotFalse(has_action('parse_request', [Routes::class, 'serveHealthAlias']));
+<% if (theme) { -%>
+        self::assertNotFalse(has_action('after_setup_theme', [Theme::class, 'setup']));
+<% } -%>
+    }
+<% if (theme) { -%>
+
+    public function testSetupDeclaresBlockThemeSupports(): void
+    {
+        $supports = [];
+        Functions\when('add_theme_support')->alias(static function (string $feature) use (&$supports): void {
+            $supports[] = $feature;
+        });
+
+        Theme::setup();
+
+        self::assertContains('wp-block-styles', $supports);
+    }
+<% } -%>
+
+    public function testRegistersEveryEndpointUnderTheNamespace(): void
+    {
+        $registered = [];
+        Functions\when('register_rest_route')->alias(
+            static function (string $namespace, string $route, array $args) use (&$registered): bool {
+                $registered[] = $namespace . $route;
+                self::assertSame('GET', $args['methods'] ?? null);
+                self::assertIsCallable($args['callback'] ?? null);
+
+                return true;
+            },
+        );
+
+        Routes::register();
+
+        self::assertSame(
+            array_map(static fn (string $route): string => Routes::REST_NAMESPACE . $route, array_keys(Routes::endpoints())),
+            $registered,
+        );
+        self::assertContains(<%~ it.h.phpStr(it.names.slug + '/v1/health') %>, $registered);
+    }
+
+    public function testTheHealthAliasAnswersOnlyOnItsPath(): void
+    {
+        self::assertTrue(Routes::isHealthPath('/health', '/'));
+        self::assertTrue(Routes::isHealthPath('/health/', '/'));
+        self::assertTrue(Routes::isHealthPath('/blog/health', '/blog/'));
+        self::assertFalse(Routes::isHealthPath('/healthz', '/'));
+        self::assertFalse(Routes::isHealthPath('/health', '/blog/'));
+    }
+
+    public function testTheHealthAliasSendsTheHealthBody(): void
+    {
+        $_SERVER['REQUEST_URI'] = '/health?probe=all';
+        Functions\when('wp_unslash')->returnArg();
+        Functions\when('sanitize_text_field')->returnArg();
+        Functions\when('wp_parse_url')->alias(static fn (string $url, int $component = -1): mixed => parse_url($url, $component));
+        Functions\when('home_url')->justReturn('https://example.test/');
+        $sent = [];
+        Functions\when('wp_send_json')->alias(static function (mixed $body, int $status) use (&$sent): void {
+            $sent = [$status, $body];
+        });
+
+        Routes::serveHealthAlias();
+
+        // No WordPress database in unit tests, so the probe reports the dependency as down.
+        self::assertSame(503, $sent[0] ?? null);
+        self::assertIsArray($sent[1] ?? null);
+        self::assertSame('degraded', $sent[1]['status'] ?? null);
+    }
+
+    public function testOtherPathsFallThroughToWordPress(): void
+    {
+        $_SERVER['REQUEST_URI'] = '/some-page/';
+        Functions\when('wp_unslash')->returnArg();
+        Functions\when('sanitize_text_field')->returnArg();
+        Functions\when('wp_parse_url')->alias(static fn (string $url, int $component = -1): mixed => parse_url($url, $component));
+        Functions\when('home_url')->justReturn('https://example.test/');
+        Functions\expect('wp_send_json')->never();
+
+        Routes::serveHealthAlias();
+
+        self::assertTrue(true);
+    }
+}

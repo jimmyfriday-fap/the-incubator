@@ -27,10 +27,19 @@ export interface LockFile {
   files: Record<string, { sha256: string; pack: string; mode: string }>;
 }
 
+export interface RequiredSetting {
+  name: string;
+  description: string;
+  target: 'app' | 'paired';
+  pack: string;
+}
+
 export interface RenderResult {
   files: Map<string, RenderedFile>;
   packs: Pack[];
   lock: LockFile;
+  /** Actions variables and secrets the rendered workflows need (publish creates/lists them). */
+  settings: { variables: RequiredSetting[]; secrets: RequiredSetting[] };
 }
 
 export const PAIRED_PREFIX = '@paired/';
@@ -327,10 +336,22 @@ export async function render(
     mode: '0644',
     pack: 'engine',
   });
+  const settings = (kind: 'variables' | 'secrets'): RequiredSetting[] =>
+    packs.flatMap((p) =>
+      (p.manifest.settings?.[kind] ?? [])
+        .filter((d) => !d.when || evaluateWhen(d.when, whenCtx))
+        .map((d) => ({
+          name: d.name,
+          description: d.description,
+          target: d.target ?? 'app',
+          pack: p.manifest.id,
+        })),
+    );
   return {
     files: new Map([...sorted.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))),
     packs,
     lock,
+    settings: { variables: settings('variables'), secrets: settings('secrets') },
   };
 }
 

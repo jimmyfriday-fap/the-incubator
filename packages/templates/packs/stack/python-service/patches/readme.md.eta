@@ -1,0 +1,9 @@
+<% const pkg = it.names.snake; const paired = it.spec.testing.home === 'paired-repo'; -%>
+1. Install [uv](https://docs.astral.sh/uv/) and Node 22 (for the guard toolkit), then run `uv sync`. The first sync writes `uv.lock`; commit it. Run `uv run lefthook install` for the git hooks.
+2. Copy `.env.example` to `.env`, start Postgres with `docker compose up -d db`, then run `uv run python -m <%= pkg %>.db` (schema, migrations, seed).
+3. Run `uv run python -m <%= pkg %>` for the API on port 8000 (`docker compose up --build` runs the app and Postgres together).
+<% if (paired) { -%>
+4. Tests live in the paired repository `<%= it.names.pairedName %>` (see [TESTING.md](TESTING.md)); `node scripts/tests-pointer.mjs` prints where.
+<% } else { -%>
+4. `uv run pytest` runs every suite that applies (integration needs `DATABASE_URL`, live needs `INCUBATOR_LIVE=1`).
+<% } -%>

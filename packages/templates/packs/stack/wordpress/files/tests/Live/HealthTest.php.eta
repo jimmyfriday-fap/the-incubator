@@ -1,0 +1,28 @@
+<?php
+
+declare(strict_types=1);
+
+namespace <%= it.names.pascal %>\Tests\Live;
+
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Live smoke against a deployed lane: INCUBATOR_LIVE=1 and BASE_URL (for example the staging host).
+ */
+final class HealthTest extends TestCase
+{
+    public function testTheRestHealthRouteAnswersOk(): void
+    {
+        $base = getenv('BASE_URL');
+        if (getenv('INCUBATOR_LIVE') !== '1' || !is_string($base) || $base === '') {
+            self::markTestSkipped('set INCUBATOR_LIVE=1 and BASE_URL');
+        }
+        $context = stream_context_create(['http' => ['ignore_errors' => true, 'timeout' => 10]]);
+        $body = file_get_contents(rtrim($base, '/') . <%~ it.h.phpStr('/?rest_route=/' + it.names.slug + '/v1/health') %>, false, $context);
+
+        self::assertIsString($body);
+        $json = json_decode($body, true);
+        self::assertIsArray($json);
+        self::assertSame('ok', $json['status'] ?? null);
+    }
+}

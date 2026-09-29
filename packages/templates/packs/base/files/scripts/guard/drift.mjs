@@ -40,7 +40,7 @@ export function checkDrift(root, files = listFiles(root)) {
     const ids = list.map((e) => (typeof e === 'string' ? e : e[reg.key ?? 'id']));
     for (const id of ids) {
       for (const pattern of reg.expect ?? []) {
-        const rel = pattern.replaceAll('{id}', id);
+        const rel = expandId(pattern, id);
         if (!existsSync(path.join(root, rel))) findings.push(`${reg.name}: "${id}" expects ${rel}`);
       }
     }
@@ -53,6 +53,19 @@ export function checkDrift(root, files = listFiles(root)) {
     }
   }
   return findings;
+}
+
+/** Registry path patterns: `{id}` as is, `{id_snake}`, `{id_pascal}` and `{id_camel}` for language layouts. */
+export function expandId(pattern, id) {
+  const words = String(id)
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean);
+  const pascal = words.map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join('');
+  return pattern
+    .replaceAll('{id_snake}', words.map((w) => w.toLowerCase()).join('_'))
+    .replaceAll('{id_pascal}', pascal)
+    .replaceAll('{id_camel}', pascal ? pascal[0].toLowerCase() + pascal.slice(1) : '')
+    .replaceAll('{id}', id);
 }
 
 if (isMain(import.meta.url)) {

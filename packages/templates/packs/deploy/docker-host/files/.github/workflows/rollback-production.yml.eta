@@ -1,0 +1,52 @@
+<% const healthPath = it.spec.stack.pack === 'wordpress' ? `/?rest_route=/${it.names.slug}/v1/health` : '/health'; -%>
+name: rollback-production
+
+# Redeploys the previous image digest recorded in releases.log on the production host.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: SHA of the latest promote merge on <%= it.spec.lanes.branches.prod %> (the release being rolled back)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    env:
+      TARGET: ${{ inputs.target }}
+      DEPLOY_SSH_TARGET: ${{ vars.PROD_SSH_TARGET }}
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+      PROD_URL: ${{ vars.PROD_URL }}
+      COMPOSE_PROJECT: <%= it.names.slug %>-prod
+      SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_KEY }}
+      SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+        with:
+          ref: <%= it.spec.lanes.branches.prod %>
+          fetch-depth: 0
+      - uses: <%= it.h.action('actions/setup-node') %>
+        with:
+          node-version-file: .nvmrc
+      - run: node scripts/deploy/preflight.mjs --require DEPLOY_SSH_TARGET,DEPLOY_DIR,PROD_URL,SSH_PRIVATE_KEY,SSH_KNOWN_HOSTS
+      - run: node scripts/deploy/verify-promote-target.mjs --sha "$TARGET" --branch <%= it.spec.lanes.branches.prod %>
+      # why: the key and the pinned known_hosts come from secrets and live only in the runner's temp dir.
+      - run: |
+          install -m 700 -d "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/ssh/key"
+          chmod 600 "$RUNNER_TEMP/ssh/key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          echo "SSH_KEY_FILE=$RUNNER_TEMP/ssh/key" >> "$GITHUB_ENV"
+          echo "SSH_KNOWN_HOSTS_FILE=$RUNNER_TEMP/ssh/known_hosts" >> "$GITHUB_ENV"
+      - run: node scripts/deploy/docker-remote.mjs rollback
+      - run: node scripts/deploy/smoke.mjs --url "$PROD_URL" --path "<%= healthPath %>" --attempts 10
