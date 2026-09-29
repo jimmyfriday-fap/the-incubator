@@ -1,4 +1,5 @@
 import { Eta } from 'eta/core';
+import * as prettier from 'prettier';
 import { ToolError, sha256Hex, stableJson } from '@incubator/runtime';
 import { serializeSpec, specHash, type IncubatorSpec } from '@incubator/spec';
 import { makeHelpers } from './helpers.js';
@@ -130,11 +131,11 @@ function textOf(f: RenderedFile): string {
  * Pure render (ADR-004): spec + pack set → files. No clock, no env, no network. The same inputs give
  * byte-identical output.
  */
-export function render(
+export async function render(
   spec: IncubatorSpec,
   reg: PackRegistry = loadRegistry(),
   opts: { incubatorVersion?: string } = {},
-): RenderResult {
+): Promise<RenderResult> {
   const packs = selectPacks(reg, spec);
   const base = baseContext(spec, reg);
   const whenCtx = { ...(spec as unknown as Record<string, unknown>), spec, names: base.names };
@@ -154,8 +155,8 @@ export function render(
     for (const entry of pack.manifest.files) {
       if (entry.when && !entry.each && !evaluateWhen(entry.when, whenCtx)) continue;
       const items: unknown[] = entry.each
-        ? ((lookup({ ...whenCtx, features: base.features }, entry.each) as unknown[] | undefined) ??
-          [])
+        ? ((lookup({ ...whenCtx, features: base.features, vars: entry.vars ?? {} }, entry.each) as
+            unknown[] | undefined) ?? [])
         : [undefined];
       for (const item of items) {
         const data: Record<string, unknown> = {
@@ -200,7 +201,17 @@ export function render(
     }
   }
 
-  // Relocations (paired tests repository) happen before patches so patches can target either root.
+  // Copies and relocations (paired tests repository) happen before patches so patches can target
+  // either root. Copies keep the original; relocations move it.
+  for (const pack of packs) {
+    for (const c of pack.manifest.copy ?? []) {
+      if (c.when && !evaluateWhen(c.when, whenCtx)) continue;
+      for (const f of [...files.values()]) {
+        if (f.role !== c.role || f.path.startsWith('@')) continue;
+        put({ ...f, bytes: Buffer.from(f.bytes), path: `${c.to}${f.path}` });
+      }
+    }
+  }
   for (const pack of packs) {
     for (const r of pack.manifest.relocate ?? []) {
       if (r.when && !evaluateWhen(r.when, whenCtx)) continue;
@@ -216,7 +227,7 @@ export function render(
     const packCtx = { ...base, pack: { id: pack.manifest.id, version: pack.manifest.version } };
     for (const mp of pack.manifest.markerPatches ?? []) {
       if (mp.when && !evaluateWhen(mp.when, whenCtx)) continue;
-      const target = files.get(mp.file);
+      const target = files.get(mp.file) ?? files.get(`${PAIRED_PREFIX}${mp.file}`);
       if (!target)
         throw new ToolError(`${pack.manifest.id}: marker patch targets missing file ${mp.file}`, {
           code: 'patch_target',
@@ -240,7 +251,7 @@ export function render(
     }
     for (const jp of pack.manifest.jsonPatches ?? []) {
       if (jp.when && !evaluateWhen(jp.when, whenCtx)) continue;
-      const target = files.get(jp.file);
+      const target = files.get(jp.file) ?? files.get(`${PAIRED_PREFIX}${jp.file}`);
       if (!target)
         throw new ToolError(`${pack.manifest.id}: JSON patch targets missing file ${jp.file}`, {
           code: 'patch_target',
@@ -269,6 +280,7 @@ export function render(
     if (!looksBinary(f.bytes))
       f.bytes = Buffer.from(normalizeText(textOf(f), { markdown: isMarkdown(f.path) }), 'utf8');
   }
+  await formatWithPrettier(files);
 
   put({
     path: 'incubator.json',
@@ -320,6 +332,49 @@ export function render(
     packs,
     lock,
   };
+}
+
+const PRETTIER_EXT = /\.(json|md|ya?ml|ts|tsx|js|mjs|cjs|css|html)$/i;
+const DEFAULT_PRETTIER = {
+  printWidth: 100,
+  singleQuote: true,
+  trailingComma: 'all',
+  endOfLine: 'lf',
+  proseWrap: 'preserve',
+} as const;
+
+/**
+ * Formats rendered text with the exact-pinned Prettier (ADR-004, revised): generated repositories run
+ * `prettier --check`, so output must be Prettier-clean by construction. Options and ignores come from
+ * each root's rendered .prettierrc.json / .prettierignore.
+ */
+async function formatWithPrettier(files: Map<string, RenderedFile>): Promise<void> {
+  for (const prefix of ['', PAIRED_PREFIX]) {
+    const rc = files.get(`${prefix}.prettierrc.json`);
+    const options = rc ? (JSON.parse(textOf(rc)) as prettier.Options) : DEFAULT_PRETTIER;
+    const ignore = files.get(`${prefix}.prettierignore`);
+    const ignored = (ignore ? textOf(ignore).split('\n') : [])
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'))
+      .map((l) => globToRegExp(l.endsWith('/') ? `${l}**` : l.includes('/') ? l : `**/${l}`));
+    for (const f of files.values()) {
+      if (prefix ? !f.path.startsWith(prefix) : f.path.startsWith('@')) continue;
+      const rel = f.path.slice(prefix.length);
+      if (!PRETTIER_EXT.test(rel) || looksBinary(f.bytes) || ignored.some((re) => re.test(rel)))
+        continue;
+      try {
+        f.bytes = Buffer.from(
+          await prettier.format(textOf(f), { ...options, filepath: rel }),
+          'utf8',
+        );
+      } catch (e) {
+        throw new ToolError(
+          `${f.path} (from ${f.pack}) is not valid ${rel.split('.').pop()}: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`,
+          { code: 'render_format' },
+        );
+      }
+    }
+  }
 }
 
 /** contracts.lock.json for one root, mirroring scripts/guard/contracts-pin.mjs. */

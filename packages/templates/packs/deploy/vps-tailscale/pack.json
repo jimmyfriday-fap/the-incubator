@@ -1,0 +1,48 @@
+{
+  "$schema": "../../../schema/pack.schema.json",
+  "id": "deploy/vps-tailscale",
+  "version": "1.0.0",
+  "description": "VPS lanes: timestamped releases, atomic symlink swap, keep 5, PM2 or compose, self-hosted runner, tailnet-only staging.",
+  "appliesWhen": "deploy.target == 'vps-tailscale'",
+  "requires": ["base"],
+  "files": [
+    {
+      "src": "files/.github/actionlint.yaml.eta",
+      "dest": ".github/actionlint.yaml"
+    },
+    {
+      "src": "files/.deploy-tasks.json.eta",
+      "dest": ".deploy-tasks.json"
+    },
+    {
+      "src": "files/.github/workflows/deploy-production.yml.eta",
+      "dest": ".github/workflows/deploy-production.yml"
+    },
+    {
+      "src": "files/.github/workflows/deploy-staging.yml.eta",
+      "dest": ".github/workflows/deploy-staging.yml"
+    },
+    {
+      "src": "files/.github/workflows/rollback-production.yml.eta",
+      "dest": ".github/workflows/rollback-production.yml"
+    },
+    {
+      "src": "files/.github/workflows/validate-staging.yml.eta",
+      "dest": ".github/workflows/validate-staging.yml"
+    },
+    {
+      "src": "files/DEPLOY.md.eta",
+      "dest": "DEPLOY.md"
+    },
+    {
+      "src": "files/deploy/ecosystem.config.cjs.eta",
+      "dest": "deploy/ecosystem.config.cjs",
+      "when": "stack.pack == 'node-web'"
+    },
+    {
+      "src": "files/scripts/deploy/vps-release.mjs",
+      "dest": "scripts/deploy/vps-release.mjs",
+      "mode": "0755"
+    }
+  ]
+}

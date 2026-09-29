@@ -35,6 +35,7 @@ export interface PackManifest {
   markerPatches?: MarkerPatchDecl[];
   jsonPatches?: JsonPatchDecl[];
   relocate?: { role: string; to: string; when?: string }[];
+  copy?: { role: string; to: string; when?: string }[];
   canonical?: string;
 }
 

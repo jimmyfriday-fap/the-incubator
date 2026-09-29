@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # <scaffold:ci-jobs>
+  # </scaffold:ci-jobs>
+
+  gate:
+    needs:
+      # <scaffold:gate-needs>
+      # </scaffold:gate-needs>
+    # why: the gate always runs so a failed or cancelled suite fails the workflow explicitly.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+      - uses: <%= it.h.action('actions/setup-node') %>
+        with:
+          node-version-file: .nvmrc
+      - run: node scripts/guard/ci-gate.mjs
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}

@@ -1,0 +1,44 @@
+export interface HealthCheck {
+  name: string;
+  ok: boolean;
+}
+
+export interface HealthResult {
+  status: 'ok' | 'degraded' | 'error';
+  name: string;
+  version: string;
+  checks: HealthCheck[];
+  error?: { code: 'invalid_probe' | 'unknown_check'; message: string };
+}
+
+export interface HealthDeps {
+  /** Resolves true when the database answers; rejections count as down. */
+  checkDatabase?: () => Promise<boolean>;
+}
+
+export const SERVICE_NAME = <%~ it.h.yamlStr(it.names.slug) %>;
+export const VERSION = '0.1.0';
+const PROBES = new Set(['all', 'database']);
+
+/** Readiness: `ok` when every dependency answers, `degraded` when one is down. */
+export async function health(input: { probe?: string } = {}, deps: HealthDeps = {}): Promise<HealthResult> {
+  const base = { name: SERVICE_NAME, version: VERSION };
+  if (input.probe !== undefined) {
+    if (input.probe.trim() === '') {
+      return { ...base, status: 'error', checks: [], error: { code: 'invalid_probe', message: 'probe must not be empty' } };
+    }
+    if (!PROBES.has(input.probe)) {
+      return { ...base, status: 'error', checks: [], error: { code: 'unknown_check', message: `unknown probe "${input.probe}"` } };
+    }
+  }
+  let database = true;
+  if (deps.checkDatabase) {
+    try {
+      database = await deps.checkDatabase();
+    } catch {
+      database = false;
+    }
+  }
+  const checks = [{ name: 'database', ok: database }];
+  return { ...base, status: database ? 'ok' : 'degraded', checks };
+}

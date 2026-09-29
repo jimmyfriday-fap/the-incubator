@@ -1,0 +1,6 @@
+<% const f = it.feature; const s = f.builtin
+  ? { id: 'fault-dependency-down', feature: f.id, title: 'A failing dependency degrades health instead of crashing', tags: ['fault'], seed: {}, context: {}, mocks: { ai: [] },
+      stages: [{ name: 'check', input: { fault: 'dependency-down' }, assertions: [{ path: 'status', op: 'eq', value: 'degraded' }, { path: 'checks[0].ok', op: 'eq', value: false }] }] }
+  : { id: 'fault-dependency-down', feature: f.id, title: `TODO(scaffold): ${f.id} degrades when a dependency fails`, status: 'todo', tags: ['fault'], seed: {}, context: {}, mocks: { ai: [] },
+      stages: [{ name: 'todo', input: {}, assertions: [{ path: 'status', op: 'exists' }] }] }; -%>
+<%~ it.h.json({ $schema: '../../../schemas/scenario.schema.json', ...s }) %>

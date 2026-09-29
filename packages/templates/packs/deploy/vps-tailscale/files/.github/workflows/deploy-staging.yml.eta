@@ -1,0 +1,47 @@
+<% const node = it.spec.stack.pack === 'node-web'; -%>
+name: deploy-staging
+
+on:
+  push:
+    branches: [<%= it.spec.lanes.branches.staging %>]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, incubator-<%= it.names.slug %>]
+    environment: staging
+    timeout-minutes: 30
+    env:
+      APP_ENV: staging
+      DEPLOY_ROOT: ${{ vars.DEPLOY_ROOT }}
+      STAGING_URL: ${{ vars.STAGING_URL }}
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+      - run: node scripts/deploy/preflight.mjs --require DEPLOY_ROOT,STAGING_URL
+<% if (node) { -%>
+      - uses: <%= it.h.action('pnpm/action-setup') %>
+      # why: production dependencies only; the release directory is what PM2 runs.
+      - run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm prune --prod
+<% } -%>
+      - run: node scripts/deploy/vps-release.mjs --root "$DEPLOY_ROOT/staging" --sha "$GITHUB_SHA" --from . --keep 5
+<% if (node) { -%>
+      - run: pm2 startOrReload "$DEPLOY_ROOT/staging/current/deploy/ecosystem.config.cjs" --env staging
+<% } else { -%>
+      - run: docker compose -f "$DEPLOY_ROOT/staging/current/compose.yaml" -p <%= it.names.slug %>-staging up -d --build --wait
+<% } -%>
+      - run: node scripts/run-deploy-tasks.mjs --env staging --sha "$GITHUB_SHA" --yes --log "$DEPLOY_ROOT/deploy-tasks.log.jsonl"
+
+  validate:
+    needs: [deploy]
+    uses: ./.github/workflows/validate-staging.yml
+    secrets: inherit

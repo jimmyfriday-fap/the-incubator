@@ -1,0 +1,17 @@
+{
+  "profiles": {
+    "quick": ["bom", "abs-path", "isolation", "scenarios", "quarantine", "syntax", "workflow-lint"],
+    "full": ["tools-fetch", "bom", "abs-path", "isolation", "scenarios", "quarantine", "syntax", "workflow-lint-strict"]
+  },
+  "steps": {
+    "tools-fetch": { "script": "scripts/tools-fetch.mjs", "args": ["actionlint"] },
+    "bom": { "guard": "bom" },
+    "abs-path": { "guard": "abs-path" },
+    "isolation": { "guard": "isolation" },
+    "scenarios": { "guard": "scenarios" },
+    "quarantine": { "guard": "quarantine" },
+    "syntax": { "guard": "syntax" },
+    "workflow-lint": { "guard": "workflow-lint" },
+    "workflow-lint-strict": { "guard": "workflow-lint", "args": ["--require-actionlint"] }
+  }
+}

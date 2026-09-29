@@ -1,0 +1,51 @@
+name: promote-to-production
+
+on:
+  workflow_dispatch:
+    inputs:
+      execute_tasks:
+        description: Merge and deploy for real (false = dry run that only prints the plan)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-to-production
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+        with:
+          fetch-depth: 0
+      # why: always show what would be promoted and which post-deploy tasks would run.
+      - name: Plan
+        run: |
+          git fetch origin <%= it.spec.lanes.branches.staging %> <%= it.spec.lanes.branches.prod %>
+          echo "Commits to promote:"
+          git log --oneline origin/<%= it.spec.lanes.branches.prod %>..origin/<%= it.spec.lanes.branches.staging %>
+          node scripts/run-deploy-tasks.mjs --env prod --sha "$(git rev-parse origin/<%= it.spec.lanes.branches.staging %>)"
+      # why: dry run by default; only execute_tasks=true merges, with a Promote-Run trailer rollback relies on.
+      - name: Merge <%= it.spec.lanes.branches.staging %> into <%= it.spec.lanes.branches.prod %>
+        if: inputs.execute_tasks
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout <%= it.spec.lanes.branches.prod %>
+          git merge --no-ff origin/<%= it.spec.lanes.branches.staging %> -m "promote: <%= it.spec.lanes.branches.staging %> to <%= it.spec.lanes.branches.prod %>" -m "Promote-Run: ${GITHUB_RUN_ID}"
+          git push origin <%= it.spec.lanes.branches.prod %>
+      # why: deploy-production.yml has no push trigger; this explicit dispatch is the only way to deploy prod.
+      - name: Dispatch deploy-production
+        if: inputs.execute_tasks
+        run: gh workflow run deploy-production.yml --ref <%= it.spec.lanes.branches.prod %> -f promote_run="${GITHUB_RUN_ID}"
+        env:
+          GH_TOKEN: ${{ github.token }}

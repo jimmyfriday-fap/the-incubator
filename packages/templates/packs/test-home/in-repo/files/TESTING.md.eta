@@ -1,0 +1,15 @@
+# Testing
+
+Tests live in this repository under `tests/`.
+
+| Suite | Where | Runs |
+| --- | --- | --- |
+| unit | `tests/unit/`, `tests/scenarios.test.*` | no network, no database; every `check:quick` |
+| integration/db | `tests/integration/` | in CI against a database service |
+| e2e | `e2e/` | Playwright projects `local`, `staging`, `production-smoke` |
+| live | `tests/live/` | only with `INCUBATOR_LIVE=1` against a deployed lane |
+
+Scenarios (`tests/scenarios/<feature>/*.json`) follow `schemas/scenario.schema.json`; each feature needs
+one happy path, two validation failures and one fault injection. Run a profile with
+`node scripts/test-profile.mjs <profile>`; profiles are defined in `config/run-profiles.json`.
+Flaky tests go to `config/flake-quarantine.json` with an owner and an expiry, never silently skipped.

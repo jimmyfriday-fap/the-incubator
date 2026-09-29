@@ -1,0 +1,3 @@
+{
+  "pinned": ["schemas/*.schema.json", ".incubator/agent-profile.json", "config/completeness.json"]
+}

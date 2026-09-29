@@ -1,0 +1,14 @@
+{
+  "$schema": "./schemas/deploy-tasks.schema.json",
+  "tasks": [
+    {
+      "name": "verify-release-assets",
+      "description": "Confirm the published release carries installers for every OS (package-release class).",
+      "env": ["staging", "prod"],
+      "idempotent": true,
+      "runOnce": false,
+      "timeout": 300,
+      "command": ["node", "scripts/release/verify-assets.mjs"]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "agentFiles": ["CLAUDE.md", "AGENTS.md", ".github/copilot-instructions.md", ".cursor/rules/incubator.mdc"],
+  "registries": [
+    {
+      "name": "features",
+      "file": "config/features.json",
+      "list": "features",
+      "key": "id",
+      "expect": ["tests/scenarios/{id}"],
+      "reverse": "^tests/scenarios/([^/]+)/"
+    },
+    {
+      "name": "lanes",
+      "file": ".incubator/lanes/index.json",
+      "list": "lanes",
+      "expect": [".incubator/lanes/{id}/enrich.md", ".incubator/lanes/{id}/codegen.md"]
+    }
+  ]
+}

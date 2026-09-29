@@ -1,0 +1,12 @@
+// PM2 process file for the VPS lanes (node-web). Loaded from the release's `current` directory.
+module.exports = {
+  apps: [
+    {
+      name: <%~ it.h.yamlStr(it.names.slug) %>,
+      script: 'dist/server/main.js',
+      cwd: __dirname + '/..',
+      env_staging: { APP_ENV: 'staging', PORT: '3000' },
+      env_production: { APP_ENV: 'prod', PORT: '3000' },
+    },
+  ],
+};

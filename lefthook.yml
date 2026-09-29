@@ -11,7 +11,7 @@ pre-commit:
       run: pnpm exec prettier --check {staged_files}
     lint:
       glob: '*.{ts,tsx,js,mjs,cjs}'
-      run: pnpm exec eslint --max-warnings=0 --no-warn-ignored {staged_files}
+      run: pnpm exec eslint --config eslint.config.js --max-warnings=0 --no-warn-ignored {staged_files}
 
 pre-push:
   commands:

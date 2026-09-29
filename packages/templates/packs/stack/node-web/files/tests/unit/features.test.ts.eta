@@ -1,0 +1,17 @@
+import { describe, expect, it } from 'vitest';
+import { buildApp } from '@app/server/app.js';
+
+// Features scaffolded by the Incubator answer 501 until they are implemented (TODO(scaffold) markers).
+const FEATURES: string[] = <%~ it.h.json(it.features.filter((f) => !f.builtin).map((f) => f.id)) %>;
+
+describe('scaffolded features', () => {
+  it('every registered feature route exists', () => {
+    expect(Array.isArray(FEATURES)).toBe(true);
+  });
+
+  it.each(FEATURES.map((f) => [f]))('%s answers 501 until implemented', async (id) => {
+    const res = await buildApp().inject({ url: `/api/${id}` });
+    expect(res.statusCode).toBe(501);
+    expect(res.json()).toEqual({ status: 'todo', feature: id });
+  });
+});

@@ -1,0 +1,25 @@
+import { defineConfig } from '@playwright/test';
+
+// One project per lane. `local` starts the built app; the others hit deployed hosts.
+export default defineConfig({
+  testDir: '.',
+  reporter: [['list'], ['junit', { outputFile: '../.reports/e2e.xml' }]],
+  projects: [
+    {
+      name: 'local',
+      use: { baseURL: 'http://127.0.0.1:3000' },
+    },
+    {
+      name: 'staging',
+      use: { baseURL: process.env['STAGING_URL'] ?? 'https://<%= it.spec.deploy.staging.host || 'staging.invalid' %>' },
+    },
+    {
+      name: 'production-smoke',
+      grep: /@smoke/,
+      use: { baseURL: process.env['PROD_URL'] ?? 'https://<%= it.spec.deploy.prod.host || 'prod.invalid' %>' },
+    },
+  ],
+  webServer: process.env['E2E_NO_SERVER']
+    ? undefined
+    : { command: 'node dist/server/main.js', url: 'http://127.0.0.1:3000/health', reuseExistingServer: true, cwd: '<%= it.spec.testing.home === 'paired-repo' ? '../app' : '..' %>' },
+});

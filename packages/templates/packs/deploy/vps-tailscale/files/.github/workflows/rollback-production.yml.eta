@@ -1,0 +1,41 @@
+<% const node = it.spec.stack.pack === 'node-web'; -%>
+name: rollback-production
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: SHA of the latest promote merge on <%= it.spec.lanes.branches.prod %> (the release being rolled back)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: [self-hosted, incubator-<%= it.names.slug %>]
+    environment: production
+    timeout-minutes: 15
+    env:
+      DEPLOY_ROOT: ${{ vars.DEPLOY_ROOT }}
+      PROD_URL: ${{ vars.PROD_URL }}
+      TARGET: ${{ inputs.target }}
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+        with:
+          ref: <%= it.spec.lanes.branches.prod %>
+          fetch-depth: 0
+      - run: node scripts/deploy/preflight.mjs --require DEPLOY_ROOT,PROD_URL
+      - run: node scripts/deploy/verify-promote-target.mjs --sha "$TARGET" --branch <%= it.spec.lanes.branches.prod %>
+      - run: node scripts/deploy/vps-release.mjs --root "$DEPLOY_ROOT/prod" --rollback
+<% if (node) { -%>
+      - run: pm2 startOrReload "$DEPLOY_ROOT/prod/current/deploy/ecosystem.config.cjs" --env production
+<% } else { -%>
+      - run: docker compose -f "$DEPLOY_ROOT/prod/current/compose.yaml" -p <%= it.names.slug %>-prod up -d --wait
+<% } -%>
+      - run: node scripts/deploy/smoke.mjs --url "$PROD_URL" --attempts 10

@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": [
+      "ES2023"
+    ],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": [
+      "node"
+    ],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "paths": {
+      "@app/*": [
+        "./src/*"
+      ]
+    }
+  },
+  "include": [
+    "src/server/**/*.ts",
+    "src/features/**/*.ts",
+    "tests/**/*.ts",
+    "e2e/**/*.ts",
+    "*.config.ts"
+  ]
+}

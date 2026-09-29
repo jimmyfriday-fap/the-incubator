@@ -1,0 +1,445 @@
+{
+  "$schema": "../../schema/pack.schema.json",
+  "id": "base",
+  "version": "1.0.0",
+  "description": "Lanes, agent config, guardrails, security scanning, CI skeleton and the guard toolkit shared by every generated repository.",
+  "appliesWhen": "true",
+  "files": [
+    {
+      "src": "files/.gitignore.eta",
+      "dest": ".gitignore"
+    },
+    {
+      "src": "files/.nvmrc.eta",
+      "dest": ".nvmrc",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/.env.example.eta",
+      "dest": ".env.example"
+    },
+    {
+      "src": "files/README.md.eta",
+      "dest": "README.md"
+    },
+    {
+      "src": "files/lefthook.yml.eta",
+      "dest": "lefthook.yml"
+    },
+    {
+      "src": "files/.github/workflows/ci.yml.eta",
+      "dest": ".github/workflows/ci.yml"
+    },
+    {
+      "src": "files/.github/workflows/security-scan.yml.eta",
+      "dest": ".github/workflows/security-scan.yml"
+    },
+    {
+      "src": "files/.github/workflows/security-scan-trigger.yml.eta",
+      "dest": ".github/workflows/security-scan-trigger.yml",
+      "when": "security.centralRig.enabled == true"
+    },
+    {
+      "src": "files/.github/workflows/promote-to-production.yml.eta",
+      "dest": ".github/workflows/promote-to-production.yml"
+    },
+    {
+      "src": "files/.incubator/agent-profile.json.eta",
+      "dest": ".incubator/agent-profile.json"
+    },
+    {
+      "src": "files/.incubator/tracker.json.eta",
+      "dest": ".incubator/tracker.json"
+    },
+    {
+      "src": "files/.incubator/lanes/index.json.eta",
+      "dest": ".incubator/lanes/index.json"
+    },
+    {
+      "src": "files/.incubator/lanes/lane/enrich.md.eta",
+      "dest": ".incubator/lanes/<%= it.lane %>/enrich.md",
+      "each": "lanes.workLanes",
+      "as": "lane"
+    },
+    {
+      "src": "files/.incubator/lanes/lane/codegen.md.eta",
+      "dest": ".incubator/lanes/<%= it.lane %>/codegen.md",
+      "each": "lanes.workLanes",
+      "as": "lane"
+    },
+    {
+      "src": "files/.incubator/lanes/lane/preflight.md.eta",
+      "dest": ".incubator/lanes/<%= it.lane %>/preflight.md",
+      "each": "lanes.workLanes",
+      "as": "lane",
+      "when": "lane in ['security', 'infra', 'support/existing']"
+    },
+    {
+      "src": "files/.incubator/tickets/ticket.json.eta",
+      "dest": ".incubator/tickets/F-<%= it.feature.id %>.json",
+      "each": "spec.intent.coreFeatures",
+      "as": "feature",
+      "when": "tracker.type == 'local'"
+    },
+    {
+      "src": "files/agent/agent-file.md.eta",
+      "dest": "<%= it.target.path %>",
+      "each": "vars.targets",
+      "as": "target",
+      "vars": {
+        "targets": [
+          {
+            "path": ".incubator/agent/INSTRUCTIONS.md",
+            "wrap": false
+          },
+          {
+            "path": "CLAUDE.md",
+            "wrap": true,
+            "header": ""
+          },
+          {
+            "path": "AGENTS.md",
+            "wrap": true,
+            "header": ""
+          },
+          {
+            "path": ".github/copilot-instructions.md",
+            "wrap": true,
+            "header": ""
+          },
+          {
+            "path": ".cursor/rules/incubator.mdc",
+            "wrap": true,
+            "header": "---\ndescription: Repository rules for AI agents\nalwaysApply: true\n---\n\n"
+          }
+        ]
+      }
+    },
+    {
+      "src": "files/docs/plans/000-bootstrap.md.eta",
+      "dest": "docs/plans/000-bootstrap.md"
+    },
+    {
+      "src": "files/config/checks.json.eta",
+      "dest": "config/checks.json"
+    },
+    {
+      "src": "files/config/run-profiles.json.eta",
+      "dest": "config/run-profiles.json",
+      "role": "tests"
+    },
+    {
+      "src": "files/config/features.json.eta",
+      "dest": "config/features.json",
+      "role": "shared"
+    },
+    {
+      "src": "files/config/drift.json.eta",
+      "dest": "config/drift.json"
+    },
+    {
+      "src": "files/config/completeness.json.eta",
+      "dest": "config/completeness.json"
+    },
+    {
+      "src": "files/tests/scenarios/feature/happy.json.eta",
+      "dest": "tests/scenarios/<%= it.feature.id %>/<%= it.feature.builtin ? 'happy-status-ok' : 'happy-path' %>.json",
+      "each": "features",
+      "as": "feature",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/scenarios/feature/validation-1.json.eta",
+      "dest": "tests/scenarios/<%= it.feature.id %>/<%= it.feature.builtin ? 'validation-unknown-check' : 'validation-missing-input' %>.json",
+      "each": "features",
+      "as": "feature",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/scenarios/feature/validation-2.json.eta",
+      "dest": "tests/scenarios/<%= it.feature.id %>/<%= it.feature.builtin ? 'validation-empty-probe' : 'validation-bad-input' %>.json",
+      "each": "features",
+      "as": "feature",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/scenarios/feature/fault.json.eta",
+      "dest": "tests/scenarios/<%= it.feature.id %>/fault-dependency-down.json",
+      "each": "features",
+      "as": "feature",
+      "role": "tests"
+    },
+    {
+      "src": "files/.claude/settings.json",
+      "dest": ".claude/settings.json"
+    },
+    {
+      "src": "files/.editorconfig",
+      "dest": ".editorconfig",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/.gitattributes",
+      "dest": ".gitattributes",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/.github/pull_request_template.md",
+      "dest": ".github/pull_request_template.md"
+    },
+    {
+      "src": "files/config/abs-path.json",
+      "dest": "config/abs-path.json"
+    },
+    {
+      "src": "files/config/contracts.json",
+      "dest": "config/contracts.json"
+    },
+    {
+      "src": "files/config/flake-quarantine.json",
+      "dest": "config/flake-quarantine.json",
+      "role": "tests"
+    },
+    {
+      "src": "files/docs/plans/README.md",
+      "dest": "docs/plans/README.md"
+    },
+    {
+      "src": "files/schemas/agent-profile.schema.json",
+      "dest": "schemas/agent-profile.schema.json"
+    },
+    {
+      "src": "files/schemas/deploy-tasks.schema.json",
+      "dest": "schemas/deploy-tasks.schema.json"
+    },
+    {
+      "src": "files/schemas/scenario.schema.json",
+      "dest": "schemas/scenario.schema.json",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/agent/on-stop.mjs",
+      "dest": "scripts/agent/on-stop.mjs",
+      "mode": "0755"
+    },
+    {
+      "src": "files/scripts/agent/session-start.mjs",
+      "dest": "scripts/agent/session-start.mjs",
+      "mode": "0755"
+    },
+    {
+      "src": "files/scripts/agent/sync-instructions.mjs",
+      "dest": "scripts/agent/sync-instructions.mjs",
+      "mode": "0755"
+    },
+    {
+      "src": "files/scripts/agent/tracker.mjs",
+      "dest": "scripts/agent/tracker.mjs",
+      "mode": "0755"
+    },
+    {
+      "src": "files/scripts/check.mjs",
+      "dest": "scripts/check.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/abs-path.mjs",
+      "dest": "scripts/guard/abs-path.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/bom.mjs",
+      "dest": "scripts/guard/bom.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/ci-gate.mjs",
+      "dest": "scripts/guard/ci-gate.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/completeness.mjs",
+      "dest": "scripts/guard/completeness.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/contracts-pin.mjs",
+      "dest": "scripts/guard/contracts-pin.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/drift.mjs",
+      "dest": "scripts/guard/drift.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/isolation.mjs",
+      "dest": "scripts/guard/isolation.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/lane-contract.mjs",
+      "dest": "scripts/guard/lane-contract.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/lib/common.mjs",
+      "dest": "scripts/guard/lib/common.mjs",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/lib/enrich-contract.mjs",
+      "dest": "scripts/guard/lib/enrich-contract.mjs",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/lib/findings.mjs",
+      "dest": "scripts/guard/lib/findings.mjs",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/lib/markers.mjs",
+      "dest": "scripts/guard/lib/markers.mjs",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/lib/proc.mjs",
+      "dest": "scripts/guard/lib/proc.mjs",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/lib/scenario.d.mts",
+      "dest": "scripts/guard/lib/scenario.d.mts",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/lib/scenario.mjs",
+      "dest": "scripts/guard/lib/scenario.mjs",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/lib/tools.mjs",
+      "dest": "scripts/guard/lib/tools.mjs",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/plan-lint.mjs",
+      "dest": "scripts/guard/plan-lint.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/policy-gate.mjs",
+      "dest": "scripts/guard/policy-gate.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/quarantine.mjs",
+      "dest": "scripts/guard/quarantine.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/rule-fixtures.mjs",
+      "dest": "scripts/guard/rule-fixtures.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/scenarios.mjs",
+      "dest": "scripts/guard/scenarios.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/syntax.mjs",
+      "dest": "scripts/guard/syntax.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/tests-collected.mjs",
+      "dest": "scripts/guard/tests-collected.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/validate-scan-results.mjs",
+      "dest": "scripts/guard/validate-scan-results.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/workflow-lint.mjs",
+      "dest": "scripts/guard/workflow-lint.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/run-deploy-tasks.mjs",
+      "dest": "scripts/run-deploy-tasks.mjs",
+      "mode": "0755"
+    },
+    {
+      "src": "files/scripts/scaffold.mjs",
+      "dest": "scripts/scaffold.mjs",
+      "mode": "0755"
+    },
+    {
+      "src": "files/scripts/test-profile.mjs",
+      "dest": "scripts/test-profile.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/tools-fetch.mjs",
+      "dest": "scripts/tools-fetch.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/security/accepted-risks.json",
+      "dest": "security/accepted-risks.json"
+    },
+    {
+      "src": "files/tools/semgrep-requirements.txt",
+      "dest": "tools/semgrep-requirements.txt",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/tools/semgrep.in",
+      "dest": "tools/semgrep.in",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/tools/tools.lock.json",
+      "dest": "tools/tools.lock.json",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/deploy/preflight.mjs",
+      "dest": "scripts/deploy/preflight.mjs",
+      "mode": "0755"
+    },
+    {
+      "src": "files/scripts/deploy/smoke.mjs",
+      "dest": "scripts/deploy/smoke.mjs",
+      "mode": "0755"
+    },
+    {
+      "src": "files/scripts/deploy/verify-promote-target.mjs",
+      "dest": "scripts/deploy/verify-promote-target.mjs",
+      "mode": "0755"
+    }
+  ]
+}

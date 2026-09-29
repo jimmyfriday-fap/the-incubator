@@ -1,0 +1,11 @@
+node_modules
+dist
+.reports
+.tools
+.git
+.env
+.env.*
+private
+coverage
+test-results
+playwright-report

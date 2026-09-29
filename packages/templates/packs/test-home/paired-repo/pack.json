@@ -1,0 +1,95 @@
+{
+  "$schema": "../../../schema/pack.schema.json",
+  "id": "test-home/paired-repo",
+  "version": "1.0.0",
+  "description": "Tests live in a paired <slug>-tests repository that checks the application out into app/.",
+  "appliesWhen": "testing.home == 'paired-repo'",
+  "requires": ["base"],
+  "files": [
+    {
+      "src": "files/TESTING.md.eta",
+      "dest": "TESTING.md"
+    },
+    {
+      "src": "files/scripts/tests-pointer.mjs.eta",
+      "dest": "scripts/tests-pointer.mjs",
+      "mode": "0755"
+    },
+    {
+      "src": "files/paired/README.md.eta",
+      "dest": "@paired/README.md"
+    },
+    {
+      "src": "files/paired/.gitignore",
+      "dest": "@paired/.gitignore"
+    },
+    {
+      "src": "files/paired/config/checks.json",
+      "dest": "@paired/config/checks.json"
+    },
+    {
+      "src": "files/paired/.github/workflows/ci.yml.eta",
+      "dest": "@paired/.github/workflows/ci.yml"
+    }
+  ],
+  "copy": [
+    {
+      "role": "toolkit",
+      "to": "@paired/"
+    },
+    {
+      "role": "shared",
+      "to": "@paired/"
+    }
+  ],
+  "relocate": [
+    {
+      "role": "tests",
+      "to": "@paired/"
+    }
+  ],
+  "jsonPatches": [
+    {
+      "file": "config/checks.json",
+      "ops": [
+        {
+          "op": "remove-values",
+          "pointer": "/profiles/quick",
+          "value": ["scenarios", "quarantine", "unit", "unit-coverage", "tests-collected"]
+        },
+        {
+          "op": "remove-values",
+          "pointer": "/profiles/full",
+          "value": ["scenarios", "quarantine", "unit", "unit-coverage", "tests-collected"]
+        }
+      ]
+    },
+    {
+      "file": "config/drift.json",
+      "ops": [
+        {
+          "op": "set",
+          "pointer": "/registries",
+          "value": [
+            {
+              "name": "lanes",
+              "file": ".incubator/lanes/index.json",
+              "list": "lanes",
+              "expect": [".incubator/lanes/{id}/enrich.md", ".incubator/lanes/{id}/codegen.md"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "file": "config/completeness.json",
+      "ops": [
+        {
+          "op": "remove-ids",
+          "pointer": "/required",
+          "value": ["test.profiles", "test.quarantine", "test.scenarios"]
+        }
+      ]
+    }
+  ]
+}

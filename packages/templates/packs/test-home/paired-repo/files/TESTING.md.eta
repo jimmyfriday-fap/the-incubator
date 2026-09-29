@@ -1,0 +1,11 @@
+# Testing
+
+Tests for this repository live in the paired repository **`<%= it.names.pairedName %>`**. That
+repository checks this one out into `app/` in CI and runs the unit, scenario, integration and e2e
+suites against it. `test` here prints this pointer and exits 1 on purpose.
+
+Local setup:
+
+1. Clone `<%= it.names.pairedName %>` next to this repository.
+2. Inside it, clone or copy this repository into `app/` (ignored by its `.gitignore`).
+3. Follow its README.

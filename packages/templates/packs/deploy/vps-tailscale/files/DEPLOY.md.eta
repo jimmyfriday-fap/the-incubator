@@ -1,0 +1,33 @@
+# Deploy
+
+## Deploy class
+
+**`vps-tailscale`**: timestamped release directories on a VPS, an atomic `current` symlink swap, the
+last five releases kept, <%= it.spec.stack.pack === 'node-web' ? 'PM2' : 'docker compose' %> as the process manager, and a self-hosted GitHub
+runner labelled `incubator-<%= it.names.slug %>`. Staging is reachable only over the tailnet<%= it.spec.deploy.staging.tailnetOnly ? '' : ' (disabled in incubator.json)' %>.
+
+| Lane | Branch | What happens |
+| --- | --- | --- |
+| local | any | `docker compose up` on your machine (see README). |
+| staging | `<%= it.spec.lanes.branches.staging %>` | Every push runs `deploy-staging.yml`, then `validate-staging.yml` smoke checks. `APP_ENV=staging`; downstream secrets are dummies so staging can never change prod. |
+| prod | `<%= it.spec.lanes.branches.prod %>` | Only `promote-to-production.yml` (manual, dry run by default) merges and dispatches `deploy-production.yml`, which has no push trigger. |
+
+## Promotion rules
+
+1. Promotion and rollback are human-only actions (`.incubator/agent-profile.json`).
+2. `promote-to-production.yml` defaults to `execute_tasks: false` and only prints the plan.
+3. `rollback-production.yml` refuses any target except the latest promote merge, then repoints
+   `current` to the previous release and smoke-tests.
+4. Post-deploy tasks live in `.deploy-tasks.json` and run through `scripts/run-deploy-tasks.mjs`,
+   logged per `(name, env, sha)`; `--report` shows tasks that ran on staging but not on prod.
+
+## Required settings
+
+Create these as GitHub Actions **variables** (they start as `__INCUBATOR_UNSET__`):
+`DEPLOY_ROOT`, `STAGING_URL`, `PROD_URL`.
+
+Create these as **secrets** (never committed): `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` (Tailscale, for
+reaching staging over the tailnet from GitHub-hosted runners).
+
+Every deploy workflow runs `scripts/deploy/preflight.mjs` first and fails with exit 2 naming anything
+still unset.

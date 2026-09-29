@@ -7,6 +7,7 @@ coverage/
 **/__golden__/
 **/fixtures/**/*.golden
 packages/templates/packs/**/files/
+packages/templates/packs/**/patches/
 packages/analyzer/fixtures/
 packages/llm/fixtures/
 docs/BUILD_PROMPT.md

@@ -80,7 +80,9 @@
               "additionalProperties": false,
               "required": ["op", "pointer"],
               "properties": {
-                "op": { "enum": ["set", "merge", "append-unique", "remove"] },
+                "op": {
+                  "enum": ["set", "merge", "append-unique", "remove", "remove-values", "remove-ids"]
+                },
                 "pointer": { "type": "string" },
                 "value": {},
                 "valueSrc": { "type": "string", "pattern": "^patches/" },
@@ -92,6 +94,19 @@
       }
     },
     "relocate": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "to"],
+        "properties": {
+          "role": { "type": "string" },
+          "to": { "type": "string", "pattern": "^@[a-z]+/$" },
+          "when": { "type": "string" }
+        }
+      }
+    },
+    "copy": {
       "type": "array",
       "items": {
         "type": "object",

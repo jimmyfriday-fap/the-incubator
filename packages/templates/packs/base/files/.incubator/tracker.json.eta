@@ -1,0 +1,13 @@
+<% const t = it.spec.tracker;
+const cfg = t.type === 'leantime'
+  ? {
+      type: 'leantime',
+      leantime: {
+        baseUrl: t.leantime?.baseUrl ?? '',
+        projectId: t.leantime?.projectId ?? null,
+        statusMap: t.leantime?.statusMap ?? {},
+        methods: { addTicket: 'leantime.rpc.Tickets.Tickets.addTicket', updateTicket: 'leantime.rpc.Tickets.Tickets.patch' },
+      },
+    }
+  : { type: 'local', ticketsDir: '.incubator/tickets' }; -%>
+<%~ it.h.json(cfg) %>

@@ -1,7 +1,7 @@
 import { ToolError, canonicalize } from '@incubator/runtime';
 
 export interface JsonPatchOp {
-  op: 'set' | 'merge' | 'append-unique' | 'remove';
+  op: 'set' | 'merge' | 'append-unique' | 'remove' | 'remove-values' | 'remove-ids';
   pointer: string;
   value?: unknown;
 }
@@ -72,6 +72,20 @@ export function applyJsonPatch(file: string, doc: unknown, ops: readonly JsonPat
       case 'remove':
         delete parent[key];
         break;
+      case 'remove-values':
+      case 'remove-ids': {
+        const arr = parent[key];
+        if (!Array.isArray(arr)) throw new ToolError(`${file}: ${op.pointer} is not an array`);
+        const drop = new Set(
+          (Array.isArray(op.value) ? op.value : [op.value]).map((v) => canonicalize(v)),
+        );
+        parent[key] = arr.filter((x) =>
+          op.op === 'remove-values'
+            ? !drop.has(canonicalize(x))
+            : !(isPlain(x) && drop.has(canonicalize(x['id']))),
+        );
+        break;
+      }
       default:
         throw new ToolError(`${file}: unknown JSON patch op`);
     }

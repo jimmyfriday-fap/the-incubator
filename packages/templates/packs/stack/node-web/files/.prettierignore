@@ -1,0 +1,15 @@
+pnpm-lock.yaml
+node_modules/
+dist/
+coverage/
+.reports/
+.tools/
+scan-results/
+test-results/
+playwright-report/
+incubator.json
+.incubator/lock.json
+contracts.lock.json
+security/fixtures/
+tools/
+scripts/scaffold/templates/

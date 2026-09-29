@@ -1,0 +1,12 @@
+# <%= it.names.title %>: tests
+
+Test suites for [`<%= it.names.slug %>`](../<%= it.names.slug %>). CI checks the application out into
+`app/` and runs `node scripts/check.mjs full` here.
+
+## Getting started
+
+<!-- <scaffold:readme-commands> -->
+<!-- </scaffold:readme-commands> -->
+
+Scenarios live in `tests/scenarios/<feature>/`, one happy path, two validation failures and one fault
+injection per feature. Profiles are in `config/run-profiles.json`.

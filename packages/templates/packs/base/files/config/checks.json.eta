@@ -1,0 +1,49 @@
+{
+  "profiles": {
+    "quick": [
+      "bom",
+      "abs-path",
+      "isolation",
+      "contracts-pin",
+      "plan-lint",
+      "lane-contract",
+      "scenarios",
+      "quarantine",
+      "drift",
+      "workflow-lint",
+      "syntax"
+    ],
+    "full": [
+      "tools-fetch",
+      "bom",
+      "abs-path",
+      "isolation",
+      "contracts-pin",
+      "plan-lint",
+      "lane-contract",
+      "scenarios",
+      "quarantine",
+      "drift",
+      "workflow-lint-strict",
+      "syntax",
+      "rule-fixtures"
+    ]
+  },
+  "steps": {
+    "tools-fetch": { "script": "scripts/tools-fetch.mjs" },
+    "bom": { "guard": "bom" },
+    "abs-path": { "guard": "abs-path" },
+    "isolation": { "guard": "isolation" },
+    "contracts-pin": { "guard": "contracts-pin" },
+    "plan-lint": { "guard": "plan-lint" },
+    "lane-contract": { "guard": "lane-contract" },
+    "scenarios": { "guard": "scenarios" },
+    "quarantine": { "guard": "quarantine" },
+    "drift": { "guard": "drift" },
+    "syntax": { "guard": "syntax" },
+    "workflow-lint": { "guard": "workflow-lint" },
+    "workflow-lint-strict": { "guard": "workflow-lint", "args": ["--require-actionlint"] },
+    "completeness": { "guard": "completeness" },
+    "rule-fixtures": { "guard": "rule-fixtures" }
+  }
+}

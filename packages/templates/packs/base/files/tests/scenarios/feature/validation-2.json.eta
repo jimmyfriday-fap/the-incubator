@@ -1,0 +1,6 @@
+<% const f = it.feature; const s = f.builtin
+  ? { id: 'validation-empty-probe', feature: f.id, title: 'An empty probe name is invalid', tags: ['validation'], seed: {}, context: {}, mocks: { ai: [] },
+      stages: [{ name: 'check', input: { probe: '' }, assertions: [{ path: 'status', op: 'eq', value: 'error' }, { path: 'error.code', op: 'eq', value: 'invalid_probe' }] }] }
+  : { id: 'validation-bad-input', feature: f.id, title: `TODO(scaffold): ${f.id} rejects malformed input`, status: 'todo', tags: ['validation'], seed: {}, context: {}, mocks: { ai: [] },
+      stages: [{ name: 'todo', input: {}, assertions: [{ path: 'status', op: 'exists' }] }] }; -%>
+<%~ it.h.json({ $schema: '../../../schemas/scenario.schema.json', ...s }) %>

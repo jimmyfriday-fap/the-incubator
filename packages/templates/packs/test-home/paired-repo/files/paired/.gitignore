@@ -1,0 +1,13 @@
+# the application under test is checked out here, never committed
+app/
+node_modules/
+vendor/
+.venv/
+__pycache__/
+.pytest_cache/
+coverage/
+.reports/
+.tools/
+test-results/
+playwright-report/
+.env

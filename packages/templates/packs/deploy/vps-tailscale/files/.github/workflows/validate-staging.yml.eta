@@ -1,0 +1,30 @@
+name: validate-staging
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      STAGING_URL: ${{ vars.STAGING_URL }}
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+      - uses: <%= it.h.action('actions/setup-node') %>
+        with:
+          node-version-file: .nvmrc
+<% if (it.spec.deploy.staging.tailnetOnly) { -%>
+      # why: staging is reachable only over the tailnet; join it with an ephemeral, tagged node.
+      - uses: <%= it.h.action('tailscale/github-action') %>
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+<% } -%>
+      - run: node scripts/deploy/preflight.mjs --require STAGING_URL
+      - run: node scripts/deploy/smoke.mjs --url "$STAGING_URL" --attempts 10

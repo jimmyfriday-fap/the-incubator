@@ -27,6 +27,8 @@ export function syncPlan(root) {
     add(`scripts/${f}`, 'base');
   for (const f of ['session-start.mjs', 'on-stop.mjs', 'tracker.mjs', 'sync-instructions.mjs'])
     add(`scripts/agent/${f}`, 'base');
+  for (const f of ['preflight.mjs', 'smoke.mjs', 'verify-promote-target.mjs'])
+    add(`scripts/deploy/${f}`, 'base');
   for (const f of ['scenario.schema.json', 'agent-profile.schema.json', 'deploy-tasks.schema.json'])
     add(`schemas/${f}`, 'base');
   for (const f of ['tools.lock.json', 'semgrep-requirements.txt', 'semgrep.in'])

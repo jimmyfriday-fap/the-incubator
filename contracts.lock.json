@@ -4,8 +4,9 @@
     "config/completeness.json": "b666ff23be57489ff53a66e7c8784980068a19588f2a95ef093a9c901cb63446",
     "packages/spec/schema/discovery-turn.schema.json": "77a64b52239766e5f6283f3445074aa34e575eb7c0105b78b90bbf0cc0704def",
     "packages/spec/schema/incubator.schema.json": "9f856f8ebbb8a6cf5d486f0c39d33efef5db5ca2368c78e0696a790282c6284c",
-    "packages/templates/schema/pack.schema.json": "4b55b432649046965a9afc3509c19424f1ada5cc7bf102c0f987a809635e320b",
+    "packages/templates/schema/pack.schema.json": "9b1a165cedfcf32f8f34cb729d6baaf0c0fea0ee561f3c06898543d0d2c01be6",
     "schemas/agent-profile.schema.json": "beb0b92032782749230d81660b853af48037ed6c68fc5f03bf0cf2026fcad5b2",
+    "schemas/deploy-tasks.schema.json": "834da6ff7057384e76b30cc80ef423b0e96c6bd20b0245ab38c8e4b86297339d",
     "schemas/scenario.schema.json": "13da207e97ff1ac5e4e152de3d33d6cacbf99b0649be2a3c79c368f2ff59a09e"
   }
 }

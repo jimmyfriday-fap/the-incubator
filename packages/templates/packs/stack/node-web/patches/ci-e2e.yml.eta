@@ -1,0 +1,14 @@
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: <%= it.h.action('actions/checkout') %>
+      - uses: <%= it.h.action('pnpm/action-setup') %>
+      - uses: <%= it.h.action('actions/setup-node') %>
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright test --config e2e/playwright.config.ts --project local

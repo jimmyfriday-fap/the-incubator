@@ -1,0 +1,36 @@
+import { useEffect, useState } from 'react';
+
+interface Health {
+  status: string;
+  name: string;
+  checks: { name: string; ok: boolean }[];
+}
+
+const FEATURES: { id: string; summary: string }[] = <%~ it.h.json(it.features.map((f) => ({ id: f.id, summary: f.summary }))) %>;
+
+export function App() {
+  const [health, setHealth] = useState<Health | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/health')
+      .then((r) => r.json() as Promise<Health>)
+      .then(setHealth)
+      .catch((e: unknown) => setError(String(e)));
+  }, []);
+
+  return (
+    <main>
+      <h1><%= it.names.title %></h1>
+      <p data-testid="health-status">{error ? `error: ${error}` : (health?.status ?? 'checking…')}</p>
+      <h2>Features</h2>
+      <ul>
+        {FEATURES.map((f) => (
+          <li key={f.id}>
+            <strong>{f.id}</strong>: {f.summary}
+          </li>
+        ))}
+      </ul>
+    </main>
+  );
+}

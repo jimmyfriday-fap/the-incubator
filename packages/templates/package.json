@@ -21,6 +21,7 @@
   "dependencies": {
     "@incubator/runtime": "workspace:*",
     "@incubator/spec": "workspace:*",
-    "eta": "4.6.0"
+    "eta": "4.6.0",
+    "prettier": "3.9.9"
   }
 }

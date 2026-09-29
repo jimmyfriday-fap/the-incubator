@@ -1,0 +1,25 @@
+<% const c = it.spec.agents.runCeilings;
+const pick = (v, d) => (v > 0 ? v : d);
+const profile = {
+  $schema: '../schemas/agent-profile.schema.json',
+  version: 1,
+  actions: [
+    { id: 'read-repo', kind: 'read', description: 'Read any tracked file.' },
+    { id: 'edit-source', kind: 'generate', description: 'Edit source, tests, docs and templates.' },
+    { id: 'check-quick', kind: 'gate', command: 'node scripts/check.mjs quick' },
+    { id: 'check-full', kind: 'gate', command: 'node scripts/check.mjs full' },
+    { id: 'test-profile', kind: 'gate', command: 'node scripts/test-profile.mjs quick' },
+    { id: 'commit', kind: 'save', description: 'Commit to a feature branch.' },
+    { id: 'push-feature-branch', kind: 'save', description: 'Push a non-protected branch.' },
+  ],
+  denied_actions: it.spec.agents.deniedActions,
+  human_only_actions: it.spec.agents.humanOnlyActions,
+  run_ceilings: { turns: pick(c.turns, 60), tool_calls: pick(c.toolCalls, 400), minutes: pick(c.minutes, 45), usd: pick(c.usd, 10) },
+  runner: {
+    stages: ['selected', 'repo_resolved', 'design', 'preflight', 'enrich', 'verify_baseline', 'codegen', 'verify', 'qa_gate', 'ready_for_test'],
+    design_lanes: ['enhancement/existing', 'enhancement/new'],
+    on_gate_failure: 'park',
+    nudges: 'record-as-remediation',
+  },
+}; -%>
+<%~ it.h.json(profile) %>

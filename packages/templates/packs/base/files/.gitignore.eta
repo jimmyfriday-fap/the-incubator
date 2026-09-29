@@ -1,0 +1,28 @@
+# dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+.reports/
+.tools/
+test-results/
+playwright-report/
+scan-results/
+deploy-tasks.log.jsonl
+
+# local env files (only *.example is committed)
+.env
+.env.*
+!.env.example
+!.env.*.example
+private/
+
+# agent runtime state
+.incubator/state/
+
+# <scaffold:gitignore-stack>
+# </scaffold:gitignore-stack>
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

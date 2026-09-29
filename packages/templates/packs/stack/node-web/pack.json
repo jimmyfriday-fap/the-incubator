@@ -1,0 +1,499 @@
+{
+  "$schema": "../../../schema/pack.schema.json",
+  "id": "stack/node-web",
+  "version": "1.0.0",
+  "description": "Fastify API + React/Vite UI on Node 22, Postgres, Vitest, Playwright, ESLint/Prettier, compose and Docker.",
+  "appliesWhen": "stack.pack == 'node-web'",
+  "requires": ["base"],
+  "files": [
+    {
+      "src": "files/.dockerignore",
+      "dest": ".dockerignore"
+    },
+    {
+      "src": "files/.npmrc",
+      "dest": ".npmrc"
+    },
+    {
+      "src": "files/.prettierignore",
+      "dest": ".prettierignore"
+    },
+    {
+      "src": "files/.prettierrc.json",
+      "dest": ".prettierrc.json"
+    },
+    {
+      "src": "files/Dockerfile",
+      "dest": "Dockerfile"
+    },
+    {
+      "src": "files/compose.yaml.eta",
+      "dest": "compose.yaml"
+    },
+    {
+      "src": "files/config/scaffold.json",
+      "dest": "config/scaffold.json"
+    },
+    {
+      "src": "files/db/migrations/0001_init.sql",
+      "dest": "db/migrations/0001_init.sql"
+    },
+    {
+      "src": "files/db/schema/base.sql",
+      "dest": "db/schema/base.sql"
+    },
+    {
+      "src": "files/db/seed/001_seed.sql",
+      "dest": "db/seed/001_seed.sql"
+    },
+    {
+      "src": "files/e2e/health.spec.ts",
+      "dest": "e2e/health.spec.ts",
+      "role": "tests"
+    },
+    {
+      "src": "files/e2e/playwright.config.ts.eta",
+      "dest": "e2e/playwright.config.ts",
+      "role": "tests"
+    },
+    {
+      "src": "files/eslint.config.js",
+      "dest": "eslint.config.js"
+    },
+    {
+      "src": "files/index.html.eta",
+      "dest": "index.html"
+    },
+    {
+      "src": "files/package.json.eta",
+      "dest": "package.json"
+    },
+    {
+      "src": "files/scripts/db/bootstrap.mjs",
+      "dest": "scripts/db/bootstrap.mjs",
+      "mode": "0755"
+    },
+    {
+      "src": "files/scripts/scaffold/templates/adapter.ts.tmpl",
+      "dest": "scripts/scaffold/templates/adapter.ts.tmpl"
+    },
+    {
+      "src": "files/scripts/scaffold/templates/feature.ts.tmpl",
+      "dest": "scripts/scaffold/templates/feature.ts.tmpl"
+    },
+    {
+      "src": "files/scripts/scaffold/templates/import.ts.tmpl",
+      "dest": "scripts/scaffold/templates/import.ts.tmpl"
+    },
+    {
+      "src": "files/scripts/scaffold/templates/route.ts.tmpl",
+      "dest": "scripts/scaffold/templates/route.ts.tmpl"
+    },
+    {
+      "src": "files/security/fixtures/incubator.no-child-process-exec/bad.ts",
+      "dest": "security/fixtures/incubator.no-child-process-exec/bad.ts"
+    },
+    {
+      "src": "files/security/fixtures/incubator.no-child-process-exec/good.ts",
+      "dest": "security/fixtures/incubator.no-child-process-exec/good.ts"
+    },
+    {
+      "src": "files/security/fixtures/incubator.no-dynamic-eval/bad.ts",
+      "dest": "security/fixtures/incubator.no-dynamic-eval/bad.ts"
+    },
+    {
+      "src": "files/security/fixtures/incubator.no-dynamic-eval/good.ts",
+      "dest": "security/fixtures/incubator.no-dynamic-eval/good.ts"
+    },
+    {
+      "src": "files/security/fixtures/incubator.no-shell-true/bad.ts",
+      "dest": "security/fixtures/incubator.no-shell-true/bad.ts"
+    },
+    {
+      "src": "files/security/fixtures/incubator.no-shell-true/good.ts",
+      "dest": "security/fixtures/incubator.no-shell-true/good.ts"
+    },
+    {
+      "src": "files/security/rules/incubator.no-child-process-exec.yml",
+      "dest": "security/rules/incubator.no-child-process-exec.yml"
+    },
+    {
+      "src": "files/security/rules/incubator.no-dynamic-eval.yml",
+      "dest": "security/rules/incubator.no-dynamic-eval.yml"
+    },
+    {
+      "src": "files/security/rules/incubator.no-shell-true.yml",
+      "dest": "security/rules/incubator.no-shell-true.yml"
+    },
+    {
+      "src": "files/src/features/health/index.ts.eta",
+      "dest": "src/features/health/index.ts"
+    },
+    {
+      "src": "files/src/server/app.ts.eta",
+      "dest": "src/server/app.ts"
+    },
+    {
+      "src": "files/src/server/db.ts",
+      "dest": "src/server/db.ts"
+    },
+    {
+      "src": "files/src/server/env.ts",
+      "dest": "src/server/env.ts"
+    },
+    {
+      "src": "files/src/server/main.ts",
+      "dest": "src/server/main.ts"
+    },
+    {
+      "src": "files/src/web/App.tsx.eta",
+      "dest": "src/web/App.tsx"
+    },
+    {
+      "src": "files/src/web/main.tsx",
+      "dest": "src/web/main.tsx"
+    },
+    {
+      "src": "files/tests/adapters/health.ts",
+      "dest": "tests/adapters/health.ts",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/adapters/types.ts",
+      "dest": "tests/adapters/types.ts",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/integration/db.test.ts",
+      "dest": "tests/integration/db.test.ts",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/live/health.test.ts",
+      "dest": "tests/live/health.test.ts",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/scenarios.test.ts",
+      "dest": "tests/scenarios.test.ts",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/setup/no-network.ts",
+      "dest": "tests/setup/no-network.ts",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/unit/env.test.ts",
+      "dest": "tests/unit/env.test.ts",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/unit/features.test.ts.eta",
+      "dest": "tests/unit/features.test.ts",
+      "role": "tests"
+    },
+    {
+      "src": "files/tests/unit/health.test.ts.eta",
+      "dest": "tests/unit/health.test.ts",
+      "role": "tests"
+    },
+    {
+      "src": "files/tsconfig.build.json",
+      "dest": "tsconfig.build.json"
+    },
+    {
+      "src": "files/tsconfig.json",
+      "dest": "tsconfig.json"
+    },
+    {
+      "src": "files/tsconfig.web.json",
+      "dest": "tsconfig.web.json"
+    },
+    {
+      "src": "files/vite.config.ts",
+      "dest": "vite.config.ts"
+    },
+    {
+      "src": "files/vitest.config.ts.eta",
+      "dest": "vitest.config.ts",
+      "role": "tests"
+    },
+    {
+      "src": "files/src/features/feature/index.ts.eta",
+      "dest": "src/features/<%= it.feature.id %>/index.ts",
+      "each": "spec.intent.coreFeatures",
+      "as": "feature"
+    },
+    {
+      "src": "files/tests/adapters/feature.ts.eta",
+      "dest": "tests/adapters/<%= it.feature.id %>.ts",
+      "each": "spec.intent.coreFeatures",
+      "as": "feature",
+      "role": "tests"
+    },
+    {
+      "src": "files/paired/package.json.eta",
+      "dest": "@paired/package.json",
+      "when": "testing.home == 'paired-repo'"
+    },
+    {
+      "src": "files/paired/tsconfig.json",
+      "dest": "@paired/tsconfig.json",
+      "when": "testing.home == 'paired-repo'"
+    }
+  ],
+  "markerPatches": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "region": "ci-jobs",
+      "entries": [
+        {
+          "id": "check",
+          "src": "patches/ci-check.yml.eta"
+        },
+        {
+          "id": "integration",
+          "src": "patches/ci-integration.yml.eta",
+          "when": "testing.home == 'in-repo'"
+        },
+        {
+          "id": "e2e",
+          "src": "patches/ci-e2e.yml.eta",
+          "when": "testing.home == 'in-repo'"
+        }
+      ]
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "region": "gate-needs",
+      "entries": [
+        {
+          "id": "check",
+          "text": "      - check"
+        },
+        {
+          "id": "integration",
+          "text": "      - integration",
+          "when": "testing.home == 'in-repo'"
+        },
+        {
+          "id": "e2e",
+          "text": "      - e2e",
+          "when": "testing.home == 'in-repo'"
+        }
+      ]
+    },
+    {
+      "file": "lefthook.yml",
+      "region": "lefthook-pre-commit",
+      "entries": [
+        {
+          "id": "node",
+          "src": "patches/lefthook.yml"
+        }
+      ]
+    },
+    {
+      "file": ".env.example",
+      "region": "env",
+      "entries": [
+        {
+          "id": "node-web",
+          "src": "patches/env.eta"
+        }
+      ]
+    },
+    {
+      "file": "README.md",
+      "region": "readme-commands",
+      "entries": [
+        {
+          "id": "node-web",
+          "src": "patches/readme.md"
+        }
+      ]
+    },
+    {
+      "file": "@paired/.github/workflows/ci.yml",
+      "region": "ci-jobs",
+      "when": "testing.home == 'paired-repo'",
+      "entries": [
+        {
+          "id": "test",
+          "src": "patches/paired-ci-test.yml.eta"
+        }
+      ]
+    },
+    {
+      "file": "@paired/.github/workflows/ci.yml",
+      "region": "gate-needs",
+      "when": "testing.home == 'paired-repo'",
+      "entries": [
+        {
+          "id": "test",
+          "text": "      - test"
+        }
+      ]
+    },
+    {
+      "file": "@paired/README.md",
+      "region": "readme-commands",
+      "when": "testing.home == 'paired-repo'",
+      "entries": [
+        {
+          "id": "node-web",
+          "src": "patches/paired-readme.md"
+        }
+      ]
+    }
+  ],
+  "jsonPatches": [
+    {
+      "file": "config/checks.json",
+      "ops": [
+        {
+          "op": "merge",
+          "pointer": "/steps",
+          "value": {
+            "format": {
+              "nodeBin": ["prettier", "prettier"],
+              "args": ["--check", "--log-level", "warn", "."]
+            },
+            "lint": {
+              "nodeBin": ["eslint", "eslint"],
+              "args": ["--max-warnings=0", "."]
+            },
+            "typecheck": {
+              "nodeBin": ["typescript", "tsc"],
+              "args": ["-p", "tsconfig.json"]
+            },
+            "typecheck-web": {
+              "nodeBin": ["typescript", "tsc"],
+              "args": ["-p", "tsconfig.web.json"]
+            },
+            "build": {
+              "pm": ["run", "build"]
+            },
+            "unit": {
+              "nodeBin": ["vitest", "vitest"],
+              "args": ["run", "--project", "unit"]
+            },
+            "unit-coverage": {
+              "nodeBin": ["vitest", "vitest"],
+              "args": ["run", "--project", "unit", "--coverage"]
+            },
+            "tests-collected": {
+              "guard": "tests-collected",
+              "args": ["--report", ".reports/unit.json", "--format", "vitest-json", "--min", "1"]
+            },
+            "audit": {
+              "pm": ["audit", "--audit-level", "high", "--prod"]
+            }
+          }
+        },
+        {
+          "op": "append-unique",
+          "pointer": "/profiles/quick",
+          "value": [
+            "format",
+            "lint",
+            "typecheck",
+            "typecheck-web",
+            "unit",
+            "tests-collected",
+            "completeness"
+          ]
+        },
+        {
+          "op": "append-unique",
+          "pointer": "/profiles/full",
+          "value": [
+            "format",
+            "lint",
+            "typecheck",
+            "typecheck-web",
+            "build",
+            "unit-coverage",
+            "tests-collected",
+            "completeness",
+            "audit"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "config/run-profiles.json",
+      "ops": [
+        {
+          "op": "set",
+          "pointer": "/runner",
+          "value": {
+            "nodeBin": ["vitest", "vitest"],
+            "args": ["run"],
+            "suiteFlag": "--project"
+          }
+        }
+      ]
+    },
+    {
+      "file": "config/drift.json",
+      "ops": [
+        {
+          "op": "append-unique",
+          "pointer": "/registries/0/expect",
+          "value": ["tests/adapters/{id}.ts"]
+        }
+      ]
+    },
+    {
+      "file": "package.json",
+      "when": "testing.home == 'paired-repo'",
+      "ops": [
+        {
+          "op": "set",
+          "pointer": "/scripts/test",
+          "value": "node scripts/tests-pointer.mjs"
+        }
+      ]
+    },
+    {
+      "file": "@paired/config/checks.json",
+      "when": "testing.home == 'paired-repo'",
+      "ops": [
+        {
+          "op": "merge",
+          "pointer": "/steps",
+          "value": {
+            "typecheck": {
+              "nodeBin": ["typescript", "tsc"],
+              "args": ["-p", "tsconfig.json"]
+            },
+            "unit": {
+              "nodeBin": ["vitest", "vitest"],
+              "args": ["run", "--project", "unit"]
+            },
+            "unit-coverage": {
+              "nodeBin": ["vitest", "vitest"],
+              "args": ["run", "--project", "unit", "--coverage"]
+            },
+            "tests-collected": {
+              "guard": "tests-collected",
+              "args": ["--report", ".reports/unit.json", "--format", "vitest-json", "--min", "1"]
+            }
+          }
+        },
+        {
+          "op": "append-unique",
+          "pointer": "/profiles/quick",
+          "value": ["typecheck", "unit", "tests-collected"]
+        },
+        {
+          "op": "append-unique",
+          "pointer": "/profiles/full",
+          "value": ["typecheck", "unit-coverage", "tests-collected"]
+        }
+      ]
+    }
+  ]
+}

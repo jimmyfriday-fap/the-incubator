@@ -1,0 +1,7 @@
+#!/usr/bin/env node
+// Tests for this repository live in a paired repository; `test` points there and exits 1 so nothing
+// can mistake an empty run for a pass.
+process.stderr.write(
+  'Tests live in <%= it.spec.project.owner.login || '<owner>' %>/<%= it.names.pairedName %>. Clone it next to this repository and see its TESTING.md.\n',
+);
+process.exitCode = 1;

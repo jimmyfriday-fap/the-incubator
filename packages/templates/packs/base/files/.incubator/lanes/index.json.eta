@@ -1,0 +1,3 @@
+{
+  "lanes": <%~ it.h.json(it.spec.lanes.workLanes, 2).replace(/\n/g, '\n  ') %>
+}

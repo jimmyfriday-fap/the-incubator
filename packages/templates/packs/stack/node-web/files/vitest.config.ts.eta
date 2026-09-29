@@ -1,0 +1,40 @@
+import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vitest/config';
+<% const src = it.spec.testing.home === 'paired-repo' ? 'app/src' : 'src'; -%>
+
+const live = process.env['INCUBATOR_LIVE'] === '1';
+
+export default defineConfig({
+  resolve: { alias: { '@app': fileURLToPath(new URL('./<%= src %>', import.meta.url)) } },
+  test: {
+    reporters: ['default', 'json'],
+    outputFile: { json: '.reports/unit.json' },
+    coverage: {
+      provider: 'v8',
+      include: ['<%= src %>/server/**/*.ts', '<%= src %>/features/**/*.ts'],
+      exclude: ['<%= src %>/server/main.ts'],
+      reporter: ['text-summary', 'json-summary'],
+      reportsDirectory: '.reports/coverage',
+      thresholds: {
+        lines: <%= it.spec.testing.coverageThreshold %>,
+        functions: <%= it.spec.testing.coverageThreshold %>,
+        statements: <%= it.spec.testing.coverageThreshold %>,
+      },
+    },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'unit',
+          include: ['tests/unit/**/*.test.ts', 'tests/scenarios.test.ts'],
+          setupFiles: ['tests/setup/no-network.ts'],
+        },
+      },
+      {
+        extends: true,
+        test: { name: 'integration', include: ['tests/integration/**/*.test.ts'] },
+      },
+      ...(live ? [{ extends: true as const, test: { name: 'live', include: ['tests/live/**/*.test.ts'] } }] : []),
+    ],
+  },
+});

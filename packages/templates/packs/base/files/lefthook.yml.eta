@@ -1,0 +1,19 @@
+# Git hooks, installed by lefthook.
+output:
+  - failure
+  - summary
+
+pre-commit:
+  parallel: true
+  commands:
+    bom:
+      run: node scripts/guard/bom.mjs --quiet {staged_files}
+    abs-path:
+      run: node scripts/guard/abs-path.mjs --quiet {staged_files}
+    # <scaffold:lefthook-pre-commit>
+    # </scaffold:lefthook-pre-commit>
+
+pre-push:
+  commands:
+    check-quick:
+      run: node scripts/check.mjs quick

@@ -1,0 +1,1 @@
+<%~ it.h.json({ id: `F-${it.feature.id}`, title: it.feature.summary, lane: it.feature.lane, state: 'TAGGED_TO_RELEASE', plan: 'docs/plans/000-bootstrap.md', remediations: [] }) %>

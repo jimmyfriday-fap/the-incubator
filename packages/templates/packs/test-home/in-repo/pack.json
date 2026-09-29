@@ -1,0 +1,14 @@
+{
+  "$schema": "../../../schema/pack.schema.json",
+  "id": "test-home/in-repo",
+  "version": "1.0.0",
+  "description": "Tests live in the application repository.",
+  "appliesWhen": "testing.home == 'in-repo'",
+  "requires": ["base"],
+  "files": [
+    {
+      "src": "files/TESTING.md.eta",
+      "dest": "TESTING.md"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "features": [
+<% it.features.forEach((f, i) => { -%>
+    { "id": <%~ it.h.json(f.id) %>, "summary": <%~ it.h.json(f.summary) %> }<%= i < it.features.length - 1 ? ',' : '' %>
+<% }) -%>
+  ]
+}

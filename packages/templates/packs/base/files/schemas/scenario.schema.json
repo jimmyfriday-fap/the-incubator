@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://incubator.local/schemas/scenario.schema.json",
+  "title": "Scenario",
+  "description": "One scenario of the scenario contract layer: seed, context, mocks and staged assertions.",
+  "type": "object",
+  "required": ["id", "feature", "tags", "seed", "context", "mocks", "stages"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "feature": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "title": {
+      "type": "string"
+    },
+    "status": {
+      "enum": ["active", "todo"],
+      "description": "todo: a scaffolded stub an agent must complete; reported as a todo test, never silently skipped."
+    },
+    "tags": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$"
+      }
+    },
+    "seed": {
+      "type": "object"
+    },
+    "context": {
+      "type": "object"
+    },
+    "mocks": {
+      "type": "object",
+      "properties": {
+        "ai": {
+          "type": "array"
+        }
+      }
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "assertions"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "input": {
+            "type": "object"
+          },
+          "assertions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["path", "op"],
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "op": {
+                  "enum": [
+                    "eq",
+                    "neq",
+                    "contains",
+                    "matches",
+                    "exists",
+                    "absent",
+                    "gte",
+                    "lte",
+                    "length"
+                  ]
+                },
+                "value": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

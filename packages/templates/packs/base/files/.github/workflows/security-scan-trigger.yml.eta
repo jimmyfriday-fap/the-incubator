@@ -1,0 +1,24 @@
+name: security-scan-trigger
+
+on:
+  push:
+    branches: [<%= it.spec.lanes.branches.staging %>]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # why: the central rig scans every repo with shared rules; this only notifies it (token by name, value in secrets).
+      - run: |
+          curl --fail-with-body -sS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${SECURITY_RIG_TOKEN}" \
+            "https://api.github.com/repos/<%= it.spec.security.centralRig.repo %>/dispatches" \
+            -d "{\"event_type\":\"scan-request\",\"client_payload\":{\"repo\":\"${GITHUB_REPOSITORY}\",\"sha\":\"${GITHUB_SHA}\",\"ref\":\"${GITHUB_REF}\"}}"
+        env:
+          SECURITY_RIG_TOKEN: ${{ secrets.SECURITY_RIG_TOKEN }}

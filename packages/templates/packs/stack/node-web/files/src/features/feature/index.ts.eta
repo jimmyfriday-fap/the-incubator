@@ -1,0 +1,13 @@
+import type { FastifyInstance } from 'fastify';
+
+export const FEATURE = <%~ it.h.yamlStr(it.feature.id) %>;
+
+/** <%= it.feature.summary %> */
+export function <%= it.h.camel(it.feature.id) %>(): { status: 'todo'; feature: string } {
+  // TODO(scaffold): implement <%= it.feature.id %> (see docs/plans/000-bootstrap.md).
+  return { status: 'todo', feature: FEATURE };
+}
+
+export function register<%= it.h.pascal(it.feature.id) %>(app: FastifyInstance): void {
+  app.get(`/api/${FEATURE}`, async (_request, reply) => reply.code(501).send(<%= it.h.camel(it.feature.id) %>()));
+}

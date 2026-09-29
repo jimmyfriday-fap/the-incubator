@@ -1,0 +1,30 @@
+import { describe, expect, it } from 'vitest';
+import { buildApp } from '@app/server/app.js';
+import { health } from '@app/features/health/index.js';
+
+describe('health', () => {
+  it('reports ok with one database check', async () => {
+    await expect(health()).resolves.toMatchObject({ status: 'ok', name: <%~ it.h.yamlStr(it.names.slug) %>, checks: [{ name: 'database', ok: true }] });
+  });
+
+  it('degrades when the database is down or throws', async () => {
+    await expect(health({}, { checkDatabase: () => Promise.resolve(false) })).resolves.toMatchObject({ status: 'degraded' });
+    await expect(health({}, { checkDatabase: () => Promise.reject(new Error('refused')) })).resolves.toMatchObject({
+      status: 'degraded',
+      checks: [{ ok: false }],
+    });
+  });
+
+  it('validates probes', async () => {
+    await expect(health({ probe: '' })).resolves.toMatchObject({ status: 'error', error: { code: 'invalid_probe' } });
+    await expect(health({ probe: 'nope' })).resolves.toMatchObject({ status: 'error', error: { code: 'unknown_check' } });
+    await expect(health({ probe: 'database' })).resolves.toMatchObject({ status: 'ok' });
+  });
+
+  it('maps statuses to HTTP codes', async () => {
+    const app = buildApp({ health: { checkDatabase: () => Promise.resolve(false) } });
+    expect((await app.inject({ url: '/health' })).statusCode).toBe(503);
+    expect((await app.inject({ url: '/health?probe=nope' })).statusCode).toBe(400);
+    expect((await buildApp().inject({ url: '/health' })).statusCode).toBe(200);
+  });
+});

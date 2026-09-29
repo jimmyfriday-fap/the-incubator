@@ -1,0 +1,11 @@
+rules:
+  - id: incubator.no-dynamic-eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: >-
+      Dynamic code evaluation breaks deterministic, auditable rendering and invites injection.
+      Templates use the restricted Eta subset; everything else is plain code.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+      - pattern: Function(...)

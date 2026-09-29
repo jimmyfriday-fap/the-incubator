@@ -1,0 +1,25 @@
+<% const v = it.v.npm;
+const pkg = {
+  name: it.names.pairedName,
+  version: '0.1.0',
+  private: true,
+  description: `Tests for ${it.names.slug}`,
+  type: 'module',
+  packageManager: `pnpm@${it.v.pnpm}`,
+  engines: { node: '>=22.12 <23' },
+  scripts: {
+    check: 'node scripts/check.mjs full',
+    'check:quick': 'node scripts/check.mjs quick',
+    test: 'vitest run --project unit',
+    'test:profile': 'node scripts/test-profile.mjs',
+    e2e: 'playwright test --config e2e/playwright.config.ts --project local',
+  },
+  devDependencies: {
+    '@playwright/test': v['@playwright/test'],
+    '@types/node': v['@types/node'],
+    '@vitest/coverage-v8': v['@vitest/coverage-v8'],
+    typescript: v.typescript,
+    vitest: v.vitest,
+  },
+}; -%>
+<%~ it.h.json(pkg) %>

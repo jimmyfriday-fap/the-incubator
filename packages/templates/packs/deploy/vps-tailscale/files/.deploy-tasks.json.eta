@@ -1,0 +1,9 @@
+<% const migrate = {
+  'node-web': ['node', 'scripts/db/bootstrap.mjs', '--migrate-only'],
+  'python-service': ['uv', 'run', 'python', '-m', `${it.names.snake}.db`, '--migrate-only'],
+  'wordpress': ['node', 'scripts/db/bootstrap.mjs', '--migrate-only'],
+}[it.spec.stack.pack];
+const tasks = [];
+if (migrate) tasks.push({ name: 'migrate-db', description: 'Apply numbered migrations (never seeds outside local/staging).', env: ['staging', 'prod'], idempotent: true, runOnce: false, timeout: 600, command: migrate });
+tasks.push({ name: 'record-release', description: 'Print the deployed release for the audit log.', env: ['staging', 'prod'], idempotent: true, runOnce: false, timeout: 30, command: ['node', '-e', 'process.stdout.write(`release recorded\\n`)'] }); -%>
+<%~ it.h.json({ $schema: './schemas/deploy-tasks.schema.json', tasks }) %>
