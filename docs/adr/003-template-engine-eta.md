@@ -5,6 +5,7 @@
 - **Context doc:** [`docs/TDD.md`](../TDD.md)
 
 ## Context
+
 The brief asks for Eta or Handlebars. The templates produce GitHub Actions YAML, which is full of
 `${{ ... }}`; generated scaffolder blueprints, which must keep literal `{{PLACEHOLDER}}` tokens; PHP;
 JSX; and Jinja-like configs.
@@ -16,6 +17,7 @@ Eta's `<% %>` delimiters collide with none of our targets. However, Eta evaluate
 JavaScript, which threatens determinism.
 
 ## Decision
+
 - Use **Eta 4.x**, pinned exactly, configured with `autoEscape: false`, `useWith: false` (templates
   must write `it.x`), `autoTrim: false` (whitespace is under explicit control), `cache: true` and
   `rmWhitespace: false`.
@@ -31,11 +33,13 @@ JavaScript, which threatens determinism.
   only data and these helpers.
 
 ## Consequences
+
 - Templates stay readable, and GitHub Actions expressions need no escaping.
 - Determinism rests on the lint plus golden byte-identity tests, not on the engine's
   logic-lessness.
 
 ## Alternatives considered
+
 - **Handlebars with `strict: true`.** Rejected because of the delimiter collisions described above.
 - **A home-grown `{{ }}` substitution.** Rejected: loops and conditionals are needed, and building our
   own engine is scope creep.

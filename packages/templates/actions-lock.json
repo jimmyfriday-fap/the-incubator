@@ -1,0 +1,60 @@
+{
+  "actions": {
+    "actions/checkout": {
+      "tag": "v7.0.1",
+      "sha": "3d3c42e5aac5ba805825da76410c181273ba90b1"
+    },
+    "actions/setup-node": {
+      "tag": "v7.0.0",
+      "sha": "820762786026740c76f36085b0efc47a31fe5020"
+    },
+    "pnpm/action-setup": {
+      "tag": "v6.1.0",
+      "sha": "ea17c68df8912ef543352723c149a84f56e3d413"
+    },
+    "actions/upload-artifact": {
+      "tag": "v7.0.1",
+      "sha": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+    },
+    "actions/download-artifact": {
+      "tag": "v8.0.1",
+      "sha": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
+    },
+    "actions/setup-python": {
+      "tag": "v7.0.0",
+      "sha": "5fda3b95a4ea91299a34e894583c3862153e4b97"
+    },
+    "astral-sh/setup-uv": {
+      "tag": "v10.2.0",
+      "sha": "c18668ad3cf93ea998bef934396af7bb5c839dc7"
+    },
+    "shivammathur/setup-php": {
+      "tag": "2.37.2",
+      "sha": "f3e473d116dcccaddc5834248c87452386958240"
+    },
+    "aquasecurity/trivy-action": {
+      "tag": "v0.36.0",
+      "sha": "ed142fd0673e97e23eac54620cfb913e5ce36c25"
+    },
+    "actions/cache": {
+      "tag": "v6.1.0",
+      "sha": "55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
+    },
+    "tailscale/github-action": {
+      "tag": "v4.2.0",
+      "sha": "d1b6cd204f8dceda5b3eaad7f1f767be390056cd"
+    },
+    "docker/login-action": {
+      "tag": "v4.6.0",
+      "sha": "dbcb813823bdd20940b903addbd779551569679f"
+    },
+    "docker/setup-buildx-action": {
+      "tag": "v4.4.1",
+      "sha": "f87e5991a6d7451dcb8d9637bfbc97413f497069"
+    },
+    "docker/build-push-action": {
+      "tag": "v7.4.0",
+      "sha": "c3c9e263c25d99ce0380d002d59b67737d91b0dc"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "files": {
+    ".incubator/agent-profile.json": "bd9de008f10d275ce76f4de060b0c370df70445cb2e8584217c57820eb081615",
+    "config/completeness.json": "b666ff23be57489ff53a66e7c8784980068a19588f2a95ef093a9c901cb63446",
+    "schemas/agent-profile.schema.json": "beb0b92032782749230d81660b853af48037ed6c68fc5f03bf0cf2026fcad5b2",
+    "schemas/scenario.schema.json": "31208079a22d2d6a0e640b3086e8b3b53a216465453dc458e45079eaa546dc80"
+  }
+}

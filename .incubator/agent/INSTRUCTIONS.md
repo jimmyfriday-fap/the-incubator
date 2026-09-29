@@ -1,0 +1,38 @@
+# Agent instructions: the-incubator
+
+The Incubator is a locally run engine that turns a plain-English idea and/or an existing repository
+into a scaffolded GitHub repository following the Backshack Canonical Pattern. The design lives in
+[docs/TDD.md](docs/TDD.md); decisions live in [docs/adr/](docs/adr/).
+
+## Verification loop (mandatory)
+
+1. After every change, run `pnpm check:quick`.
+2. If it fails, the change is vetoed: fix it before doing anything else. The Stop hook enforces this
+   and records the failure through the tracker (`.incubator/tickets/`).
+3. Before declaring work done, run `pnpm check` (the full gate, including coverage and security fixtures).
+
+## Exit-code contract
+
+Every command and script exits `0` pass, `1` the tool itself broke, `2` a policy or gate finding,
+`130` interrupted. Library code returns codes; only launchers call `process.exit`.
+
+## Never do these (denied actions)
+
+- Force-push or rewrite history; delete, skip or weaken a test; disable or weaken a gate.
+- Add a flake-quarantine entry without an owner and an expiry.
+- Commit secrets, real `.env` files, or absolute machine paths. Use repository-relative paths only.
+- Spawn subprocesses through a shell. Use `Exec` from `@incubator/runtime` (`shell: false`).
+- Put plan files at the repository root.
+
+## Human-only actions
+
+Promote or roll back production, rotate secrets, edit `security/accepted-risks.json`, re-pin
+contracts (`pnpm contracts:pin`), change run ceilings. Stop and ask a human.
+
+## Where things live
+
+- Packages: `packages/*` (engine), `apps/*` (CLI, web, desktop). Dependency rules: `config/deps-boundary.json`.
+- Tests: next to sources as `*.test.ts`; scenarios in `tests/scenarios/<feature>/`, adapters in `tests/adapters/`.
+- Run profiles: `config/run-profiles.json` (`pnpm test:profile <name>`). Live tests need `INCUBATOR_LIVE=1`.
+- Work lanes and prompt templates: `.incubator/lanes/`; agent limits: `.incubator/agent-profile.json`.
+- Executor plans: `docs/plans/NNN-slug.md` (checked by `scripts/guard/plan-lint.mjs`). Phase evidence: `docs/phases/`.

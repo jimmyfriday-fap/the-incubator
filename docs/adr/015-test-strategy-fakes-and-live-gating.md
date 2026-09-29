@@ -5,10 +5,12 @@
 - **Context doc:** [`docs/TDD.md`](../TDD.md)
 
 ## Context
+
 The cloud session has no keychain, no logged-in CLIs, no GUI and no real GitHub target. Tests must be
 meaningful without them, and live tests must exist but not run by default.
 
 ## Decision
+
 - **Vitest 5** for all TypeScript packages. The workspace config has projects per package. The
   `unit` project stubs `net.connect`/`fetch` so unit tests can't reach the network.
 - **Fakes live in the packages** (`@incubator/<pkg>/testing`). `createEngine(fakeDeps())` is the
@@ -25,10 +27,12 @@ meaningful without them, and live tests must exist but not run by default.
   Chromium in the cloud session.
 
 ## Consequences
+
 - Any claim in a phase doc marked PASS is backed by a test that ran in the session or in CI.
 - Live paths can still break unnoticed between local verifications. That is accepted, and the gap is
   listed as `PENDING LOCAL VERIFICATION`.
 
 ## Alternatives considered
+
 - **nock/msw-style HTTP mocks for GitHub.** Rejected as the primary fake: they test HTTP shapes, not
   behaviour. They are used only for Octokit adapter unit tests.

@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.live.test.ts", "src/testing-fixtures/**"],
+  "references": [
+    {
+      "path": "../runtime/tsconfig.build.json"
+    },
+    {
+      "path": "../spec/tsconfig.build.json"
+    },
+    {
+      "path": "../templates/tsconfig.build.json"
+    },
+    {
+      "path": "../git/tsconfig.build.json"
+    }
+  ]
+}

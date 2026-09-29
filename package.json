@@ -1,0 +1,39 @@
+{
+  "name": "the-incubator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local project genesis engine: narrative and/or repo in, canonical GitHub repo out.",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.12 <23"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "check": "node scripts/check.mjs full",
+    "check:quick": "node scripts/check.mjs quick",
+    "test": "vitest run",
+    "test:profile": "node scripts/test-profile.mjs",
+    "format": "prettier --write .",
+    "lint": "eslint --max-warnings=0 .",
+    "typecheck": "tsc -p tsconfig.json",
+    "tools:fetch": "node scripts/tools-fetch.mjs",
+    "contracts:pin": "node scripts/guard/contracts-pin.mjs --update",
+    "actions:refresh": "node scripts/actions-refresh.mjs",
+    "agent:sync": "node scripts/agent/sync-instructions.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@incubator/cli": "workspace:*",
+    "@incubator/runtime": "workspace:*",
+    "@types/node": "^22.19.0",
+    "@vitest/coverage-v8": "^5.0.2",
+    "eslint": "^10.11.0",
+    "globals": "^17.0.0",
+    "lefthook": "^2.1.14",
+    "prettier": "3.9.9",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^5.0.2"
+  }
+}

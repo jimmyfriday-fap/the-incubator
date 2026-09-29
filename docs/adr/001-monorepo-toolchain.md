@@ -5,6 +5,7 @@
 - **Context doc:** [`docs/TDD.md`](../TDD.md)
 
 ## Context
+
 The brief fixes TypeScript, pnpm workspaces, Node 22 LTS, strict `tsc` and ESM. Two choices are left
 open: the TypeScript major version, and how packages consume each other during development.
 
@@ -13,6 +14,7 @@ declares `typescript: ">=4.8.4 <6.1.0"`, and the brief requires a real linter. T
 are the main value of ESLint on a TypeScript codebase.
 
 ## Decision
+
 - Pin **TypeScript `~6.0.3`**. Upgrade to 7.x when `typescript-eslint` supports it. The upgrade is
   tracked as a risk in `docs/TDD.md` §12.
 - Pin **pnpm 10** via `packageManager` (Corepack), and Node `>=22.12 <23` via `engines` and `.nvmrc`.
@@ -26,10 +28,12 @@ are the main value of ESLint on a TypeScript codebase.
   moving part to the cloud-session bootstrap.
 
 ## Consequences
+
 - A fresh clone runs `pnpm install && pnpm check` with no build step first.
 - One extra upgrade later (TS 7). Mechanical, since we avoid deprecated compiler options.
 
 ## Alternatives considered
+
 - **TypeScript 7 without type-aware lint.** Rejected: loses the rules that catch floating promises and
   unsafe `any`.
 - **Turborepo.** Rejected for now. Revisit if `pnpm check` exceeds about 3 minutes.

@@ -5,11 +5,13 @@
 - **Context doc:** [`docs/TDD.md`](../TDD.md)
 
 ## Context
+
 The brief requires `shell: false` with argument arrays on all OSes, and treats Windows as first-class.
 Since Node's CVE-2024-27980 fix, `spawn` of a `.cmd`/`.bat` file with `shell: false` throws `EINVAL`.
 Many npm-installed CLIs on Windows are `.cmd` shims.
 
 ## Decision
+
 - `runtime/exec.ts` is the only module allowed to import `node:child_process` (ESLint
   `no-restricted-imports` everywhere else). Its options type has no `shell` field, and it always
   passes `shell: false` and `windowsHide: true`.
@@ -26,9 +28,11 @@ Many npm-installed CLIs on Windows are `.cmd` shims.
   tee applies to both streams.
 
 ## Consequences
+
 - Windows works without shells or users needing `.exe` installs.
 - One place to audit for injection.
 
 ## Alternatives considered
+
 - **`cross-spawn` / `execa`.** Rejected: they may use `cmd.exe` for shims, which violates the
   constraint.

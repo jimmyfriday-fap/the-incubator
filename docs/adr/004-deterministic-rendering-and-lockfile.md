@@ -5,11 +5,13 @@
 - **Context doc:** [`docs/TDD.md`](../TDD.md)
 
 ## Context
+
 The brief requires that the same `incubator.json` and the same pack versions produce byte-identical
 output. It also requires a lockfile that `incubator sync` can use to upgrade packs without
 overwriting user changes.
 
 ## Decision
+
 - `render(spec, packSet) → Map<posixPath, Uint8Array>` is pure. It takes no clock, env, fs (packs are
   preloaded into memory), network or randomness.
 - **Normalization** applies to every text file:
@@ -31,10 +33,12 @@ overwriting user changes.
   bit. At publish, `git update-index --chmod=+x` sets them.
 
 ## Consequences
+
 - Two renders compare equal with a simple byte comparison, and golden tests store hashes.
 - `sync` can tell user-modified files (the hash differs from the lock) from pristine ones.
 - Formatting generated files with Prettier at render time is ruled out (it is version-sensitive).
   Instead, pack sources are formatted, and the lint on the output checks formatting.
 
 ## Alternatives considered
+
 - **Git tree hashes as file identity.** Rejected: SHA-1, and they tie the lockfile to git.

@@ -1,0 +1,21 @@
+{
+  "name": "@incubator/templates",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Template packs, deterministic renderer and lockfile.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@incubator/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@incubator/runtime": "workspace:*",
+    "@incubator/spec": "workspace:*"
+  }
+}

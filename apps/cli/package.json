@@ -1,0 +1,25 @@
+{
+  "name": "@incubator/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The incubator command-line interface.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@incubator/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "dependencies": {
+    "@incubator/runtime": "workspace:*",
+    "@incubator/core": "workspace:*"
+  },
+  "bin": {
+    "incubator": "./bin/incubator.mjs"
+  }
+}

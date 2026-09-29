@@ -1,0 +1,81 @@
+{
+  "profiles": {
+    "quick": [
+      "bom",
+      "abs-path",
+      "isolation",
+      "deps-boundary",
+      "contracts-pin",
+      "plan-lint",
+      "lane-contract",
+      "scenarios",
+      "quarantine",
+      "drift",
+      "workflow-lint",
+      "format",
+      "lint",
+      "typecheck",
+      "unit",
+      "tests-collected"
+    ],
+    "full": [
+      "tools-fetch",
+      "bom",
+      "abs-path",
+      "isolation",
+      "deps-boundary",
+      "contracts-pin",
+      "plan-lint",
+      "lane-contract",
+      "scenarios",
+      "quarantine",
+      "drift",
+      "syntax",
+      "workflow-lint-strict",
+      "format",
+      "lint",
+      "typecheck",
+      "build",
+      "unit-coverage",
+      "tests-collected",
+      "completeness",
+      "rule-fixtures",
+      "audit"
+    ]
+  },
+  "steps": {
+    "tools-fetch": { "script": "scripts/tools-fetch.mjs" },
+    "bom": { "guard": "bom" },
+    "abs-path": { "guard": "abs-path" },
+    "isolation": { "guard": "isolation" },
+    "deps-boundary": { "guard": "deps-boundary" },
+    "contracts-pin": { "guard": "contracts-pin" },
+    "plan-lint": { "guard": "plan-lint" },
+    "lane-contract": { "guard": "lane-contract" },
+    "scenarios": { "guard": "scenarios" },
+    "quarantine": { "guard": "quarantine" },
+    "drift": { "guard": "drift" },
+    "syntax": { "guard": "syntax" },
+    "workflow-lint": { "guard": "workflow-lint" },
+    "workflow-lint-strict": { "guard": "workflow-lint", "args": ["--require-actionlint"] },
+    "completeness": { "guard": "completeness" },
+    "rule-fixtures": { "guard": "rule-fixtures" },
+    "tests-collected": {
+      "guard": "tests-collected",
+      "args": ["--report", ".reports/unit.json", "--format", "vitest-json", "--min", "1"]
+    },
+    "format": {
+      "nodeBin": ["prettier", "prettier"],
+      "args": ["--check", "--log-level", "warn", "."]
+    },
+    "lint": { "nodeBin": ["eslint", "eslint"], "args": ["--max-warnings=0", "."] },
+    "typecheck": { "nodeBin": ["typescript", "tsc"], "args": ["-p", "tsconfig.json"] },
+    "build": { "nodeBin": ["typescript", "tsc"], "args": ["-b", "tsconfig.build.json"] },
+    "unit": { "nodeBin": ["vitest", "vitest"], "args": ["run", "--project", "unit"] },
+    "unit-coverage": {
+      "nodeBin": ["vitest", "vitest"],
+      "args": ["run", "--project", "unit", "--coverage"]
+    },
+    "audit": { "pm": ["audit", "--audit-level", "high", "--prod"] }
+  }
+}

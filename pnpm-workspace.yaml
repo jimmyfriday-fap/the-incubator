@@ -1,0 +1,9 @@
+packages:
+  - packages/*
+  - apps/*
+
+# why: pnpm 10 blocks dependency lifecycle scripts by default; only these may run them.
+onlyBuiltDependencies:
+  - esbuild
+  - lefthook
+  - electron

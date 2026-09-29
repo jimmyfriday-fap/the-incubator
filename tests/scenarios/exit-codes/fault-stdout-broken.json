@@ -1,0 +1,20 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "fault-stdout-broken",
+  "feature": "exit-codes",
+  "title": "A broken stdout is the tool breaking: exit 1",
+  "tags": ["fault"],
+  "seed": {},
+  "context": {},
+  "mocks": { "ai": [] },
+  "stages": [
+    {
+      "name": "epipe",
+      "input": { "argv": ["--version"], "fault": "stdout-throws" },
+      "assertions": [
+        { "path": "exitCode", "op": "eq", "value": 1 },
+        { "path": "stderr", "op": "contains", "value": "EPIPE" }
+      ]
+    }
+  ]
+}

@@ -1,11 +1,11 @@
 # The Incubator — Technical Design Document
 
-| | |
-|---|---|
-| Status | **Draft for approval** (checkpoint 0 of `docs/BUILD_PROMPT.md` §0.1) |
-| Scope | Everything in the build brief, §§1–9 |
-| Decisions | Recorded as ADRs in [`docs/adr/`](adr/) and indexed in [Appendix A](#appendix-a--adr-index) |
-| Brief | [`docs/BUILD_PROMPT.md`](BUILD_PROMPT.md). §-references without a document name point to the brief. |
+|           |                                                                                                     |
+| --------- | --------------------------------------------------------------------------------------------------- |
+| Status    | **Draft for approval** (checkpoint 0 of `docs/BUILD_PROMPT.md` §0.1)                                |
+| Scope     | Everything in the build brief, §§1–9                                                                |
+| Decisions | Recorded as ADRs in [`docs/adr/`](adr/) and indexed in [Appendix A](#appendix-a--adr-index)         |
+| Brief     | [`docs/BUILD_PROMPT.md`](BUILD_PROMPT.md). §-references without a document name point to the brief. |
 
 ---
 
@@ -41,7 +41,7 @@ Five strategic choices shape the design:
 4. **Generated repos carry their own guardrails, written once in Node.** Every generated repo gets
    the same zero-dependency `scripts/guard/*.mjs` toolkit, whatever its stack. The toolkit covers the
    BOM guard, isolation lint, completeness score, drift check, policy gate, flake quarantine, plan lint
-   and deploy tasks (ADR-013). The Incubator repo runs the *identical* files, and a drift test proves
+   and deploy tasks (ADR-013). The Incubator repo runs the _identical_ files, and a drift test proves
    it. That is the dogfood loop (§3 of this doc).
 5. **LLM output is untrusted data.** Every LLM response is schema-validated. A failure gets one retry
    with the validation error included, then the run parks. Agent CLIs run with tools disabled, in an
@@ -79,23 +79,23 @@ two most consequential items are **Q1**, a third deploy class for non-server pro
 
 ## 1. Glossary and cross-cutting conventions
 
-| Term | Meaning |
-|---|---|
-| **Run** | One invocation of the pipeline. Its ID is `yyyymmdd-HHMMSS-<6 base32>`. State lives in `~/.incubator/runs/<runId>/`. |
-| **Pack** | A versioned template directory with `pack.json`: `base`, `stack/<id>`, `deploy/<id>`, `test-home/<id>`. |
+| Term               | Meaning                                                                                                                            |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **Run**            | One invocation of the pipeline. Its ID is `yyyymmdd-HHMMSS-<6 base32>`. State lives in `~/.incubator/runs/<runId>/`.               |
+| **Pack**           | A versioned template directory with `pack.json`: `base`, `stack/<id>`, `deploy/<id>`, `test-home/<id>`.                            |
 | **Canonical item** | One requirement of the Backshack Canonical Pattern, declared by a pack. Brownfield detectors check it and the gap report lists it. |
-| **Guard toolkit** | The `scripts/guard/*.mjs` files that every generated repo (and this repo) carries. |
-| **Fake** | An in-memory or temp-dir implementation of a side-effect interface, used by default in tests. |
-| **Live** | A test or code path that touches real external systems. It runs only with `INCUBATOR_LIVE=1`. |
+| **Guard toolkit**  | The `scripts/guard/*.mjs` files that every generated repo (and this repo) carries.                                                 |
+| **Fake**           | An in-memory or temp-dir implementation of a side-effect interface, used by default in tests.                                      |
+| **Live**           | A test or code path that touches real external systems. It runs only with `INCUBATOR_LIVE=1`.                                      |
 
 **Exit-code contract** (`packages/runtime/src/exit.ts`; guard scripts implement the same contract):
 
-| Code | Meaning | Raised by |
-|---|---|---|
-| `0` | pass | normal completion |
-| `1` | the tool itself broke | `ToolError`, any uncaught exception |
-| `2` | a policy or gate finding | `PolicyError` (gate failed, spec invalid, name taken without `--adopt`, run parked) |
-| `130` | interrupted | SIGINT or SIGTERM. The handler journals `interrupted`, kills child process trees, then exits. |
+| Code  | Meaning                  | Raised by                                                                                     |
+| ----- | ------------------------ | --------------------------------------------------------------------------------------------- |
+| `0`   | pass                     | normal completion                                                                             |
+| `1`   | the tool itself broke    | `ToolError`, any uncaught exception                                                           |
+| `2`   | a policy or gate finding | `PolicyError` (gate failed, spec invalid, name taken without `--adopt`, run parked)           |
+| `130` | interrupted              | SIGINT or SIGTERM. The handler journals `interrupted`, kills child process trees, then exits. |
 
 A parked run exits `2`, not `1`. Parking is a gate outcome (for example, an LLM response failed the
 schema twice), not a crash. A single `main()` wrapper in `apps/cli` maps errors to codes. No other
@@ -123,16 +123,16 @@ code calls `process.exit`, and a lint rule enforces that.
 
 ### 2.2 Deterministic scaffolding (ADR-003, ADR-004)
 
-| Rule | Mechanism |
-|---|---|
-| Same spec + same pack versions ⇒ byte-identical files | `render()` is pure. The context is `deepFreeze({ spec, inputs, derived })`, where `derived` is computed by pure helpers such as slug, PascalCase and port allocation from a hash. |
-| No hidden inputs | Template lint rejects `Date`, `Math`, `process`, `globalThis`, `require`, `import(`, `fetch`, `crypto`, `setTimeout`. Only `it.*` and whitelisted `h.*` helpers are allowed. |
-| Stable bytes | Output is UTF-8 without a BOM, CRLF→LF, exactly one trailing LF, and no trailing whitespace except in `*.md` hard breaks. JSON is serialized by one serializer (2-space, key order = schema order for spec, sorted otherwise). |
-| Stable ordering | Files are emitted sorted by POSIX path (code-unit order). Marker patches apply in pack-composition order, then by patch ID. |
-| File modes | The manifest declares `mode: "0755"` for executables. Publish sets the bit in the git index (`git update-index --chmod=+x`), because Windows file systems don't carry it. |
-| LLM exclusion | No template helper can reach an adapter. The render context type contains no functions except pure helpers, and a type-level test asserts it. |
+| Rule                                                  | Mechanism                                                                                                                                                                                                                      |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Same spec + same pack versions ⇒ byte-identical files | `render()` is pure. The context is `deepFreeze({ spec, inputs, derived })`, where `derived` is computed by pure helpers such as slug, PascalCase and port allocation from a hash.                                              |
+| No hidden inputs                                      | Template lint rejects `Date`, `Math`, `process`, `globalThis`, `require`, `import(`, `fetch`, `crypto`, `setTimeout`. Only `it.*` and whitelisted `h.*` helpers are allowed.                                                   |
+| Stable bytes                                          | Output is UTF-8 without a BOM, CRLF→LF, exactly one trailing LF, and no trailing whitespace except in `*.md` hard breaks. JSON is serialized by one serializer (2-space, key order = schema order for spec, sorted otherwise). |
+| Stable ordering                                       | Files are emitted sorted by POSIX path (code-unit order). Marker patches apply in pack-composition order, then by patch ID.                                                                                                    |
+| File modes                                            | The manifest declares `mode: "0755"` for executables. Publish sets the bit in the git index (`git update-index --chmod=+x`), because Windows file systems don't carry it.                                                      |
+| LLM exclusion                                         | No template helper can reach an adapter. The render context type contains no functions except pure helpers, and a type-level test asserts it.                                                                                  |
 
-LLMs are used only in `DRAFT_SPEC`/`CLARIFY` (discovery), `ANALYZE` (a brownfield *summary* for the
+LLMs are used only in `DRAFT_SPEC`/`CLARIFY` (discovery), `ANALYZE` (a brownfield _summary_ for the
 PR body and REVIEW screen, never files) and `HANDOFF`.
 
 ### 2.3 Subprocesses (ADR-008)
@@ -220,14 +220,14 @@ base pack has a contract test for it.
 Each subsection of brief §3 maps to one or more packs. Every item in the table is a **canonical
 item** with a stable ID; packs declare them and brownfield detectors check them.
 
-| Brief § | Canonical items (IDs abbreviated) | Pack | Dogfooded in this repo (phase) |
-|---|---|---|---|
-| 3.1 lanes | `env.compose`, `env.bootstrap-db`, `wf.deploy-staging`, `wf.validate-staging`, `wf.promote`, `wf.deploy-prod`, `wf.rollback`, `deploy.tasks`, `doc.deploy` | `deploy/*` + `stack/*` (compose) | promote/rollback shape via `package-release` (P6, Q1) |
-| 3.2 work lanes | `lanes.<9>.{enrich,codegen,preflight}`, `agent.profile`, `plans.dir`, `plans.000`, `tracker.config` | `base` | P0 (lanes, profile, plans) |
-| 3.3 tests | `test.home`, `test.scenarios`, `test.profiles`, `test.quarantine`, `test.suites`, `ci.gate` | `test-home/*` + `stack/*` | P0 (profiles, quarantine, gate); scenarios from P1 |
-| 3.4 security | `sec.scan-wf`, `sec.rules+fixtures`, `sec.policy-gate`, `sec.accepted-risks`, `guard.bom`, `guard.syntax`, `guard.lint`, `guard.hooks`, `guard.audit`, `guard.isolation`, `contracts.pin`, `env.example` | `base` + `stack/*` (linters) | P0 |
-| 3.5 scaffolder | `scaffold.markers`, `scaffold.todo-score`, `guard.drift` | `base` | P0 (score, drift) |
-| 3.6 agent config | `agent.claude-md`, `agent.agents-md`, `agent.copilot`, `agent.cursor`, `agent.settings-hooks` | `base` | P0 |
+| Brief §          | Canonical items (IDs abbreviated)                                                                                                                                                                        | Pack                             | Dogfooded in this repo (phase)                        |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------- |
+| 3.1 lanes        | `env.compose`, `env.bootstrap-db`, `wf.deploy-staging`, `wf.validate-staging`, `wf.promote`, `wf.deploy-prod`, `wf.rollback`, `deploy.tasks`, `doc.deploy`                                               | `deploy/*` + `stack/*` (compose) | promote/rollback shape via `package-release` (P6, Q1) |
+| 3.2 work lanes   | `lanes.<9>.{enrich,codegen,preflight}`, `agent.profile`, `plans.dir`, `plans.000`, `tracker.config`                                                                                                      | `base`                           | P0 (lanes, profile, plans)                            |
+| 3.3 tests        | `test.home`, `test.scenarios`, `test.profiles`, `test.quarantine`, `test.suites`, `ci.gate`                                                                                                              | `test-home/*` + `stack/*`        | P0 (profiles, quarantine, gate); scenarios from P1    |
+| 3.4 security     | `sec.scan-wf`, `sec.rules+fixtures`, `sec.policy-gate`, `sec.accepted-risks`, `guard.bom`, `guard.syntax`, `guard.lint`, `guard.hooks`, `guard.audit`, `guard.isolation`, `contracts.pin`, `env.example` | `base` + `stack/*` (linters)     | P0                                                    |
+| 3.5 scaffolder   | `scaffold.markers`, `scaffold.todo-score`, `guard.drift`                                                                                                                                                 | `base`                           | P0 (score, drift)                                     |
+| 3.6 agent config | `agent.claude-md`, `agent.agents-md`, `agent.copilot`, `agent.cursor`, `agent.settings-hooks`                                                                                                            | `base`                           | P0                                                    |
 
 ### 3.1 Environment lanes
 
@@ -295,11 +295,11 @@ item** with a stable ID; packs declare them and brownfield detectors check them.
       parser validates real enrich outputs at runtime.
 - **Ticket state machine.** A pure `transition(state, event)` in `packages/tracker` covers
   `NEW → TAGGED_TO_RELEASE → ENRICHMENT_IN_PROGRESS → DEV_IN_PROGRESS → READY_FOR_TEST →
-  TEST_PASSED | TEST_FAILED → DEPLOYED`. `TEST_FAILED → DEV_IN_PROGRESS` is the only backward edge.
+TEST_PASSED | TEST_FAILED → DEPLOYED`. `TEST_FAILED → DEV_IN_PROGRESS` is the only backward edge.
   An illegal transition is a `PolicyError`.
 - **Runner stages** are
   `selected → repo_resolved → design → preflight → enrich → verify_baseline → codegen → verify →
-  qa_gate → ready_for_test`. `design` runs only for `enhancement/*` lanes.
+qa_gate → ready_for_test`. `design` runs only for `enhancement/*` lanes.
   - The generated repo ships this as documentation plus a `runner` section in the agent profile. The
     Incubator's own handoff (§8) runs `enrich → codegen → verify → qa_gate` for plan 000.
   - A failing gate **parks**: it records `{stage, gate, evidence}` and stops, with no retry.
@@ -323,7 +323,7 @@ item** with a stable ID; packs declare them and brownfield detectors check them.
   `## Review rounds` (table with a `FIX-FIRST|CLOSED` status column). It also fails if any
   `plan*.md` exists at the repo root (fixing weakness §3.7-4).
 - **Tracker adapter.** `TrackerAdapter { createTicket, getTicket, transition, addRemediation,
-  fileCiFailure }`, implemented by `leantime`, `local` and `fake`. See §4.4 and ADR-017. CI failure
+fileCiFailure }`, implemented by `leantime`, `local` and `fake`. See §4.4 and ADR-017. CI failure
   triage runs in a separate `if: failure()` step with `continue-on-error: true`, **after** the gate
   step has already set the job result. The step cannot change the verdict, and a workflow-lint rule
   checks that shape.
@@ -362,15 +362,15 @@ item** with a stable ID; packs declare them and brownfield detectors check them.
     (plus Brain Monkey for unit), and `python-service` uses **pytest**.
 - **Guardrails** (every one fails closed with exit `2`):
 
-  | Guard | Implementation |
-  |---|---|
-  | Zero tests collected | Parses the runner's JSON/JUnit report and fails if `tests == 0` for any enabled suite. |
-  | Happy-path coverage and catalog parity | `config/features.json` (catalog) ↔ scenario files. Every feature needs ≥1 `happy`, ≥2 `validation` and ≥1 `fault` scenario tag. |
-  | Completeness score | `guard/completeness.mjs`, 0–100, must be ≥ `testing.completenessThreshold` (default 70). ADR-018. |
-  | Drift checker | Registries (`config/features.json`, `.incubator/lanes/**`, routes or CLI commands declared in `scaffold` markers) ↔ code. Each registry entry must resolve to a file or symbol and vice versa. |
-  | Flake quarantine | `config/flake-quarantine.json` entries `{testId, owner, expires, reason, issue}`. An expired or ownerless entry fails. Quarantined tests still run, and the report lists them. |
-  | Warnings and risky tests | Vitest `--reporter=json` plus `onConsoleLog` fail; PHPUnit `failOnWarning`/`failOnRisky`; pytest `-W error`. |
-  | Coverage threshold | `testing.coverageThreshold` (default 80), wired into v8/Xdebug/coverage.py configs. |
+  | Guard                                  | Implementation                                                                                                                                                                                 |
+  | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | Zero tests collected                   | Parses the runner's JSON/JUnit report and fails if `tests == 0` for any enabled suite.                                                                                                         |
+  | Happy-path coverage and catalog parity | `config/features.json` (catalog) ↔ scenario files. Every feature needs ≥1 `happy`, ≥2 `validation` and ≥1 `fault` scenario tag.                                                                |
+  | Completeness score                     | `guard/completeness.mjs`, 0–100, must be ≥ `testing.completenessThreshold` (default 70). ADR-018.                                                                                              |
+  | Drift checker                          | Registries (`config/features.json`, `.incubator/lanes/**`, routes or CLI commands declared in `scaffold` markers) ↔ code. Each registry entry must resolve to a file or symbol and vice versa. |
+  | Flake quarantine                       | `config/flake-quarantine.json` entries `{testId, owner, expires, reason, issue}`. An expired or ownerless entry fails. Quarantined tests still run, and the report lists them.                 |
+  | Warnings and risky tests               | Vitest `--reporter=json` plus `onConsoleLog` fail; PHPUnit `failOnWarning`/`failOnRisky`; pytest `-W error`.                                                                                   |
+  | Coverage threshold                     | `testing.coverageThreshold` (default 80), wired into v8/Xdebug/coverage.py configs.                                                                                                            |
 
 - **CI shape.** Each suite job uses `if: always()` after setup, so every suite reports. A final
   `gate` job has `needs: [all]` and `if: always()`, and fails explicitly unless every `needs.*.result`
@@ -379,7 +379,8 @@ item** with a stable ID; packs declare them and brownfield detectors check them.
 ### 3.4 Security and guardrails
 
 - **`security-scan.yml`** (ADR-014):
-  - Semgrep runs in a digest-pinned container with `--config auto` plus `security/rules/`.
+  - Semgrep runs from hash-locked wheels with `--config p/default` (`auto` forces metrics on) plus
+    `security/rules/`.
   - Trivy fs scan at HIGH/CRITICAL, via the SHA-pinned action.
   - gitleaks runs as a **binary download with a pinned SHA-256**, not `gitleaks-action`, because the
     action requires a paid licence for organisation repos.
@@ -437,7 +438,7 @@ item** with a stable ID; packs declare them and brownfield detectors check them.
   - `// <scaffold:NAME>` … `// </scaffold:NAME>` (JS/TS/PHP);
   - `# <scaffold:NAME>` … `# </scaffold:NAME>` (YAML/Python/shell);
   - `<!-- <scaffold:NAME> -->` (MD/HTML).
-  - A patch *replaces the region's contents* with a sorted, de-duplicated union of entries keyed by
+  - A patch _replaces the region's contents_ with a sorted, de-duplicated union of entries keyed by
     entry ID. Applying it twice gives the same result (idempotent).
 - **JSON files can't hold comments.** `package.json`, `composer.json` and `tsconfig.json` are patched
   through declarative **JSON patches** in `pack.json` (`{file, pointer, op: set|merge|append-unique}`),
@@ -468,14 +469,14 @@ item** with a stable ID; packs declare them and brownfield detectors check them.
 
 ### 3.7 Improvements over known weaknesses
 
-| Weakness | Mechanical prevention |
-|---|---|
-| Absolute Windows paths in editor configs | `guard/abs-path-lint.mjs` in `check` and in pre-commit; golden tests run it over every rendered combination. |
-| `.gitignore` drops root `*.md` | Base-pack test: `git check-ignore CLAUDE.md AGENTS.md` must exit 1 in every render. |
-| No pre-commit, linter or coverage gate | lefthook, a linter/formatter and a coverage threshold are base or stack canonical items. A missing one scores −10 each. |
-| `plan-*.md` at the root | `plan-lint` fails; plans go only in `docs/plans/`. |
-| Zero-scenario profiles | Working `health` feature plus `guard/profiles.mjs`. |
-| CLAUDE.md pointing outside the repo | Isolation lint on Markdown links in agent files. |
+| Weakness                                 | Mechanical prevention                                                                                                   |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Absolute Windows paths in editor configs | `guard/abs-path-lint.mjs` in `check` and in pre-commit; golden tests run it over every rendered combination.            |
+| `.gitignore` drops root `*.md`           | Base-pack test: `git check-ignore CLAUDE.md AGENTS.md` must exit 1 in every render.                                     |
+| No pre-commit, linter or coverage gate   | lefthook, a linter/formatter and a coverage threshold are base or stack canonical items. A missing one scores −10 each. |
+| `plan-*.md` at the root                  | `plan-lint` fails; plans go only in `docs/plans/`.                                                                      |
+| Zero-scenario profiles                   | Working `health` feature plus `guard/profiles.mjs`.                                                                     |
+| CLAUDE.md pointing outside the repo      | Isolation lint on Markdown links in agent files.                                                                        |
 
 ---
 
@@ -516,18 +517,26 @@ types from `core/dto`. It is browser code and must not pull in Node modules.
 
 ```ts
 interface EngineDeps {
-  llm: LlmAdapterRegistry; github: GitHubAdapter; git: GitOps; tracker: TrackerFactory;
-  keychain: Keychain; exec: Exec; clock: Clock; fs: RunStore; prompter?: Prompter; log: Logger;
+  llm: LlmAdapterRegistry;
+  github: GitHubAdapter;
+  git: GitOps;
+  tracker: TrackerFactory;
+  keychain: Keychain;
+  exec: Exec;
+  clock: Clock;
+  fs: RunStore;
+  prompter?: Prompter;
+  log: Logger;
 }
 interface Engine {
-  start(input: RunInput): Promise<RunHandle>;            // new | adopt | scaffold-only
+  start(input: RunInput): Promise<RunHandle>; // new | adopt | scaffold-only
   answer(runId: string, answers: Answer[]): Promise<void>;
-  approve(runId: string, spec?: Spec): Promise<void>;    // REVIEW → APPROVED
+  approve(runId: string, spec?: Spec): Promise<void>; // REVIEW → APPROVED
   scaffold(runId: string, opts: { out?: string; dryRun?: boolean }): Promise<RenderResult>;
   publish(runId: string, opts: { resume?: boolean; adopt?: boolean }): Promise<PublishResult>;
   handoff(runId: string, opts: { launch?: boolean; agent?: AgentId }): Promise<HandoffResult>;
   resume(runId: string): Promise<RunHandle>;
-  events(runId: string): AsyncIterable<RunEvent>;       // feeds CLI renderer, SSE, Electron
+  events(runId: string): AsyncIterable<RunEvent>; // feeds CLI renderer, SSE, Electron
 }
 ```
 
@@ -540,15 +549,20 @@ CLARIFY; `--yes` swaps in `DefaultsPrompter`. The web UI answers through `engine
 ```ts
 interface LlmAdapter {
   id: 'claude-cli' | 'copilot-cli' | 'cursor-cli' | 'anthropic-api' | 'fake';
-  probe(): Promise<Capabilities>;           // installed? version? json mode? tool-disable flag? max-turns flag?
-  complete<T>(req: { system: string; user: string; schema: JSONSchema; schemaName: string;
-                     timeoutMs: number }): Promise<T>;
+  probe(): Promise<Capabilities>; // installed? version? json mode? tool-disable flag? max-turns flag?
+  complete<T>(req: {
+    system: string;
+    user: string;
+    schema: JSONSchema;
+    schemaName: string;
+    timeoutMs: number;
+  }): Promise<T>;
 }
 ```
 
 - **Probing.** Probe each CLI at startup, cached per binary path and version in
   `~/.incubator/cache/probe.json`. The probe runs `--version`, then `--help`, and parses the help text
-  for flag *capabilities* using a table of candidate spellings per capability (for example, JSON
+  for flag _capabilities_ using a table of candidate spellings per capability (for example, JSON
   output: `--output-format json` or `--format json`). Flags are never hard-coded as the only option.
   An adapter is **eligible** for discovery only if it has a JSON output mode, a way to disable tools
   or run in "print" mode, and prompt input on stdin.
@@ -569,12 +583,12 @@ interface LlmAdapter {
 
 ### 4.4 Other adapters
 
-| Interface | Live impl | Fake impl |
-|---|---|---|
-| `GitHubAdapter` (`getRepo`, `createRepo`, `createBranch`, `setBranchProtection`, `ensureLabels`, `ensureVariables`, `openPr`, `tokenInfo`) | `@octokit/rest` with retry and throttling plugins; the token is a `SecretString` | An in-memory model that records calls for sequence snapshots, supports failure injection (`failAt: 'createRepo' \| …`), and has a `remoteUrl()` returning a `file://` bare repo in a temp directory |
-| `GitOps` (`init`, `add`, `commit`, `push`, `clone`, `chmodX`) | the `git` binary via `exec`, with deterministic author/committer env for the scaffold commit | same as live; it runs against local bare repos |
-| `TrackerAdapter` | `leantime` (JSON-RPC 2.0 `POST {baseUrl}/api/jsonrpc`, header `x-api-key`; method names are table-driven because they differ across Leantime versions and are verified live; status IDs mapped via `tracker.leantime.statusMap`), `local` (`.incubator/tickets/<id>.json`) | in-memory |
-| `Keychain` | `@napi-rs/keyring` | in-memory map |
+| Interface                                                                                                                                  | Live impl                                                                                                                                                                                                                                                                  | Fake impl                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GitHubAdapter` (`getRepo`, `createRepo`, `createBranch`, `setBranchProtection`, `ensureLabels`, `ensureVariables`, `openPr`, `tokenInfo`) | `@octokit/rest` with retry and throttling plugins; the token is a `SecretString`                                                                                                                                                                                           | An in-memory model that records calls for sequence snapshots, supports failure injection (`failAt: 'createRepo' \| …`), and has a `remoteUrl()` returning a `file://` bare repo in a temp directory |
+| `GitOps` (`init`, `add`, `commit`, `push`, `clone`, `chmodX`)                                                                              | the `git` binary via `exec`, with deterministic author/committer env for the scaffold commit                                                                                                                                                                               | same as live; it runs against local bare repos                                                                                                                                                      |
+| `TrackerAdapter`                                                                                                                           | `leantime` (JSON-RPC 2.0 `POST {baseUrl}/api/jsonrpc`, header `x-api-key`; method names are table-driven because they differ across Leantime versions and are verified live; status IDs mapped via `tracker.leantime.statusMap`), `local` (`.incubator/tickets/<id>.json`) | in-memory                                                                                                                                                                                           |
+| `Keychain`                                                                                                                                 | `@napi-rs/keyring`                                                                                                                                                                                                                                                         | in-memory map                                                                                                                                                                                       |
 
 ---
 
@@ -640,17 +654,17 @@ can't drift. Ajv 2020 in strict mode, with `ajv-formats`, is the validator. The 
 
 **Additions beyond the brief's minimum** (each defaulted, so the brief's example stays valid):
 
-| Field | Why |
-|---|---|
-| `$schema`, `incubatorVersion` const `"1.0"` | editor support; migration hook |
-| `project.slug` pattern `^[a-z0-9][a-z0-9-]{0,98}[a-z0-9]$` | a GitHub-safe name, and the base for DB, image and service names |
-| `testing.completenessThreshold` (default `70`) | the brief requires a threshold but gives it no home (ADR-018) |
-| `testing.pairedRepo.name` (default `<slug>-tests`) | an explicit name so resume and adopt can find it |
-| `lanes.workLanes` default = all nine | an empty list would make handoff meaningless |
-| `tracker.leantime.statusMap` | Leantime status IDs are per project |
-| `deploy.target` adds `package-release` | **proposed, Q1**: libraries and CLIs (including this repo) have no server |
-| `stack.framework` enum per pack | determinism needs a finite set (Q2) |
-| `features[].id` pattern `^[a-z][a-z0-9-]*$` | used in file names and markers |
+| Field                                                      | Why                                                                       |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `$schema`, `incubatorVersion` const `"1.0"`                | editor support; migration hook                                            |
+| `project.slug` pattern `^[a-z0-9][a-z0-9-]{0,98}[a-z0-9]$` | a GitHub-safe name, and the base for DB, image and service names          |
+| `testing.completenessThreshold` (default `70`)             | the brief requires a threshold but gives it no home (ADR-018)             |
+| `testing.pairedRepo.name` (default `<slug>-tests`)         | an explicit name so resume and adopt can find it                          |
+| `lanes.workLanes` default = all nine                       | an empty list would make handoff meaningless                              |
+| `tracker.leantime.statusMap`                               | Leantime status IDs are per project                                       |
+| `deploy.target` adds `package-release`                     | **proposed, Q1**: libraries and CLIs (including this repo) have no server |
+| `stack.framework` enum per pack                            | determinism needs a finite set (Q2)                                       |
+| `features[].id` pattern `^[a-z][a-z0-9-]*$`                | used in file names and markers                                            |
 
 Cross-field rules live in `validateSemantics()`, because they can't be expressed in the schema:
 `platform` ↔ `stack.pack` compatibility, `node-lib` ⇒ no compose DB, `paired-repo` ⇒
@@ -685,14 +699,25 @@ packages/templates/packs/stack/node-web/
 `pack.json` (validated by `schemas/pack.schema.json`):
 
 ```json
-{ "id": "stack/node-web", "version": "1.0.0",
+{
+  "id": "stack/node-web",
+  "version": "1.0.0",
   "appliesWhen": { "stack.pack": "node-web" },
-  "inputs": { "framework": { "from": "stack.framework", "enum": ["fastify-react"], "default": "fastify-react" } },
-  "files": [ { "src": "files/package.json.eta", "dest": "package.json" },
-             { "src": "files/scripts/dev.mjs", "dest": "scripts/dev.mjs", "mode": "0755" },
-             { "src": "files/tests/**", "dest": "tests/", "when": "testing.home == 'in-repo'" } ],
-  "patches": [ "patches/base-ci.patch.json" ],
-  "requires": { "base": "^1.0.0" } }
+  "inputs": {
+    "framework": {
+      "from": "stack.framework",
+      "enum": ["fastify-react"],
+      "default": "fastify-react"
+    }
+  },
+  "files": [
+    { "src": "files/package.json.eta", "dest": "package.json" },
+    { "src": "files/scripts/dev.mjs", "dest": "scripts/dev.mjs", "mode": "0755" },
+    { "src": "files/tests/**", "dest": "tests/", "when": "testing.home == 'in-repo'" }
+  ],
+  "patches": ["patches/base-ci.patch.json"],
+  "requires": { "base": "^1.0.0" }
+}
 ```
 
 `when` expressions use a tiny, pure grammar: `==`, `!=`, `in`, `&&`, `||` and dotted spec paths. It
@@ -712,7 +737,7 @@ flowchart LR
   patches, applied in order. The base pack declares the marker regions (`ci-jobs`, `gate-needs`,
   `package-scripts`, `lefthook-commands`, `agent-instructions`, `run-profiles` and so on).
 - **The render pipeline** is `select packs → resolve inputs → render files → apply patches →
-  normalize → drift check → compute lock`. It returns an in-memory `Map<posixPath, Uint8Array>`.
+normalize → drift check → compute lock`. It returns an in-memory `Map<posixPath, Uint8Array>`.
   Writing to disk is a separate step with three modes:
   - `write` (fresh `--out` dir; fails if it is non-empty unless `--force`);
   - `dry-run` (prints the tree and hashes);
@@ -723,9 +748,13 @@ flowchart LR
 `.incubator/lock.json`:
 
 ```json
-{ "lockVersion": 1, "incubatorVersion": "1.0.0", "specHash": "sha256:…",
-  "packs": [ { "id": "base", "version": "1.0.0", "integrity": "sha256:…" } ],
-  "files": { "CLAUDE.md": { "sha256": "…", "pack": "base", "mode": "0644" } } }
+{
+  "lockVersion": 1,
+  "incubatorVersion": "1.0.0",
+  "specHash": "sha256:…",
+  "packs": [{ "id": "base", "version": "1.0.0", "integrity": "sha256:…" }],
+  "files": { "CLAUDE.md": { "sha256": "…", "pack": "base", "mode": "0644" } }
+}
 ```
 
 - `integrity` is the hash of the pack directory's sorted file hashes.
@@ -746,7 +775,7 @@ The `yyyymmdd` comes from the clock and names the branch only; it never appears 
 
 ### 6.4 Pack tests
 
-- **Golden snapshots.** Render every *valid* combination of stack (4) × deploy (2, or 3 if Q1 is
+- **Golden snapshots.** Render every _valid_ combination of stack (4) × deploy (2, or 3 if Q1 is
   approved) × test-home (2) × tracker (2), using `packages/templates/test/specs/*.json`. Snapshot the
   file list plus hashes, and full content for a curated file set. Each combination renders twice and
   is byte-compared.
@@ -796,18 +825,18 @@ sequenceDiagram
 
 **Steps and idempotency** (the key is `(runId, stepId)`; each step is check-then-act):
 
-| # | Step | Resume check | Fatal? |
-|---|---|---|---|
-| 1 | `token.resolve` | always re-run (never journaled with a value) | yes |
-| 2 | `repo.nameCheck` | re-run; if the repo exists **and** its description carries `incubator-run:<runId>`, treat it as ours | yes |
-| 3 | `render` | the workspace lock hash equals the journaled hash; else re-render | yes |
-| 4 | `verify` | a journaled pass for the same lock hash | yes (exit 2) |
-| 5 | `repo.create` | `getRepo` finds our marker | yes |
-| 6 | `git.commit` | `HEAD` exists with a matching `Incubator-Spec:` trailer | yes |
-| 7 | `git.push.main` | remote `main` SHA equals the local SHA | yes |
-| 8 | `branch.production` | the branch exists at the same SHA | yes |
-| 9a–d | `configure.protection`, `.labels`, `.variables`, `.pairedRepo` | the API reports the state already applied | **no**: `step.warn` with the reason (for example, "branch protection needs GitHub Pro on private repos") |
-| 10 | `cleanup` | the workspace is absent | no |
+| #    | Step                                                           | Resume check                                                                                         | Fatal?                                                                                                   |
+| ---- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| 1    | `token.resolve`                                                | always re-run (never journaled with a value)                                                         | yes                                                                                                      |
+| 2    | `repo.nameCheck`                                               | re-run; if the repo exists **and** its description carries `incubator-run:<runId>`, treat it as ours | yes                                                                                                      |
+| 3    | `render`                                                       | the workspace lock hash equals the journaled hash; else re-render                                    | yes                                                                                                      |
+| 4    | `verify`                                                       | a journaled pass for the same lock hash                                                              | yes (exit 2)                                                                                             |
+| 5    | `repo.create`                                                  | `getRepo` finds our marker                                                                           | yes                                                                                                      |
+| 6    | `git.commit`                                                   | `HEAD` exists with a matching `Incubator-Spec:` trailer                                              | yes                                                                                                      |
+| 7    | `git.push.main`                                                | remote `main` SHA equals the local SHA                                                               | yes                                                                                                      |
+| 8    | `branch.production`                                            | the branch exists at the same SHA                                                                    | yes                                                                                                      |
+| 9a–d | `configure.protection`, `.labels`, `.variables`, `.pairedRepo` | the API reports the state already applied                                                            | **no**: `step.warn` with the reason (for example, "branch protection needs GitHub Pro on private repos") |
+| 10   | `cleanup`                                                      | the workspace is absent                                                                              | no                                                                                                       |
 
 **Commit message:**
 
@@ -823,7 +852,7 @@ The author and committer come from `git config user.*` when set. Otherwise they 
 with the GitHub noreply email.
 
 **Secrets and variables.** Required Actions **variables** are created with the value
-`__INCUBATOR_UNSET__`. Required **secrets** are *not* created, because a secret can't be created
+`__INCUBATOR_UNSET__`. Required **secrets** are _not_ created, because a secret can't be created
 without a value. Both lists are rendered into `DEPLOY.md` § "Required settings" and printed in the
 publish summary. Every deploy workflow starts with a `preflight` step that fails with exit 2, naming
 the missing secret or the `__INCUBATOR_UNSET__` variable. So an unset value produces a clear gate
@@ -863,7 +892,7 @@ flowchart LR
   `node_modules`, `vendor` and `.venv`):
   - `stack`: `package.json` + React/Fastify deps → `node-web`; a library `exports` without a server →
     `node-lib`; `composer.json` + `Plugin Name:` header → `wordpress` plugin; `style.css` + `Theme
-    Name:` → theme; `pyproject.toml` + FastAPI/uvicorn → `python-service`;
+Name:` → theme; `pyproject.toml` + FastAPI/uvicorn → `python-service`;
   - `workflows`, `tests` (runner configs, test counts via static patterns), `agent-config`,
     `deploy` (compose, PM2, Dockerfile, workflow names) and `security`.
 - **Canonical checks.** Each canonical item in `canonical.json` declares `present` (all globs match
@@ -926,24 +955,24 @@ flowchart LR
   3. **Every** request must carry a valid session cookie; the bootstrap request may use `?t=`
      instead.
   4. The **Host** header must equal `127.0.0.1:<port>` (DNS-rebinding defence).
-  5. For any request carrying an `Origin` header, and for *all* non-GET requests, `Origin` must equal
+  5. For any request carrying an `Origin` header, and for _all_ non-GET requests, `Origin` must equal
      `http://127.0.0.1:<port>`.
   6. Mutating requests need an `X-Incubator-CSRF` header matching a per-session CSRF token, which
      `GET /api/session` returns (a synchronizer token).
   7. Responses carry `Content-Security-Policy: default-src 'self'` and no CORS headers at all.
 - **Routes** (all under `/api`, JSON):
 
-  | Method | Path | Purpose |
-  |---|---|---|
-  | GET | `/session` | CSRF token, versions, adapter capabilities |
-  | POST | `/runs` | start `new` or `adopt` |
-  | GET | `/runs`, `/runs/:id` | list and inspect runs |
-  | POST | `/runs/:id/answers` | CLARIFY answers |
-  | POST | `/runs/:id/approve` | REVIEW → APPROVED, with an optional edited spec |
-  | GET | `/runs/:id/tree`, `/runs/:id/file?path=` | preview; `path` is normalized and confined to the workspace |
-  | GET | `/runs/:id/spec-diff?from=&to=` | a JSON-pointer diff between spec revisions |
-  | POST | `/runs/:id/publish`, `/runs/:id/handoff` | effectful steps |
-  | GET | `/runs/:id/events` | SSE `RunEvent` stream; `Last-Event-ID` = journal seq, for reconnects |
+  | Method | Path                                     | Purpose                                                              |
+  | ------ | ---------------------------------------- | -------------------------------------------------------------------- |
+  | GET    | `/session`                               | CSRF token, versions, adapter capabilities                           |
+  | POST   | `/runs`                                  | start `new` or `adopt`                                               |
+  | GET    | `/runs`, `/runs/:id`                     | list and inspect runs                                                |
+  | POST   | `/runs/:id/answers`                      | CLARIFY answers                                                      |
+  | POST   | `/runs/:id/approve`                      | REVIEW → APPROVED, with an optional edited spec                      |
+  | GET    | `/runs/:id/tree`, `/runs/:id/file?path=` | preview; `path` is normalized and confined to the workspace          |
+  | GET    | `/runs/:id/spec-diff?from=&to=`          | a JSON-pointer diff between spec revisions                           |
+  | POST   | `/runs/:id/publish`, `/runs/:id/handoff` | effectful steps                                                      |
+  | GET    | `/runs/:id/events`                       | SSE `RunEvent` stream; `Last-Event-ID` = journal seq, for reconnects |
 
 ### 9.2 UI (`apps/web/src/ui`)
 
@@ -987,15 +1016,15 @@ Each phase:
 `PENDING LOCAL VERIFICATION` is used **only** for criteria that need a keychain, a GUI, logged-in
 CLIs or a real GitHub org. Never mark a live criterion `PASS` without having run it.
 
-| Phase | Deliverables | Acceptance and how it is proven in the cloud session |
-|---|---|---|
-| **0 Bootstrap and dogfood** | Workspace skeleton (all packages as stubs with one real unit test each); `runtime` (exit, exec, redact, jcs); `scripts/guard/*` (BOM, abs-path, isolation, deps-boundary, contracts-pin, plan-lint, lane-contract, workflow-lint, completeness, profiles, quarantine); ESLint 10 + Prettier; lefthook; `ci.yml` (check on ubuntu/windows/macos + gate job), `security-scan.yml`; `CLAUDE.md`/`AGENTS.md`/copilot/cursor from one source; `.claude/settings.json` (SessionStart `pnpm install && pnpm check:quick`); `.incubator/` lanes, agent profile and local tickets; `config/run-profiles.json`, `config/flake-quarantine.json`; `tools:fetch` (ADR-019) | `pnpm check` green locally (output recorded). CI green on push, checked through the GitHub MCP (Actions run status) and recorded with the run URL. A fresh-session proof: `git clean -xfd && pnpm install && pnpm check` from a clean clone in a temp directory. |
-| **1 Spec and discovery** | `packages/spec` (schema, generated types, Ajv, semantics, defaults); `llm` (probe, 4 live adapters, fake, recorder); discovery reducer, journal, prompter; `incubator new --prompt/--prompt-file --spec-only [--yes]`; `doctor` (adapters section) | 5 narrative fixtures (SaaS web app, WP plugin, Python webhook service, TS library, ambiguous one-liner) → schema-valid specs; ≤5 questions per round and ≤2 rounds asserted; every decision has a `source`; `--yes` with stdin closed completes (a test proves no prompt was attempted); a park injected at CLARIFY resumes to DONE-of-spec. Live adapters: `PENDING LOCAL VERIFICATION`. |
-| **2 Templates and scaffold** | Renderer, lock, markers, JSON patches; packs `base`, `stack/{node-web,wordpress,python-service,node-lib}`, `deploy/{vps-tailscale,docker-host}` (+`package-release` if Q1 is approved), `test-home/{in-repo,paired-repo}`; `incubator scaffold <spec> --out <dir> [--dry-run] [--validate-only]`; this repo's `scripts/guard/` becomes a render of `base` (dogfood drift test) | Byte identity over two runs; the 8-cell CI matrix is green (each cell's own `check:quick`, test count > 0, completeness ≥ threshold); security fixtures fire (semgrep installed via the hash-pinned tools fetch); actionlint is clean on every rendered workflow. Cells are also run locally where the toolchains exist (node, php and python are present in this container; docker compose for integration is CI-only). |
-| **3 Publish, tracker, handoff** | Octokit adapter, fake GitHub (bare repo), publish with journal and resume; `leantime` / `local` / `fake` trackers; `publish`, `handoff`, `gc`, `doctor` (token section), `auth set` | Call-sequence snapshot; fault injection at every step (pre- and post-effect) resumes cleanly; the token-leak scan over the run directory and captured output finds nothing; `INCUBATOR_LIVE=1` tests exist for a sandbox org and Leantime and are skipped otherwise, marked `PENDING LOCAL VERIFICATION`. |
-| **4 Brownfield** | Detectors, gap report, no-overwrite writer, `adopt <url\|path>` | 4 fixture repos under `packages/analyzer/fixtures/` (bare Node, WP plugin, Python service, compliant) → expected gap-report snapshots; compliant → empty delta, no PR; before/after hash snapshot shows zero modified files. |
-| **5 Web UI** | Fastify server, React UI, SSE; `incubator ui` | Playwright (headless Chromium, preinstalled) covers the greenfield and brownfield flows to DONE on fakes; request-security tests for a missing token, a bad cookie, a wrong Origin, a wrong Host and a missing CSRF header, each expecting 401/403. |
-| **6 Electron** | Desktop shell, electron-builder config, `desktop.yml` CI matrix (3 OS) | CI builds artifacts on all three OSes (run URLs recorded); a Linux xvfb smoke test completes a fake greenfield run locally and in CI; Windows/macOS launch smoke runs in CI; installer UX checks are `PENDING LOCAL VERIFICATION`. |
+| Phase                           | Deliverables                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Acceptance and how it is proven in the cloud session                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **0 Bootstrap and dogfood**     | Workspace skeleton (all packages as stubs with one real unit test each); `runtime` (exit, exec, redact, jcs); `scripts/guard/*` (BOM, abs-path, isolation, deps-boundary, contracts-pin, plan-lint, lane-contract, workflow-lint, completeness, profiles, quarantine); ESLint 10 + Prettier; lefthook; `ci.yml` (check on ubuntu/windows/macos + gate job), `security-scan.yml`; `CLAUDE.md`/`AGENTS.md`/copilot/cursor from one source; `.claude/settings.json` (SessionStart `pnpm install && pnpm check:quick`); `.incubator/` lanes, agent profile and local tickets; `config/run-profiles.json`, `config/flake-quarantine.json`; `tools:fetch` (ADR-019) | `pnpm check` green locally (output recorded). CI green on push, checked through the GitHub MCP (Actions run status) and recorded with the run URL. A fresh-session proof: `git clean -xfd && pnpm install && pnpm check` from a clean clone in a temp directory.                                                                                                                                                         |
+| **1 Spec and discovery**        | `packages/spec` (schema, generated types, Ajv, semantics, defaults); `llm` (probe, 4 live adapters, fake, recorder); discovery reducer, journal, prompter; `incubator new --prompt/--prompt-file --spec-only [--yes]`; `doctor` (adapters section)                                                                                                                                                                                                                                                                                                                                                                                                            | 5 narrative fixtures (SaaS web app, WP plugin, Python webhook service, TS library, ambiguous one-liner) → schema-valid specs; ≤5 questions per round and ≤2 rounds asserted; every decision has a `source`; `--yes` with stdin closed completes (a test proves no prompt was attempted); a park injected at CLARIFY resumes to DONE-of-spec. Live adapters: `PENDING LOCAL VERIFICATION`.                                |
+| **2 Templates and scaffold**    | Renderer, lock, markers, JSON patches; packs `base`, `stack/{node-web,wordpress,python-service,node-lib}`, `deploy/{vps-tailscale,docker-host}` (+`package-release` if Q1 is approved), `test-home/{in-repo,paired-repo}`; `incubator scaffold <spec> --out <dir> [--dry-run] [--validate-only]`; this repo's `scripts/guard/` becomes a render of `base` (dogfood drift test)                                                                                                                                                                                                                                                                                | Byte identity over two runs; the 8-cell CI matrix is green (each cell's own `check:quick`, test count > 0, completeness ≥ threshold); security fixtures fire (semgrep installed via the hash-pinned tools fetch); actionlint is clean on every rendered workflow. Cells are also run locally where the toolchains exist (node, php and python are present in this container; docker compose for integration is CI-only). |
+| **3 Publish, tracker, handoff** | Octokit adapter, fake GitHub (bare repo), publish with journal and resume; `leantime` / `local` / `fake` trackers; `publish`, `handoff`, `gc`, `doctor` (token section), `auth set`                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Call-sequence snapshot; fault injection at every step (pre- and post-effect) resumes cleanly; the token-leak scan over the run directory and captured output finds nothing; `INCUBATOR_LIVE=1` tests exist for a sandbox org and Leantime and are skipped otherwise, marked `PENDING LOCAL VERIFICATION`.                                                                                                                |
+| **4 Brownfield**                | Detectors, gap report, no-overwrite writer, `adopt <url\|path>`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 4 fixture repos under `packages/analyzer/fixtures/` (bare Node, WP plugin, Python service, compliant) → expected gap-report snapshots; compliant → empty delta, no PR; before/after hash snapshot shows zero modified files.                                                                                                                                                                                             |
+| **5 Web UI**                    | Fastify server, React UI, SSE; `incubator ui`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Playwright (headless Chromium, preinstalled) covers the greenfield and brownfield flows to DONE on fakes; request-security tests for a missing token, a bad cookie, a wrong Origin, a wrong Host and a missing CSRF header, each expecting 401/403.                                                                                                                                                                      |
+| **6 Electron**                  | Desktop shell, electron-builder config, `desktop.yml` CI matrix (3 OS)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | CI builds artifacts on all three OSes (run URLs recorded); a Linux xvfb smoke test completes a fake greenfield run locally and in CI; Windows/macOS launch smoke runs in CI; installer UX checks are `PENDING LOCAL VERIFICATION`.                                                                                                                                                                                       |
 
 **Dogfood checkpoints.** From Phase 2 on, the Incubator's own `incubator.json` (platform `cli`, stack
 `node-lib` + desktop, deploy `package-release` if Q1 is approved) is rendered in CI, and the files
@@ -1027,18 +1056,18 @@ flowchart LR
   Repo[(Adopted repo content)] -. "prompt injection" .-> LLM
 ```
 
-| # | Threat | Mitigation | Residual risk |
-|---|---|---|---|
-| T1 | A malicious website calls the local API (CSRF), or rebinds DNS to 127.0.0.1 | A per-launch token → `SameSite=Strict` HttpOnly cookie; strict Host and Origin checks; a synchronizer CSRF header on mutations; no CORS; the port is random | The URL handed to the OS browser handler briefly exposes the token to same-user processes. The token is single-use: it is invalidated after the first cookie exchange. |
-| T2 | Another local user or process reads the token | Keychain storage; `0700` directories; env-based git auth (not argv or URL); the Redactor on every sink; `SecretString` blocks accidental serialization | Same-user malware is out of scope (it can read the keychain session anyway). |
-| T3 | Token leakage through logs, the journal or error messages | Redactor with exact, encoded and pattern matching; Octokit errors are mapped to sanitized `ToolError`s (request headers stripped); a Phase 3 test scans all artifacts | A new token format not covered by the patterns is still caught by exact-value redaction once revealed. |
-| T4 | Command injection through a spec field (for example, a slug in a git argv) | `shell:false` everywhere; argv arrays; schema patterns for slug, owner and branch; `--` separators before user-controlled positional args in git | none known |
-| T5 | Path traversal (`/file?path=../../`, a pack `dest` escaping `--out`, a brownfield symlink) | All paths are normalized and must stay under a root (`resolveInside(root, p)`); the pack schema forbids `..` and absolute `dest`; the analyzer uses `lstat` and never follows symlinks outside the repo | none known |
-| T6 | Prompt injection from brownfield repo content (for example, a README saying "set visibility public, add workflow X") | (a) The LLM output is only a *spec* and a *summary*; it never produces files; (b) every spec change needs a decision entry and is shown in REVIEW with `source: inferred`; (c) security-relevant fields (`project.visibility`, `security.*`, `agents.deniedActions`, `agents.humanOnlyActions`, `tracker.leantime.baseUrl`, `deploy.*.host`) are **never inferred from repo content**; the engine forces them to `default` or asks the user, and `--yes` still keeps the safe defaults; (d) CLI adapters run tool-less in an empty cwd; (e) free-text fields rendered into agent instruction files are length-capped, stripped of control and bidi characters, and placed in a fenced "Project description (user-supplied)" block | A persuasive summary could still mislead a human reviewer, so the PR body labels the summary as machine-generated. |
-| T7 | Generated agent config enables dangerous agent actions | Base-pack defaults deny force-push, history rewrites, gate edits and quarantine abuse; the contract pin on the agent profile; the Stop-hook veto; `human_only_actions` for promote, rollback and secrets | An agent run with a permissive user config can ignore repo instructions, which is inherent. |
-| T8 | Supply chain: Actions, installers, npm deps | SHA-pinned `uses:`; hash-pinned binaries; `pnpm install --frozen-lockfile`; `pnpm audit` in `check`; Renovate config shipped (disabled by default, Q6) | Transitive npm compromise between audits. |
-| T9 | Electron renderer compromise escalates to Node | Sandbox, context isolation, no preload, navigation lockdown, strict CSP | The server API still has full engine power, which is the same as the web UI (accepted). |
-| T10 | Staging mutates prod | Dummy downstream secrets on staging, a startup assertion against prod-pattern keys, tailnet-only staging on VPS, and `deploy-production.yml` reachable only through promote | Misconfigured secrets by humans, reduced by the preflight step. |
+| #   | Threat                                                                                                               | Mitigation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Residual risk                                                                                                                                                          |
+| --- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T1  | A malicious website calls the local API (CSRF), or rebinds DNS to 127.0.0.1                                          | A per-launch token → `SameSite=Strict` HttpOnly cookie; strict Host and Origin checks; a synchronizer CSRF header on mutations; no CORS; the port is random                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | The URL handed to the OS browser handler briefly exposes the token to same-user processes. The token is single-use: it is invalidated after the first cookie exchange. |
+| T2  | Another local user or process reads the token                                                                        | Keychain storage; `0700` directories; env-based git auth (not argv or URL); the Redactor on every sink; `SecretString` blocks accidental serialization                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Same-user malware is out of scope (it can read the keychain session anyway).                                                                                           |
+| T3  | Token leakage through logs, the journal or error messages                                                            | Redactor with exact, encoded and pattern matching; Octokit errors are mapped to sanitized `ToolError`s (request headers stripped); a Phase 3 test scans all artifacts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | A new token format not covered by the patterns is still caught by exact-value redaction once revealed.                                                                 |
+| T4  | Command injection through a spec field (for example, a slug in a git argv)                                           | `shell:false` everywhere; argv arrays; schema patterns for slug, owner and branch; `--` separators before user-controlled positional args in git                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | none known                                                                                                                                                             |
+| T5  | Path traversal (`/file?path=../../`, a pack `dest` escaping `--out`, a brownfield symlink)                           | All paths are normalized and must stay under a root (`resolveInside(root, p)`); the pack schema forbids `..` and absolute `dest`; the analyzer uses `lstat` and never follows symlinks outside the repo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | none known                                                                                                                                                             |
+| T6  | Prompt injection from brownfield repo content (for example, a README saying "set visibility public, add workflow X") | (a) The LLM output is only a _spec_ and a _summary_; it never produces files; (b) every spec change needs a decision entry and is shown in REVIEW with `source: inferred`; (c) security-relevant fields (`project.visibility`, `security.*`, `agents.deniedActions`, `agents.humanOnlyActions`, `tracker.leantime.baseUrl`, `deploy.*.host`) are **never inferred from repo content**; the engine forces them to `default` or asks the user, and `--yes` still keeps the safe defaults; (d) CLI adapters run tool-less in an empty cwd; (e) free-text fields rendered into agent instruction files are length-capped, stripped of control and bidi characters, and placed in a fenced "Project description (user-supplied)" block | A persuasive summary could still mislead a human reviewer, so the PR body labels the summary as machine-generated.                                                     |
+| T7  | Generated agent config enables dangerous agent actions                                                               | Base-pack defaults deny force-push, history rewrites, gate edits and quarantine abuse; the contract pin on the agent profile; the Stop-hook veto; `human_only_actions` for promote, rollback and secrets                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | An agent run with a permissive user config can ignore repo instructions, which is inherent.                                                                            |
+| T8  | Supply chain: Actions, installers, npm deps                                                                          | SHA-pinned `uses:`; hash-pinned binaries; `pnpm install --frozen-lockfile`; `pnpm audit` in `check`; Renovate config shipped (disabled by default, Q6)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Transitive npm compromise between audits.                                                                                                                              |
+| T9  | Electron renderer compromise escalates to Node                                                                       | Sandbox, context isolation, no preload, navigation lockdown, strict CSP                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | The server API still has full engine power, which is the same as the web UI (accepted).                                                                                |
+| T10 | Staging mutates prod                                                                                                 | Dummy downstream secrets on staging, a startup assertion against prod-pattern keys, tailnet-only staging on VPS, and `deploy-production.yml` reachable only through promote                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Misconfigured secrets by humans, reduced by the preflight step.                                                                                                        |
 
 ---
 
@@ -1046,51 +1075,51 @@ flowchart LR
 
 ### 12.1 Risks
 
-| Risk | Likelihood / impact | Mitigation |
-|---|---|---|
-| Agent CLI flags and JSON formats change | High / Medium | Capability probing with candidate tables, fixture recording, and `doctor` reporting; `anthropic-api` as the always-works fallback. |
-| The 8-cell CI matrix is slow or flaky (PHP and Python toolchains) | Medium / Medium | Cache pnpm, composer and uv; `check:quick` excludes DB integration; a flake is investigated, never auto-retried (quarantine only with an owner and expiry). |
-| Windows edge cases (shims, long paths, file locks during workspace delete) | Medium / Medium | Windows in the `check` CI matrix from Phase 0; `rm` with retries for `EBUSY`; the `\\?\` prefix is avoided by keeping run paths short (`runs/<id>` has no nesting beyond the workspace). |
-| Leantime JSON-RPC method names vary by version | High / Low | A table-driven method map in config; live verification is pending locally. |
-| Determinism broken by a dependency upgrade (Eta, Prettier-formatted templates) | Low / High | Templates are **not** formatted at render time (Prettier runs on the pack sources in `check`, not on the output); golden hashes catch any change; Eta is pinned exactly. |
-| Scope: a full-featured four-stack scaffold is large | High / Medium | One reference framework per stack in v1 (Q2); `TODO(scaffold)` markers plus the completeness threshold make gaps explicit rather than hidden. |
-| TypeScript 6 → 7 migration | Certain / Low | ADR-001; revisit when typescript-eslint supports 7. |
+| Risk                                                                           | Likelihood / impact | Mitigation                                                                                                                                                                               |
+| ------------------------------------------------------------------------------ | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent CLI flags and JSON formats change                                        | High / Medium       | Capability probing with candidate tables, fixture recording, and `doctor` reporting; `anthropic-api` as the always-works fallback.                                                       |
+| The 8-cell CI matrix is slow or flaky (PHP and Python toolchains)              | Medium / Medium     | Cache pnpm, composer and uv; `check:quick` excludes DB integration; a flake is investigated, never auto-retried (quarantine only with an owner and expiry).                              |
+| Windows edge cases (shims, long paths, file locks during workspace delete)     | Medium / Medium     | Windows in the `check` CI matrix from Phase 0; `rm` with retries for `EBUSY`; the `\\?\` prefix is avoided by keeping run paths short (`runs/<id>` has no nesting beyond the workspace). |
+| Leantime JSON-RPC method names vary by version                                 | High / Low          | A table-driven method map in config; live verification is pending locally.                                                                                                               |
+| Determinism broken by a dependency upgrade (Eta, Prettier-formatted templates) | Low / High          | Templates are **not** formatted at render time (Prettier runs on the pack sources in `check`, not on the output); golden hashes catch any change; Eta is pinned exactly.                 |
+| Scope: a full-featured four-stack scaffold is large                            | High / Medium       | One reference framework per stack in v1 (Q2); `TODO(scaffold)` markers plus the completeness threshold make gaps explicit rather than hidden.                                            |
+| TypeScript 6 → 7 migration                                                     | Certain / Low       | ADR-001; revisit when typescript-eslint supports 7.                                                                                                                                      |
 
 ### 12.2 Open questions (defaults apply if you approve without comment)
 
-| # | Question | Recommended default |
-|---|---|---|
-| **Q1** | Add a third deploy class, **`package-release`** (staging = prerelease artifacts built from `main`; prod = a GitHub Release, npm or PyPI publish from `production` via the same promote/dispatch/rollback workflow shape)? Needed for `node-lib`, `cli` and this repo's own dogfooding. | **Yes** (ADR-016) |
-| **Q2** | One reference framework per stack pack in v1: `node-web` = Fastify + React/Vite + Postgres; `python-service` = FastAPI + Postgres (uv); `wordpress` = plugin or theme with Composer autoload; `node-lib` = TS ESM with `tsc`. Other `stack.framework` values are rejected at REVIEW with a clear message. | **Yes** |
-| **Q3** | Completeness threshold default `70`. Scoring: −10 per missing required canonical item, −1 per `TODO(scaffold)` (capped at −40), −5 per profile with zero scenarios. | **Yes** (ADR-018) |
-| **Q4** | Required Actions **secrets** are listed but not created (no placeholder values); **variables** are created with `__INCUBATOR_UNSET__`. | **Yes** |
-| **Q5** | The Electron app is unsigned in v1 (macOS Gatekeeper and Windows SmartScreen warnings); signing is added when certificates exist. | **Yes** |
-| **Q6** | Generated repos ship a Renovate config for SHA-pinned Actions and deps, but disabled until you enable the app. | **Yes, disabled** |
-| **Q7** | Default model for `anthropic-api` is `claude-opus-5-5`, overridable in `config.json`. | **Yes** |
-| **Q8** | CI on this repo runs `check` on ubuntu, windows and macos for every push (roughly 3× minutes); the packs matrix runs on ubuntu only. | **Yes** |
+| #      | Question                                                                                                                                                                                                                                                                                                  | Recommended default |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| **Q1** | Add a third deploy class, **`package-release`** (staging = prerelease artifacts built from `main`; prod = a GitHub Release, npm or PyPI publish from `production` via the same promote/dispatch/rollback workflow shape)? Needed for `node-lib`, `cli` and this repo's own dogfooding.                    | **Yes** (ADR-016)   |
+| **Q2** | One reference framework per stack pack in v1: `node-web` = Fastify + React/Vite + Postgres; `python-service` = FastAPI + Postgres (uv); `wordpress` = plugin or theme with Composer autoload; `node-lib` = TS ESM with `tsc`. Other `stack.framework` values are rejected at REVIEW with a clear message. | **Yes**             |
+| **Q3** | Completeness threshold default `70`. Scoring: −10 per missing required canonical item, −1 per `TODO(scaffold)` (capped at −40), −5 per profile with zero scenarios.                                                                                                                                       | **Yes** (ADR-018)   |
+| **Q4** | Required Actions **secrets** are listed but not created (no placeholder values); **variables** are created with `__INCUBATOR_UNSET__`.                                                                                                                                                                    | **Yes**             |
+| **Q5** | The Electron app is unsigned in v1 (macOS Gatekeeper and Windows SmartScreen warnings); signing is added when certificates exist.                                                                                                                                                                         | **Yes**             |
+| **Q6** | Generated repos ship a Renovate config for SHA-pinned Actions and deps, but disabled until you enable the app.                                                                                                                                                                                            | **Yes, disabled**   |
+| **Q7** | Default model for `anthropic-api` is `claude-opus-5-5`, overridable in `config.json`.                                                                                                                                                                                                                     | **Yes**             |
+| **Q8** | CI on this repo runs `check` on ubuntu, windows and macos for every push (roughly 3× minutes); the packs matrix runs on ubuntu only.                                                                                                                                                                      | **Yes**             |
 
 ---
 
 ## Appendix A — ADR index
 
-| ADR | Title |
-|---|---|
-| [001](adr/001-monorepo-toolchain.md) | Monorepo toolchain: pnpm 10, Node 22, TypeScript 6.0, ESM, source condition |
-| [002](adr/002-runtime-kernel-package.md) | A `packages/runtime` kernel shared by all adapters |
-| [003](adr/003-template-engine-eta.md) | Eta (not Handlebars) as the template engine, with a restricted-template lint |
-| [004](adr/004-deterministic-rendering-and-lockfile.md) | Deterministic rendering, normalization and the lockfile |
-| [005](adr/005-scaffold-markers-and-json-patches.md) | Comment markers for text files, declarative JSON patches for JSON |
-| [006](adr/006-spec-schema-source-of-truth.md) | JSON Schema as the source of truth; generated types; Ajv |
-| [007](adr/007-llm-adapters-probing-and-sandboxing.md) | LLM adapters: capability probing, schema gate, tool-less sandbox |
-| [008](adr/008-subprocess-spawning.md) | Shell-less subprocesses and Windows shim resolution |
-| [009](adr/009-secrets-and-redaction.md) | Token resolution, `SecretString`, env-based git auth, the Redactor |
-| [010](adr/010-run-journal-and-resume.md) | An append-only JSONL journal with a pure reducer for resume |
-| [011](adr/011-localhost-ui-security.md) | Localhost UI: token → cookie, Host/Origin checks, synchronizer CSRF |
-| [012](adr/012-electron-in-process-server.md) | Electron runs the same Fastify server in-process |
-| [013](adr/013-guard-toolkit-in-node.md) | A single Node guard toolkit for every generated stack |
-| [014](adr/014-security-scanner-pinning.md) | Scanner pinning, gitleaks binary over the action, stable fingerprints |
-| [015](adr/015-test-strategy-fakes-and-live-gating.md) | Vitest, fakes by default, a bare-repo fake GitHub, `INCUBATOR_LIVE` |
-| [016](adr/016-deploy-class-package-release.md) | **Proposed:** a `package-release` deploy class for non-server projects |
-| [017](adr/017-agent-hooks-and-tracker-loop.md) | Agent hooks: a Stop-hook veto as the verification loop |
-| [018](adr/018-completeness-score.md) | Completeness score formula and default threshold |
-| [019](adr/019-toolchain-fetch-and-ci.md) | Hash-pinned tool fetching and the CI layout |
+| ADR                                                    | Title                                                                        |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| [001](adr/001-monorepo-toolchain.md)                   | Monorepo toolchain: pnpm 10, Node 22, TypeScript 6.0, ESM, source condition  |
+| [002](adr/002-runtime-kernel-package.md)               | A `packages/runtime` kernel shared by all adapters                           |
+| [003](adr/003-template-engine-eta.md)                  | Eta (not Handlebars) as the template engine, with a restricted-template lint |
+| [004](adr/004-deterministic-rendering-and-lockfile.md) | Deterministic rendering, normalization and the lockfile                      |
+| [005](adr/005-scaffold-markers-and-json-patches.md)    | Comment markers for text files, declarative JSON patches for JSON            |
+| [006](adr/006-spec-schema-source-of-truth.md)          | JSON Schema as the source of truth; generated types; Ajv                     |
+| [007](adr/007-llm-adapters-probing-and-sandboxing.md)  | LLM adapters: capability probing, schema gate, tool-less sandbox             |
+| [008](adr/008-subprocess-spawning.md)                  | Shell-less subprocesses and Windows shim resolution                          |
+| [009](adr/009-secrets-and-redaction.md)                | Token resolution, `SecretString`, env-based git auth, the Redactor           |
+| [010](adr/010-run-journal-and-resume.md)               | An append-only JSONL journal with a pure reducer for resume                  |
+| [011](adr/011-localhost-ui-security.md)                | Localhost UI: token → cookie, Host/Origin checks, synchronizer CSRF          |
+| [012](adr/012-electron-in-process-server.md)           | Electron runs the same Fastify server in-process                             |
+| [013](adr/013-guard-toolkit-in-node.md)                | A single Node guard toolkit for every generated stack                        |
+| [014](adr/014-security-scanner-pinning.md)             | Scanner pinning, gitleaks binary over the action, stable fingerprints        |
+| [015](adr/015-test-strategy-fakes-and-live-gating.md)  | Vitest, fakes by default, a bare-repo fake GitHub, `INCUBATOR_LIVE`          |
+| [016](adr/016-deploy-class-package-release.md)         | **Proposed:** a `package-release` deploy class for non-server projects       |
+| [017](adr/017-agent-hooks-and-tracker-loop.md)         | Agent hooks: a Stop-hook veto as the verification loop                       |
+| [018](adr/018-completeness-score.md)                   | Completeness score formula and default threshold                             |
+| [019](adr/019-toolchain-fetch-and-ci.md)               | Hash-pinned tool fetching and the CI layout                                  |

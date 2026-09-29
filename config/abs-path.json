@@ -1,0 +1,12 @@
+{
+  "allow": [
+    {
+      "glob": "packages/runtime/src/{exec,paths}.test.ts",
+      "reason": "Unit tests for Windows path and .cmd shim handling use Windows paths as test data."
+    },
+    {
+      "glob": "scripts/guard/guards.test.mjs",
+      "reason": "Tests of the abs-path guard itself contain the patterns it detects."
+    }
+  ]
+}

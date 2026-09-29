@@ -1,0 +1,45 @@
+{
+  "packages": {
+    "packages/runtime": [],
+    "packages/spec": ["packages/runtime"],
+    "packages/llm": ["packages/runtime", "packages/spec"],
+    "packages/git": ["packages/runtime"],
+    "packages/tracker": ["packages/runtime", "packages/spec"],
+    "packages/templates": ["packages/runtime", "packages/spec"],
+    "packages/analyzer": [
+      "packages/runtime",
+      "packages/spec",
+      "packages/templates",
+      "packages/git"
+    ],
+    "packages/core": [
+      "packages/runtime",
+      "packages/spec",
+      "packages/llm",
+      "packages/git",
+      "packages/tracker",
+      "packages/templates",
+      "packages/analyzer"
+    ],
+    "apps/cli": [
+      "packages/runtime",
+      "packages/core",
+      "packages/spec",
+      "packages/llm",
+      "packages/git",
+      "packages/tracker",
+      "packages/templates",
+      "packages/analyzer",
+      "apps/web"
+    ],
+    "apps/web": ["packages/runtime", "packages/core", "packages/spec"],
+    "apps/desktop": [
+      "packages/runtime",
+      "packages/core",
+      "apps/web",
+      "packages/llm",
+      "packages/git",
+      "packages/tracker"
+    ]
+  }
+}

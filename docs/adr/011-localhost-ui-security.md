@@ -5,11 +5,13 @@
 - **Context doc:** [`docs/TDD.md`](../TDD.md)
 
 ## Context
+
 `incubator ui` exposes an API that can create GitHub repos and spawn agent CLIs. Browsers let any
 website send requests to `127.0.0.1`, and DNS rebinding can make a hostile origin resolve there. The
 brief requires 127.0.0.1, a random port, a per-launch token in the URL, and Origin and CSRF checks.
 
 ## Decision
+
 - Bind to `127.0.0.1` on port `0` (the OS picks the port). Never bind `0.0.0.0` or `localhost`,
   since the latter may resolve to `::1`.
 - The launch token is 32 random bytes, base64url, sent in the URL `?t=`. The first valid request
@@ -27,8 +29,10 @@ brief requires 127.0.0.1, a random port, a per-launch token in the URL, and Orig
   a 400.
 
 ## Consequences
+
 - Phase 5 tests cover each rejection path. Electron reuses the exact server (ADR-012).
 - Reopening the UI needs a new launch URL, so `incubator ui` prints it again.
 
 ## Alternatives considered
+
 - **Token-only via header on every request.** Rejected: SSE `EventSource` can't set headers.

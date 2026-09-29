@@ -5,10 +5,12 @@
 - **Context doc:** [`docs/TDD.md`](../TDD.md)
 
 ## Context
+
 `incubator.json` is validated in the CLI, the web UI, the LLM gate and generated repos. It must be
 formally specified as JSON Schema draft 2020-12 (brief §4), with TypeScript types.
 
 ## Decision
+
 - `packages/spec/schema/incubator.schema.json` is hand-authored and is the source of truth.
 - `json-schema-to-typescript` generates `src/types.gen.ts`, which is committed. The `spec:types` test
   regenerates it and fails on any diff.
@@ -21,9 +23,11 @@ formally specified as JSON Schema draft 2020-12 (brief §4), with TypeScript typ
   SHA-256-pinned in `contracts.lock.json`.
 
 ## Consequences
+
 - One schema serves the Ajv validator, the TS types, the LLM structured-output schema and editor
   completion (`$schema`).
 
 ## Alternatives considered
+
 - **Zod as the source, exporting JSON Schema.** Rejected: the brief names JSON Schema 2020-12 as
   the contract, and generated repos consume the schema without TypeScript.

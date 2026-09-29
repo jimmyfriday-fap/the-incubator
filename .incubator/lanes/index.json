@@ -1,0 +1,13 @@
+{
+  "lanes": [
+    "workspace",
+    "security",
+    "support/existing",
+    "testing",
+    "infra",
+    "enhancement/existing",
+    "enhancement/new",
+    "ui/fix",
+    "ui/feature"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/runtime/tsconfig.build.json"
+    },
+    {
+      "path": "./packages/spec/tsconfig.build.json"
+    },
+    {
+      "path": "./packages/llm/tsconfig.build.json"
+    },
+    {
+      "path": "./packages/git/tsconfig.build.json"
+    },
+    {
+      "path": "./packages/tracker/tsconfig.build.json"
+    },
+    {
+      "path": "./packages/templates/tsconfig.build.json"
+    },
+    {
+      "path": "./packages/analyzer/tsconfig.build.json"
+    },
+    {
+      "path": "./packages/core/tsconfig.build.json"
+    },
+    {
+      "path": "./apps/cli/tsconfig.build.json"
+    },
+    {
+      "path": "./apps/web/tsconfig.build.json"
+    },
+    {
+      "path": "./apps/desktop/tsconfig.build.json"
+    }
+  ]
+}

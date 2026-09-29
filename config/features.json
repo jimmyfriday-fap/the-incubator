@@ -1,0 +1,8 @@
+{
+  "features": [
+    {
+      "id": "exit-codes",
+      "summary": "Every CLI command honours the 0/1/2/130 exit-code contract."
+    }
+  ]
+}

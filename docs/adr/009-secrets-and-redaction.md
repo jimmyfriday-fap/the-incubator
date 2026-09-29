@@ -5,11 +5,13 @@
 - **Context doc:** [`docs/TDD.md`](../TDD.md)
 
 ## Context
+
 The GitHub token grants broad power. The brief requires resolution in the order keychain → `gh auth
 token` → `GITHUB_TOKEN`, never writing it to disk in plain text, never logging it, and redacting it in
 all logs.
 
 ## Decision
+
 - **Resolution:** `@napi-rs/keyring` (service `incubator`, account `github`), then `gh auth token`,
   then `GITHUB_TOKEN`. The source (never the value) is reported by `doctor` and journaled. There is no
   file fallback.
@@ -27,10 +29,12 @@ all logs.
 - **Octokit errors** are mapped to `ToolError` with request headers removed.
 
 ## Consequences
+
 - The Phase 3 leak test (scan all run artifacts and captured output for the fake token and its
   encodings) is meaningful because every sink passes through one Redactor.
 
 ## Alternatives considered
+
 - **Token in the remote URL.** Rejected: it persists in `.git/config` and shows in `ps`.
 - **`GIT_ASKPASS` script.** Rejected: it needs a helper file on disk and is awkward on Windows
   without a shell.

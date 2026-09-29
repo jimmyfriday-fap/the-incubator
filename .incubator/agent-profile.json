@@ -1,0 +1,56 @@
+{
+  "$schema": "../schemas/agent-profile.schema.json",
+  "version": 1,
+  "actions": [
+    { "id": "read-repo", "kind": "read", "description": "Read any tracked file." },
+    {
+      "id": "edit-source",
+      "kind": "generate",
+      "description": "Edit source, tests, docs and templates."
+    },
+    { "id": "check-quick", "kind": "gate", "command": "pnpm check:quick" },
+    { "id": "check-full", "kind": "gate", "command": "pnpm check" },
+    { "id": "test-profile", "kind": "gate", "command": "pnpm test:profile quick" },
+    { "id": "commit", "kind": "save", "description": "Commit to a feature branch." },
+    { "id": "push-feature-branch", "kind": "save", "description": "Push a non-protected branch." }
+  ],
+  "denied_actions": [
+    "force-push",
+    "rewrite-history",
+    "delete-or-skip-test",
+    "disable-or-weaken-gate",
+    "quarantine-without-owner-and-expiry",
+    "edit-incubator-lock",
+    "commit-secrets",
+    "absolute-machine-paths",
+    "plan-files-at-repo-root",
+    "shell-true-subprocess"
+  ],
+  "human_only_actions": [
+    "promote-to-production",
+    "rollback-production",
+    "rotate-secrets",
+    "edit-accepted-risks",
+    "contracts-pin",
+    "change-run-ceilings",
+    "merge-to-production"
+  ],
+  "run_ceilings": { "turns": 60, "tool_calls": 400, "minutes": 45, "usd": 10 },
+  "runner": {
+    "stages": [
+      "selected",
+      "repo_resolved",
+      "design",
+      "preflight",
+      "enrich",
+      "verify_baseline",
+      "codegen",
+      "verify",
+      "qa_gate",
+      "ready_for_test"
+    ],
+    "design_lanes": ["enhancement/existing", "enhancement/new"],
+    "on_gate_failure": "park",
+    "nudges": "record-as-remediation"
+  }
+}

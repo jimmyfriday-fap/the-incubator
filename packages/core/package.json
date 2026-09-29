@@ -1,0 +1,26 @@
+{
+  "name": "@incubator/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Run orchestrator, discovery state machine, journal, publish and handoff.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@incubator/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@incubator/runtime": "workspace:*",
+    "@incubator/spec": "workspace:*",
+    "@incubator/llm": "workspace:*",
+    "@incubator/git": "workspace:*",
+    "@incubator/tracker": "workspace:*",
+    "@incubator/templates": "workspace:*",
+    "@incubator/analyzer": "workspace:*"
+  }
+}

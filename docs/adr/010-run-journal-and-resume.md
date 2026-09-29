@@ -5,10 +5,12 @@
 - **Context doc:** [`docs/TDD.md`](../TDD.md)
 
 ## Context
+
 Any state may park, parked runs must resume (brief §5), and `publish --resume` must continue after any
 failed step (brief §7).
 
 ## Decision
+
 - `runs/<runId>/journal.jsonl` is append-only, one event per line: `{seq, ts, type, ...}`. The types
   are:
   - `run.start`;
@@ -28,9 +30,11 @@ failed step (brief §7).
 - Timestamps appear only in the journal and logs, never in rendered files.
 
 ## Consequences
+
 - Fault-injection tests can crash "after effect, before journal" and prove idempotency.
 - The journal doubles as the audit log shown in the UI's run log.
 
 ## Alternatives considered
+
 - **SQLite.** Rejected: a native dependency for no benefit at this scale, and a harder-to-inspect
   audit trail.

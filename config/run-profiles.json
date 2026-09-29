@@ -1,0 +1,20 @@
+{
+  "scenarioDir": "tests/scenarios",
+  "runner": {
+    "nodeBin": ["vitest", "vitest"],
+    "args": ["run"],
+    "suiteFlag": "--project"
+  },
+  "profiles": {
+    "quick": { "suites": ["unit"], "scenarioTags": ["happy", "validation"], "requiresLive": false },
+    "full": { "suites": ["unit"], "scenarioTags": ["*"], "requiresLive": false },
+    "chaos": { "suites": ["unit"], "scenarioTags": ["fault"], "requiresLive": false },
+    "hardening": {
+      "suites": ["unit"],
+      "scenarioTags": ["validation", "fault"],
+      "requiresLive": false
+    },
+    "release": { "suites": ["unit"], "scenarioTags": ["*"], "requiresLive": false },
+    "live": { "suites": ["unit", "live"], "scenarioTags": ["live"], "requiresLive": true }
+  }
+}

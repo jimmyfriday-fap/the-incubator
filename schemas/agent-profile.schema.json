@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://incubator.local/schemas/agent-profile.schema.json",
+  "title": "AgentProfile",
+  "description": "What an AI coding agent may do in this repository, what it may never do, and its run ceilings.",
+  "type": "object",
+  "required": [
+    "version",
+    "actions",
+    "denied_actions",
+    "human_only_actions",
+    "run_ceilings",
+    "runner"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "kind"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "kind": { "enum": ["read", "generate", "save", "gate"] },
+          "command": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "denied_actions": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "human_only_actions": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "run_ceilings": {
+      "type": "object",
+      "required": ["turns", "tool_calls", "minutes", "usd"],
+      "additionalProperties": false,
+      "properties": {
+        "turns": { "type": "integer", "minimum": 1 },
+        "tool_calls": { "type": "integer", "minimum": 1 },
+        "minutes": { "type": "integer", "minimum": 1 },
+        "usd": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "required": ["stages", "on_gate_failure"],
+      "additionalProperties": false,
+      "properties": {
+        "stages": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "selected",
+              "repo_resolved",
+              "design",
+              "preflight",
+              "enrich",
+              "verify_baseline",
+              "codegen",
+              "verify",
+              "qa_gate",
+              "ready_for_test"
+            ]
+          }
+        },
+        "design_lanes": { "type": "array", "items": { "type": "string" } },
+        "on_gate_failure": { "const": "park" },
+        "nudges": { "const": "record-as-remediation" }
+      }
+    }
+  }
+}

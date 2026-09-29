@@ -1,0 +1,46 @@
+{
+  "threshold": 70,
+  "weights": {
+    "missingRequired": 10,
+    "todo": 1,
+    "todoCap": 40,
+    "emptyProfile": 5,
+    "drift": 5
+  },
+  "required": [
+    { "id": "agent.claude-md", "anyOf": ["CLAUDE.md"] },
+    { "id": "agent.agents-md", "anyOf": ["AGENTS.md"] },
+    { "id": "agent.copilot", "anyOf": [".github/copilot-instructions.md"] },
+    { "id": "agent.cursor", "anyOf": [".cursor/rules/*.mdc"] },
+    { "id": "agent.settings-hooks", "anyOf": [".claude/settings.json"] },
+    { "id": "agent.profile", "anyOf": [".incubator/agent-profile.json"] },
+    { "id": "lanes.index", "anyOf": [".incubator/lanes/index.json"] },
+    { "id": "plans.dir", "anyOf": ["docs/plans/*.md"] },
+    { "id": "test.profiles", "anyOf": ["config/run-profiles.json"] },
+    { "id": "test.quarantine", "anyOf": ["config/flake-quarantine.json"] },
+    { "id": "test.scenarios", "anyOf": ["tests/scenarios/**/*.json"] },
+    { "id": "ci.workflow", "anyOf": [".github/workflows/ci.yml"] },
+    { "id": "sec.scan-wf", "anyOf": [".github/workflows/security-scan.yml"] },
+    { "id": "sec.rules", "anyOf": ["security/rules/*.yml"] },
+    { "id": "sec.accepted-risks", "anyOf": ["security/accepted-risks.json"] },
+    { "id": "guard.hooks", "anyOf": ["lefthook.yml"] },
+    {
+      "id": "guard.lint",
+      "anyOf": ["eslint.config.js", ".php-cs-fixer.dist.php", "ruff.toml", "pyproject.toml"]
+    },
+    {
+      "id": "guard.format",
+      "anyOf": [".prettierrc.json", ".php-cs-fixer.dist.php", "ruff.toml", "pyproject.toml"]
+    },
+    { "id": "contracts.pin", "anyOf": ["contracts.lock.json"] },
+    { "id": "env.gitattributes", "anyOf": [".gitattributes"] },
+    { "id": "doc.deploy", "anyOf": ["DEPLOY.md"] }
+  ],
+  "todoExclude": [
+    "docs/**",
+    "scripts/guard/**",
+    "config/completeness.json",
+    "packages/templates/packs/**",
+    "**/*.test.ts"
+  ]
+}

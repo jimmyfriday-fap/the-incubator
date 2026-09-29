@@ -1,0 +1,21 @@
+{
+  "name": "@incubator/llm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LlmAdapter implementations: claude-cli, copilot-cli, cursor-cli, anthropic-api, fake.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@incubator/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@incubator/runtime": "workspace:*",
+    "@incubator/spec": "workspace:*"
+  }
+}

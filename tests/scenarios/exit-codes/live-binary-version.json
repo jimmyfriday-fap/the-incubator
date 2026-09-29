@@ -1,0 +1,20 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "live-binary-version",
+  "feature": "exit-codes",
+  "title": "The built binary runs as a real process and exits 0",
+  "tags": ["live", "happy"],
+  "seed": {},
+  "context": {},
+  "mocks": { "ai": [] },
+  "stages": [
+    {
+      "name": "binary",
+      "input": { "argv": ["--version"], "mode": "binary" },
+      "assertions": [
+        { "path": "exitCode", "op": "eq", "value": 0 },
+        { "path": "stdout", "op": "matches", "value": "^\\d+\\.\\d+\\.\\d+" }
+      ]
+    }
+  ]
+}

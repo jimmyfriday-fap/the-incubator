@@ -1,0 +1,20 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "happy-version",
+  "feature": "exit-codes",
+  "title": "--version prints a semver and exits 0",
+  "tags": ["happy"],
+  "seed": {},
+  "context": {},
+  "mocks": { "ai": [] },
+  "stages": [
+    {
+      "name": "version",
+      "input": { "argv": ["--version"] },
+      "assertions": [
+        { "path": "exitCode", "op": "eq", "value": 0 },
+        { "path": "stdout", "op": "matches", "value": "^\\d+\\.\\d+\\.\\d+\\n$" }
+      ]
+    }
+  ]
+}

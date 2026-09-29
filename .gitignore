@@ -1,0 +1,24 @@
+# dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+.reports/
+.tools/
+test-results/
+playwright-report/
+apps/desktop/release/
+
+# local env files (only *.example is committed)
+.env
+.env.*
+!.env.example
+!.env.*.example
+private/
+
+# agent runtime state (tickets stay tracked)
+.incubator/state/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

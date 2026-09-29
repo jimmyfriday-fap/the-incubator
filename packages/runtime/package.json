@@ -1,0 +1,20 @@
+{
+  "name": "@incubator/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kernel: errors, exit codes, exec, logging, redaction, secrets, paths, canonical JSON.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@incubator/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "optionalDependencies": {
+    "@napi-rs/keyring": "^2.1.0"
+  }
+}

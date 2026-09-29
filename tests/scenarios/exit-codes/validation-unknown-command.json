@@ -1,0 +1,20 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-unknown-command",
+  "feature": "exit-codes",
+  "title": "An unknown command is a policy error: exit 2",
+  "tags": ["validation"],
+  "seed": {},
+  "context": {},
+  "mocks": { "ai": [] },
+  "stages": [
+    {
+      "name": "bogus",
+      "input": { "argv": ["definitely-not-a-command"] },
+      "assertions": [
+        { "path": "exitCode", "op": "eq", "value": 2 },
+        { "path": "stdout", "op": "eq", "value": "" }
+      ]
+    }
+  ]
+}

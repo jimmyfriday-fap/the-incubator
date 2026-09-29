@@ -1,0 +1,20 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-no-command",
+  "feature": "exit-codes",
+  "title": "No command is a usage (policy) error: exit 2",
+  "tags": ["validation"],
+  "seed": {},
+  "context": {},
+  "mocks": { "ai": [] },
+  "stages": [
+    {
+      "name": "no-args",
+      "input": { "argv": [] },
+      "assertions": [
+        { "path": "exitCode", "op": "eq", "value": 2 },
+        { "path": "stderr", "op": "contains", "value": "usage" }
+      ]
+    }
+  ]
+}

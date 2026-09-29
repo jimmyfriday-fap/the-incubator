@@ -5,13 +5,15 @@
 - **Context doc:** [`docs/TDD.md`](../TDD.md)
 
 ## Context
+
 Local agent CLIs (claude, copilot, cursor-agent) change their flags and output formats often. They are
-also *agents*: by default they can read and write files and run commands. Discovery and brownfield
+also _agents_: by default they can read and write files and run commands. Discovery and brownfield
 analysis feed them untrusted text.
 
 ## Decision
+
 - **Probe, don't hard-code.** `probe()` runs `<bin> --version` and `<bin> --help` (and `<bin> <sub>
-  --help` where relevant). It then matches the help text against a table of candidate flag spellings
+--help` where relevant). It then matches the help text against a table of candidate flag spellings
   for each capability:
   - `jsonOutput`;
   - `streamJson`;
@@ -20,7 +22,7 @@ analysis feed them untrusted text.
   - `disableTools`;
   - `maxTurns`;
   - `model`.
-  Results are cached per `(binPath, version)`.
+    Results are cached per `(binPath, version)`.
 - **Eligibility:** discovery requires `jsonOutput`, `printMode` and (`stdinPrompt` or an argv prompt
   under 8 KiB). Brownfield analysis additionally requires `disableTools`.
 - **Sandbox:** `cwd` is a fresh `mkdtemp` directory, deleted afterwards. The environment is
@@ -36,10 +38,12 @@ analysis feed them untrusted text.
   `INCUBATOR_RECORD=1` records them.
 
 ## Consequences
+
 - Flag drift degrades an adapter to "ineligible" (visible in `doctor`) instead of breaking a run.
 - Tests never need a logged-in CLI.
 
 ## Alternatives considered
+
 - **Hard-coded flags per CLI version.** Rejected by the brief.
 - **Letting CLIs read the repo themselves in brownfield.** Rejected: it hands an injection-exposed
   agent file-system tools.

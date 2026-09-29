@@ -1,0 +1,21 @@
+{
+  "name": "@incubator/tracker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TrackerAdapter: leantime, local, fake; ticket state machine.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@incubator/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@incubator/runtime": "workspace:*",
+    "@incubator/spec": "workspace:*"
+  }
+}
