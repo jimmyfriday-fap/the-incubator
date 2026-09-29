@@ -80,7 +80,7 @@
     },
     "syntax": {
       "guard": "syntax",
-      "args": ["--exclude", "packages/templates/packs/**"]
+      "args": ["--exclude", "packages/templates/packs/**,packages/analyzer/fixtures/**"]
     },
     "workflow-lint": {
       "guard": "workflow-lint"

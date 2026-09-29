@@ -13,3 +13,4 @@ export * from './scaffold.js';
 export * from './publish.js';
 export * from './verify.js';
 export * from './handoff.js';
+export * from './adopt.js';

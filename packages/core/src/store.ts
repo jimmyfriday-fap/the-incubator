@@ -25,6 +25,11 @@ export interface RunInput {
   out?: string;
   /** Keep the run workspace after publishing. */
   keep?: boolean;
+  /** adopt: the GitHub repository to open the PR against when `repo` is not a GitHub URL. */
+  repoRef?: { owner: string; name: string };
+  ownerType?: 'user' | 'org';
+  /** adopt: stop after writing the branch locally (no push, no PR). */
+  noPublish?: boolean;
 }
 
 /** `~/.incubator` layout (TDD §2.5): config.json, runs/<id>/{run.json,journal.jsonl,spec/,workspace/,logs/}, cache/. */

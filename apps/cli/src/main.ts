@@ -9,6 +9,7 @@ import { runPublish } from './commands/publish.js';
 import { runHandoff } from './commands/handoff.js';
 import { runAuthDelete, runAuthSet, runAuthStatus } from './commands/auth.js';
 import { runGc } from './commands/gc.js';
+import { runAdopt, type AdoptOptions } from './commands/adopt.js';
 import { liveDeps, type CliDeps, type DepsFactory } from './deps.js';
 import type { Io } from './io.js';
 
@@ -75,6 +76,22 @@ export async function main(
     .option('--force', 'write into a non-empty directory')
     .action(async (spec: string, opts: ScaffoldCliOptions) => {
       code = await runScaffold(io, spec, opts);
+    });
+
+  program
+    .command('adopt <source>')
+    .description(
+      'bring an existing repository (URL or local path) up to the canonical pattern via a PR',
+    )
+    .option(
+      '--repo <owner/name>',
+      'GitHub repository for the PR when the source is not a GitHub URL',
+    )
+    .option('--org', 'the owner is an organization')
+    .option('--no-publish', 'write the adopt branch in the run workspace only (no push, no PR)')
+    .option('-y, --yes', 'approve the inferred spec without prompting')
+    .action(async (source: string, opts: AdoptOptions) => {
+      code = await runAdopt(getDeps(), io, source, opts);
     });
 
   program

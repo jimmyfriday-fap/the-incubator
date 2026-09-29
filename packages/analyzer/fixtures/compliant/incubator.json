@@ -1,0 +1,32 @@
+{
+  "project": {
+    "name": "Tallyho",
+    "slug": "tallyho",
+    "description": "Tiny counters and rate helpers for Node services."
+  },
+  "intent": {
+    "personas": ["owner"],
+    "coreFeatures": [
+      {
+        "id": "counter",
+        "summary": "Named in-memory counters",
+        "lane": "enhancement/new"
+      },
+      {
+        "id": "rate-window",
+        "summary": "Sliding-window rate calculation",
+        "lane": "enhancement/new"
+      }
+    ]
+  },
+  "platform": "library",
+  "stack": {
+    "pack": "node-lib"
+  },
+  "deploy": {
+    "target": "package-release"
+  },
+  "testing": {
+    "e2e": "none"
+  }
+}

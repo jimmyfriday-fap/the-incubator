@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Engine, RunStore } from '@incubator/core';
@@ -321,6 +321,54 @@ describe('publish, handoff, auth, gc', () => {
     expect(await main(['publish', runId], again.io, factory)).toBe(0);
     expect(again.err.join('')).toContain('✔ published');
     expect(await main(['publish', 'no-such-file.json'], io().io, factory)).toBe(2);
+  });
+
+  it('adopts a repository through a pull request, or reports it compliant', async () => {
+    const { h, factory } = publishDeps();
+    const ref = { owner: 'octo', name: 'order-desk' };
+    await h.github.createRepo({
+      ...ref,
+      ownerType: 'user',
+      visibility: 'private',
+      description: 'x',
+    });
+    const src = path.join(mkdtempSync(path.join(tmpdir(), 'adopt-cli-')), 'order-desk');
+    cpSync(
+      path.resolve(import.meta.dirname, '../../../packages/analyzer/fixtures/bare-node'),
+      src,
+      {
+        recursive: true,
+        filter: (f) => !f.endsWith('expected-gap-report.json'),
+      },
+    );
+    for (const args of [
+      ['init', '-q', '-b', 'main'],
+      ['add', '-A'],
+      ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'x'],
+      ['push', '-q', h.github.remoteUrl(ref), 'HEAD:refs/heads/main'],
+    ])
+      await nodeExec.run('git', args, { cwd: src, timeoutMs: 30_000 });
+    const t = io();
+    expect(
+      await main(
+        ['adopt', h.github.remoteUrl(ref), '--repo', 'octo/order-desk', '--yes'],
+        t.io,
+        factory,
+      ),
+    ).toBe(0);
+    expect(t.err.join('')).toContain(
+      '✔ opened https://github.com/octo/order-desk/pull/1 (1 present, 0 partial, 36 missing)',
+    );
+    const local = io();
+    expect(
+      await main(
+        ['adopt', src, '--repo', 'octo/order-desk', '--no-publish', '--yes'],
+        local.io,
+        factory,
+      ),
+    ).toBe(0);
+    expect(local.err.join('')).toContain('adopt branch written locally');
+    expect(await main(['adopt', src, '--repo', 'not a repo'], io().io, factory)).toBe(2);
   });
 
   it('stores credentials in the keychain only and reports their sources', async () => {

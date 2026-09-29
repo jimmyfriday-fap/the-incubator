@@ -1,0 +1,9 @@
+[project]
+name = "rate-relay"
+version = "0.4.0"
+description = "Relays currency rates from providers to internal consumers."
+requires-python = ">=3.12"
+dependencies = ["fastapi>=0.115", "uvicorn>=0.30"]
+
+[dependency-groups]
+dev = ["pytest>=8"]

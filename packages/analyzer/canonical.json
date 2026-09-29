@@ -1,0 +1,252 @@
+{
+  "$comment": "Canonical items of the Backshack pattern (TDD §3) and how to recognise them in any repository. 'all': every glob must match for present (some → partial); 'any': one match is enough; 'contains': a regex that at least one matched file must contain (present needs it, else partial); 'when': limits the item to some stack packs.",
+  "items": [
+    {
+      "id": "agent.claude-md",
+      "section": "3.6 agent config",
+      "title": "CLAUDE.md agent instructions",
+      "any": ["CLAUDE.md"]
+    },
+    {
+      "id": "agent.agents-md",
+      "section": "3.6 agent config",
+      "title": "AGENTS.md agent instructions",
+      "any": ["AGENTS.md"]
+    },
+    {
+      "id": "agent.copilot",
+      "section": "3.6 agent config",
+      "title": "Copilot instructions",
+      "any": [".github/copilot-instructions.md"]
+    },
+    {
+      "id": "agent.cursor",
+      "section": "3.6 agent config",
+      "title": "Cursor rules",
+      "any": [".cursor/rules/*.mdc"]
+    },
+    {
+      "id": "agent.settings-hooks",
+      "section": "3.6 agent config",
+      "title": "Agent session hooks",
+      "any": [".claude/settings.json"],
+      "contains": "SessionStart"
+    },
+    {
+      "id": "agent.profile",
+      "section": "3.2 work lanes",
+      "title": "Agent action profile and run ceilings",
+      "any": [".incubator/agent-profile.json"]
+    },
+    {
+      "id": "lanes.index",
+      "section": "3.2 work lanes",
+      "title": "Work-lane templates (enrich + codegen for each lane)",
+      "all": [
+        ".incubator/lanes/index.json",
+        ".incubator/lanes/**/enrich.md",
+        ".incubator/lanes/**/codegen.md"
+      ]
+    },
+    {
+      "id": "plans.dir",
+      "section": "3.2 work lanes",
+      "title": "Executor plans in docs/plans",
+      "any": ["docs/plans/*.md"]
+    },
+    {
+      "id": "tracker.config",
+      "section": "3.2 work lanes",
+      "title": "Tracker configuration",
+      "any": [".incubator/tracker.json"]
+    },
+    {
+      "id": "test.profiles",
+      "section": "3.3 tests",
+      "title": "Named run profiles",
+      "any": ["config/run-profiles.json"]
+    },
+    {
+      "id": "test.scenarios",
+      "section": "3.3 tests",
+      "title": "Scenario contract layer",
+      "all": ["tests/scenarios/**/*.json", "schemas/scenario.schema.json"]
+    },
+    {
+      "id": "test.quarantine",
+      "section": "3.3 tests",
+      "title": "Flake quarantine with owner and expiry",
+      "any": ["config/flake-quarantine.json"]
+    },
+    {
+      "id": "test.suites",
+      "section": "3.3 tests",
+      "title": "A configured test runner",
+      "any": [
+        "vitest.config.*",
+        "jest.config.*",
+        "phpunit.xml*",
+        "pytest.ini",
+        "pyproject.toml",
+        "package.json"
+      ],
+      "contains": "vitest|jest|phpunit|pytest|testsuite"
+    },
+    {
+      "id": "ci.workflow",
+      "section": "3.3 tests",
+      "title": "CI workflow",
+      "any": [".github/workflows/ci.yml", ".github/workflows/ci.yaml"]
+    },
+    {
+      "id": "ci.gate",
+      "section": "3.3 tests",
+      "title": "A single CI gate job that fails on any failed job",
+      "any": [".github/workflows/*.{yml,yaml}"],
+      "contains": "ci-gate|needs\\.\\*|toJSON\\(needs\\)"
+    },
+    {
+      "id": "sec.scan-wf",
+      "section": "3.4 security",
+      "title": "Security scan workflow (SAST, dependencies, secrets)",
+      "any": [".github/workflows/*.{yml,yaml}"],
+      "contains": "semgrep|trivy|gitleaks"
+    },
+    {
+      "id": "sec.rules",
+      "section": "3.4 security",
+      "title": "Local Semgrep rules with fixtures",
+      "all": ["security/rules/*.{yml,yaml}", "security/fixtures/**"]
+    },
+    {
+      "id": "sec.policy-gate",
+      "section": "3.4 security",
+      "title": "Policy gate over scanner findings",
+      "any": ["scripts/guard/policy-gate.mjs"]
+    },
+    {
+      "id": "sec.accepted-risks",
+      "section": "3.4 security",
+      "title": "Accepted-risk register",
+      "any": ["security/accepted-risks.json"]
+    },
+    {
+      "id": "guard.bom",
+      "section": "3.4 security",
+      "title": "BOM guard",
+      "any": ["scripts/guard/bom.mjs"]
+    },
+    {
+      "id": "guard.syntax",
+      "section": "3.4 security",
+      "title": "Syntax lint",
+      "any": ["scripts/guard/syntax.mjs"]
+    },
+    {
+      "id": "guard.isolation",
+      "section": "3.4 security",
+      "title": "Isolation lint",
+      "any": ["scripts/guard/isolation.mjs"]
+    },
+    {
+      "id": "guard.lint",
+      "section": "3.4 security",
+      "title": "Linter and formatter configuration",
+      "any": [
+        "eslint.config.*",
+        ".eslintrc*",
+        "ruff.toml",
+        "phpcs.xml*",
+        ".php-cs-fixer.dist.php",
+        "pyproject.toml"
+      ],
+      "contains": "eslint|ruff|phpcs|PhpCsFixer|FixerConfig|<ruleset|export default"
+    },
+    {
+      "id": "guard.hooks",
+      "section": "3.4 security",
+      "title": "Pre-commit hooks",
+      "any": ["lefthook.yml", ".husky/pre-commit", ".pre-commit-config.yaml"]
+    },
+    {
+      "id": "contracts.pin",
+      "section": "3.4 security",
+      "title": "Pinned contract files",
+      "any": ["contracts.lock.json"]
+    },
+    {
+      "id": "env.example",
+      "section": "3.4 security",
+      "title": "Committed .env.example (no real env files)",
+      "any": [".env.example"]
+    },
+    {
+      "id": "env.gitattributes",
+      "section": "3.4 security",
+      "title": "Line-ending policy",
+      "any": [".gitattributes"],
+      "contains": "eol=lf"
+    },
+    {
+      "id": "scaffold.markers",
+      "section": "3.5 scaffolder",
+      "title": "Scaffolder with markers",
+      "all": ["scripts/scaffold.mjs", "config/scaffold.json"]
+    },
+    {
+      "id": "guard.drift",
+      "section": "3.5 scaffolder",
+      "title": "Drift checker",
+      "any": ["scripts/guard/drift.mjs"]
+    },
+    {
+      "id": "scaffold.todo-score",
+      "section": "3.5 scaffolder",
+      "title": "Completeness score",
+      "all": ["scripts/guard/completeness.mjs", "config/completeness.json"]
+    },
+    {
+      "id": "env.compose",
+      "section": "3.1 lanes",
+      "title": "Local lane in compose",
+      "any": ["compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"],
+      "when": ["node-web", "python-service", "wordpress"]
+    },
+    {
+      "id": "wf.deploy-staging",
+      "section": "3.1 lanes",
+      "title": "Staging deploy workflow",
+      "any": [".github/workflows/deploy-staging.yml"]
+    },
+    {
+      "id": "wf.promote",
+      "section": "3.1 lanes",
+      "title": "Manual promote-to-production workflow",
+      "any": [".github/workflows/promote-to-production.yml"]
+    },
+    {
+      "id": "wf.deploy-prod",
+      "section": "3.1 lanes",
+      "title": "Dispatch-only production deploy",
+      "any": [".github/workflows/deploy-production.yml"]
+    },
+    {
+      "id": "wf.rollback",
+      "section": "3.1 lanes",
+      "title": "Rollback workflow",
+      "any": [".github/workflows/rollback-production.yml"]
+    },
+    {
+      "id": "deploy.tasks",
+      "section": "3.1 lanes",
+      "title": "Post-deploy tasks",
+      "any": [".deploy-tasks.json"]
+    },
+    {
+      "id": "doc.deploy",
+      "section": "3.1 lanes",
+      "title": "DEPLOY.md with deploy class and promotion rules",
+      "any": ["DEPLOY.md"]
+    }
+  ]
+}

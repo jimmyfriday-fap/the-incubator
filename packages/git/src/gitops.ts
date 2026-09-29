@@ -34,6 +34,12 @@ export interface GitOps {
     dir: string,
     opts?: { depth?: number; token?: SecretString },
   ): Promise<void>;
+  /** Creates and checks out a new branch at HEAD. */
+  checkoutNewBranch(dir: string, branch: string): Promise<void>;
+  /** `git diff --name-status base..head` as [status, path] pairs. */
+  diffNameStatus(dir: string, base: string, head: string): Promise<[string, string][]>;
+  /** The URL of a remote, or null. */
+  remoteGetUrl(dir: string, name?: string): Promise<string | null>;
 }
 
 const TIMEOUT = 5 * 60_000;
@@ -114,6 +120,25 @@ export function createGitOps(exec: Exec): GitOps {
       });
       const line = r.stdout.split('\n').find((l) => l.endsWith(`\t${ref}`));
       return line ? line.split('\t')[0]! : null;
+    },
+    async checkoutNewBranch(dir, branch) {
+      await git(['checkout', '-q', '-b', branch], { cwd: dir });
+    },
+    async diffNameStatus(dir, base, head) {
+      const r = await git(['diff', '--name-status', '--no-renames', `${base}..${head}`], {
+        cwd: dir,
+      });
+      return r.stdout
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => {
+          const [st, ...rest] = l.split('\t');
+          return [st!, rest.join('\t')] as [string, string];
+        });
+    },
+    async remoteGetUrl(dir, name = 'origin') {
+      const r = await git(['remote', 'get-url', name], { cwd: dir, allowFail: true });
+      return r.code === 0 ? r.stdout.trim() : null;
     },
     async clone(remote, dir, opts = {}) {
       await git(

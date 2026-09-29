@@ -2,15 +2,15 @@
 
 Plan: [docs/plans/003-phase-2-templates-and-scaffold.md](../plans/003-phase-2-templates-and-scaffold.md).
 
-| #   | Criterion (TDD §10, Phase 2)                                                        | Status                                                                    |
-| --- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| 1   | Byte identity over two runs                                                         | PASS (render tests + per-combination golden manifests)                    |
-| 2   | Matrix: each cell's own `check`, test count > 0, completeness ≥ threshold           | PASS locally for all 10 combinations; CI `packs` job — see §2             |
-| 3   | Security fixtures fire (semgrep via the hash-pinned tools fetch)                    | PASS (`rule-fixtures` inside each cell's `check full`)                    |
-| 4   | actionlint clean on every rendered workflow                                         | PASS (`workflow-lint-strict` inside each cell's `check full`)             |
-| 5   | `incubator scaffold <spec> --out <dir> [--dry-run] [--validate-only]`               | PASS                                                                      |
-| 6   | This repo's `scripts/guard/` is a render of `base` (dogfood drift test)             | PASS                                                                      |
-| —   | WordPress `unit-coverage` (needs PCOV/Xdebug) and Docker/compose integration suites | PENDING CI (no PCOV or Docker daemon in this container; CI installs PCOV) |
+| #   | Criterion (TDD §10, Phase 2)                                                        | Status                                                                                                                                            |
+| --- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Byte identity over two runs                                                         | PASS (render tests + per-combination golden manifests)                                                                                            |
+| 2   | Matrix: each cell's own `check`, test count > 0, completeness ≥ threshold           | PASS locally and in CI: all 10 `packs` cells green ([run 36640729016](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36640729016)) |
+| 3   | Security fixtures fire (semgrep via the hash-pinned tools fetch)                    | PASS (`rule-fixtures` inside each cell's `check full`)                                                                                            |
+| 4   | actionlint clean on every rendered workflow                                         | PASS (`workflow-lint-strict` inside each cell's `check full`)                                                                                     |
+| 5   | `incubator scaffold <spec> --out <dir> [--dry-run] [--validate-only]`               | PASS                                                                                                                                              |
+| 6   | This repo's `scripts/guard/` is a render of `base` (dogfood drift test)             | PASS                                                                                                                                              |
+| —   | WordPress `unit-coverage` (needs PCOV/Xdebug) and Docker/compose integration suites | WordPress `unit-coverage`: PASS in CI (PCOV); Docker/compose suites: PENDING LOCAL VERIFICATION (no daemon here)                                  |
 
 ## 1. Determinism
 
@@ -91,8 +91,9 @@ Generated repositories also pass their own scaffolder round trip: in each stack,
 `node scripts/scaffold.mjs feature export-json --summary "Export as JSON"` followed by `check quick`
 exits 0 (the scaffolder now runs the repo's configured formatter over what it writes).
 
-**CI:** the `packs` matrix job in `.github/workflows/ci.yml` (gated by `gate`) — run URL recorded
-after push in the Phase 2 commit's CI section below.
+**CI:** the `packs` matrix job in `.github/workflows/ci.yml` (gated by `gate`). All 10 cells passed
+`check full` at commit `45e15d7`, the WordPress cells included (with PCOV):
+[run 36640729016](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36640729016).
 
 ## 3–4. Security fixtures and actionlint
 

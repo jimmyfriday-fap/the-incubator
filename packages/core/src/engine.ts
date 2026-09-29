@@ -37,6 +37,8 @@ import type { RunInput, RunStore } from './store.js';
 import { INCUBATOR_VERSION } from './version.js';
 import { Publisher, type PublishDeps, type PublishSummary, type StepContext } from './publish.js';
 import { scaffoldSpec } from './scaffold.js';
+import { Adopter, adoptReport, isEmptyDelta, writeReport, type AdoptContext } from './adopt.js';
+import { analyze, gapReport, summarizeGaps, viewFromDir } from '@incubator/analyzer';
 import {
   AGENT_ADAPTERS,
   activeTicket,
@@ -179,7 +181,137 @@ export class Engine {
     }
   }
 
+  #adopter: Adopter | undefined;
+  private adopter(): Adopter {
+    if (!this.deps.publish) throw new ToolError('adopt needs git and GitHub dependencies');
+    return (this.#adopter ??= new Adopter(this.deps.publish));
+  }
+
+  private adoptContext(runId: string): AdoptContext {
+    return {
+      runId,
+      workspace: path.join(this.deps.store.runDir(runId), 'workspace'),
+      clock: this.deps.clock,
+      steps: this.state(runId).steps,
+      record: (type, fields) => {
+        this.record(runId, type, fields);
+      },
+    };
+  }
+
+  /** ANALYZE (brownfield): acquire a copy, run the detectors, draft the spec, then REVIEW. */
+  private async analyzeStep(runId: string, s: RunState): Promise<void> {
+    await this.effect(runId, async () => {
+      const a = this.adopter();
+      const got = await a.acquire(this.adoptContext(runId), s.input.repo!, s.input.repoRef);
+      const repoName =
+        got.ref?.name ?? path.basename(path.resolve(s.input.repo!)).replace(/\.git$/, '');
+      const owner = { type: s.input.ownerType ?? 'user', login: got.ref?.owner ?? '' } as const;
+      const { analysis, items, spec } = a.inspect(got.dir, owner, repoName);
+      const issues = [
+        ...validateSpec(spec).issues,
+        ...(validateSpec(spec).ok ? validateSemantics(spec) : []),
+      ];
+      if (issues.length)
+        throw new ParkError(
+          'spec_invalid',
+          `the inferred spec is invalid (${issues.length} issue(s))`,
+          { issues },
+        );
+      this.record(runId, 'adopt.analysis', {
+        stack: analysis.stack,
+        tests: analysis.tests,
+        hasSpec: analysis.hasSpec,
+        gaps: summarizeGaps(items),
+      });
+      this.writeRevision(runId, spec as unknown as Draft, {
+        final: true,
+        inferred: true,
+        hash: specHash(spec),
+      });
+    });
+    this.enter(runId, 'REVIEW');
+  }
+
+  /** SCAFFOLD for adopt: plan the delta; an empty one means the repository is already compliant. */
+  private async adoptScaffoldStep(runId: string): Promise<void> {
+    const spec = this.approvedSpec(runId);
+    const ctx = this.adoptContext(runId);
+    const dir = path.join(ctx.workspace, 'repo');
+    let empty = false;
+    await this.effect(runId, async () => {
+      const a = this.adopter();
+      const { result, delta } = await a.plan(dir, spec);
+      const view = viewFromDir(dir);
+      const analysis = analyze(view);
+      const report = adoptReport(analysis, gapReport(view, spec.stack.pack), delta);
+      writeReport(this.deps.store.runDir(runId), report);
+      this.record(runId, 'adopt.delta', {
+        create: delta.create.length,
+        proposed: delta.proposed,
+        owned: delta.owned.length,
+      });
+      if (isEmptyDelta(delta)) {
+        empty = true;
+        return;
+      }
+      const identity = (await this.deps.publish?.identity?.()) ?? {
+        name: 'Incubator',
+        email: 'incubator@users.noreply.github.com',
+      };
+      await a.commit(ctx, dir, result, delta, identity);
+    });
+    if (empty) {
+      this.record(runId, 'step.ok', { step: 'adopt.compliant' });
+      this.record(runId, 'run.done', { compliant: true });
+    } else if (this.state(runId).input.noPublish) this.record(runId, 'run.done', { local: dir });
+    else this.enter(runId, 'PUBLISH');
+  }
+
+  private async adoptPublishStep(runId: string): Promise<void> {
+    const ctx = this.adoptContext(runId);
+    const ref = (
+      ctx.steps['adopt.acquire']?.data as
+        { ref: { owner: string; name: string } | null } | undefined
+    )?.ref;
+    await this.effect(runId, async () => {
+      if (!ref)
+        throw new PolicyError(
+          'the repository has no GitHub origin to open a pull request against',
+          { code: 'no_github_origin' },
+        );
+      const body = readFileSync(
+        path.join(this.deps.store.runDir(runId), 'adopt', 'gap-report.md'),
+        'utf8',
+      );
+      const pr = await this.adopter().publish(ctx, path.join(ctx.workspace, 'repo'), ref, body);
+      this.record(runId, 'adopt.summary', {
+        pr,
+        repo: `https://github.com/${ref.owner}/${ref.name}`,
+      });
+    });
+    this.record(runId, 'run.done', {});
+  }
+
+  /** The adopt outcome: compliant, local branch, or the pull request. */
+  adoptSummary(runId: string): {
+    compliant: boolean;
+    pr?: { number: number; url: string };
+    report: string | null;
+  } {
+    const entries = this.entries(runId);
+    const pr = entries.findLast((e) => e.type === 'adopt.summary')?.['pr'] as
+      { number: number; url: string } | undefined;
+    const file = path.join(this.deps.store.runDir(runId), 'adopt', 'gap-report.md');
+    return {
+      compliant: entries.some((e) => e.type === 'step.ok' && e['step'] === 'adopt.compliant'),
+      ...(pr ? { pr } : {}),
+      report: existsSync(file) ? readFileSync(file, 'utf8') : null,
+    };
+  }
+
   private async scaffoldStep(runId: string, s: RunState): Promise<void> {
+    if (s.input.kind === 'adopt') return this.adoptScaffoldStep(runId);
     const spec = this.approvedSpec(runId);
     if (s.input.out) {
       const r = await scaffoldSpec(spec, { out: s.input.out });
@@ -509,7 +641,8 @@ export class Engine {
             else this.enter(runId, 'DRAFT_SPEC', 1);
             break;
           case 'ANALYZE':
-            throw new ToolError('brownfield analysis is not available in this build');
+            await this.analyzeStep(runId, s);
+            break;
           case 'DRAFT_SPEC':
             await this.draftStep(runId, s);
             break;
@@ -533,7 +666,8 @@ export class Engine {
             await this.verifyStep(runId);
             break;
           case 'PUBLISH':
-            await this.publishStep(runId);
+            if (s.input.kind === 'adopt') await this.adoptPublishStep(runId);
+            else await this.publishStep(runId);
             break;
           case 'HANDOFF':
             await this.handoffStep(runId);

@@ -711,7 +711,6 @@ packages/templates/packs/stack/node-web/
   files/…/*.eta          rendered (".eta" suffix stripped)
   files/…/*               copied verbatim (binary-safe)
   patches/*.patch.json   marker and JSON patches against earlier packs
-  canonical.json         canonical items + detectors (used by analyzer)
   fixtures/              expected snippets for pack unit tests
 ```
 
@@ -937,6 +936,13 @@ Name:` → theme; `pyproject.toml` + FastAPI/uvicorn → `python-service`;
   nothing. Then `adopt` exits 0 with "already compliant" and opens no PR.
 - **Local path input.** The source is never modified. The workspace is a copy (respecting
   `.gitignore`), and publish pushes the branch to the repo's `origin`, which must be GitHub.
+- **As built (Phase 4).** The canonical items live in one catalog, `packages/analyzer/canonical.json`
+  (an item's `when` limits it to some stack packs), rather than one `canonical.json` per pack, so the gap report has a
+  single, reviewable source. The detectors are in `packages/analyzer/src/detectors.ts`. A local path is
+  `git clone`d into the workspace, which copies exactly the committed tree, so ignored files never
+  enter it. `ANALYZE` drafts the spec deterministically from the detectors (`draftFromAnalysis`); it
+  never infers security fields, and no LLM summary is produced yet. The PR body is the Markdown gap
+  report. `incubator adopt --no-publish` stops after the local commit.
 
 ---
 

@@ -12,7 +12,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "canonical.json"
   ],
   "dependencies": {
     "@incubator/runtime": "workspace:*",

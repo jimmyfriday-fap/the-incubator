@@ -18,9 +18,9 @@ export async function runHandoff(
     });
   const agent = opts.agent as HandoffAgent | undefined;
   const { plan, ticket } = await deps.engine.prepareHandoff(runId, agent ? { agent } : {});
-  const shown = [plan.bin, ...plan.argv]
-    .map((a) => (/^[\w./:=@,+-]+$/.test(a) ? a : JSON.stringify(a)))
-    .join(' ');
+  // Printed for copy-paste: plain words as-is, anything else in double quotes (paths keep their backslashes).
+  const quote = (a: string) => (/^[\w./:=@,+\\-]+$/.test(a) ? a : `"${a.replace(/"/g, '\\"')}"`);
+  const shown = [plan.bin, ...plan.argv].map(quote).join(' ');
   if (!opts.launch) {
     io.stderr(
       [

@@ -1,0 +1,59 @@
+{
+  "stack": {
+    "pack": "node-web",
+    "framework": "fastify-react",
+    "platform": "web",
+    "confidence": "medium",
+    "evidence": [
+      {
+        "file": "package.json",
+        "note": "depends on express"
+      }
+    ]
+  },
+  "summary": {
+    "present": 1,
+    "partial": 0,
+    "missing": 36,
+    "compliant": false
+  },
+  "items": [
+    "missing agent.claude-md",
+    "missing agent.agents-md",
+    "missing agent.copilot",
+    "missing agent.cursor",
+    "missing agent.settings-hooks",
+    "missing agent.profile",
+    "missing lanes.index",
+    "missing plans.dir",
+    "missing tracker.config",
+    "missing test.profiles",
+    "missing test.scenarios",
+    "missing test.quarantine",
+    "present test.suites",
+    "missing ci.workflow",
+    "missing ci.gate",
+    "missing sec.scan-wf",
+    "missing sec.rules",
+    "missing sec.policy-gate",
+    "missing sec.accepted-risks",
+    "missing guard.bom",
+    "missing guard.syntax",
+    "missing guard.isolation",
+    "missing guard.lint",
+    "missing guard.hooks",
+    "missing contracts.pin",
+    "missing env.example",
+    "missing env.gitattributes",
+    "missing scaffold.markers",
+    "missing guard.drift",
+    "missing scaffold.todo-score",
+    "missing env.compose",
+    "missing wf.deploy-staging",
+    "missing wf.promote",
+    "missing wf.deploy-prod",
+    "missing wf.rollback",
+    "missing deploy.tasks",
+    "missing doc.deploy"
+  ]
+}

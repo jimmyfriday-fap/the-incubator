@@ -86,6 +86,9 @@ export function faultyGit(inner: GitOps) {
         'push',
         'remoteSha',
         'clone',
+        'checkoutNewBranch',
+        'diffNameStatus',
+        'remoteGetUrl',
       ] as const
     ).map((m) => [m, wrap(m)]),
   ) as unknown as GitOps;

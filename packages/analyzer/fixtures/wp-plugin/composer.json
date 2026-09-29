@@ -1,0 +1,4 @@
+{
+  "name": "hotel/guest-book",
+  "require-dev": { "phpunit/phpunit": "^11.5" }
+}
