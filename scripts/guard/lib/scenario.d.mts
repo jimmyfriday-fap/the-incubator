@@ -12,6 +12,7 @@ export interface Scenario {
   id: string;
   feature: string;
   title?: string;
+  status?: 'active' | 'todo';
   tags: string[];
   seed: Record<string, unknown>;
   context: Record<string, unknown>;

@@ -12,10 +12,15 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "packs",
+    "schema",
+    "actions-lock.json",
+    "versions.json"
   ],
   "dependencies": {
     "@incubator/runtime": "workspace:*",
-    "@incubator/spec": "workspace:*"
+    "@incubator/spec": "workspace:*",
+    "eta": "4.6.0"
   }
 }

@@ -7,22 +7,45 @@
   "required": ["id", "feature", "tags", "seed", "context", "mocks", "stages"],
   "additionalProperties": false,
   "properties": {
-    "$schema": { "type": "string" },
-    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
-    "feature": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
-    "title": { "type": "string" },
+    "$schema": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "feature": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "title": {
+      "type": "string"
+    },
+    "status": {
+      "enum": ["active", "todo"],
+      "description": "todo: a scaffolded stub an agent must complete; reported as a todo test, never silently skipped."
+    },
     "tags": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$"
+      }
     },
-    "seed": { "type": "object" },
-    "context": { "type": "object" },
+    "seed": {
+      "type": "object"
+    },
+    "context": {
+      "type": "object"
+    },
     "mocks": {
       "type": "object",
       "properties": {
-        "ai": { "type": "array" }
+        "ai": {
+          "type": "array"
+        }
       }
     },
     "stages": {
@@ -33,8 +56,12 @@
         "required": ["name", "assertions"],
         "additionalProperties": false,
         "properties": {
-          "name": { "type": "string" },
-          "input": { "type": "object" },
+          "name": {
+            "type": "string"
+          },
+          "input": {
+            "type": "object"
+          },
           "assertions": {
             "type": "array",
             "minItems": 1,
@@ -43,7 +70,9 @@
               "required": ["path", "op"],
               "additionalProperties": false,
               "properties": {
-                "path": { "type": "string" },
+                "path": {
+                  "type": "string"
+                },
                 "op": {
                   "enum": [
                     "eq",

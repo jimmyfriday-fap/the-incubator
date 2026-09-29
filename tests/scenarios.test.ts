@@ -20,6 +20,10 @@ describe('scenario contract layer', () => {
 
   for (const s of scenarios) {
     const scenario = s.data!;
+    if (scenario.status === 'todo') {
+      it.todo(`${scenario.feature}/${scenario.id}`);
+      continue;
+    }
     it.skipIf(scenario.tags.includes('live') && !live)(
       `${scenario.feature}/${scenario.id}`,
       async () => {

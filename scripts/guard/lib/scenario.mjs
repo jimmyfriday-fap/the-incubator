@@ -75,6 +75,8 @@ export function validateScenario(s) {
     errors.push('id must be kebab-case');
   if (typeof s.feature !== 'string' || !s.feature) errors.push('feature is required');
   if (!Array.isArray(s.tags) || s.tags.length === 0) errors.push('tags must be a non-empty array');
+  if (s.status !== undefined && !['active', 'todo'].includes(s.status))
+    errors.push('status must be active or todo');
   for (const k of ['seed', 'context', 'mocks'])
     if (!isObj(s[k])) errors.push(`${k} must be an object`);
   if (isObj(s.mocks) && s.mocks.ai !== undefined && !Array.isArray(s.mocks.ai))
