@@ -1,0 +1,46 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "round 2: two more questions; after these answers the engine finalizes without another call",
+  "response": {
+    "draftSpec": {
+      "decisions": []
+    },
+    "questions": [
+      {
+        "key": "security.policyGate",
+        "question": "At which severity should the security gate fail?",
+        "impact": 6,
+        "options": [
+          {
+            "value": "HIGH",
+            "label": "HIGH and above",
+            "recommended": true
+          },
+          {
+            "value": "MEDIUM",
+            "label": "MEDIUM and above",
+            "recommended": false
+          }
+        ]
+      },
+      {
+        "key": "testing.e2e",
+        "question": "Browser e2e tests?",
+        "impact": 3,
+        "options": [
+          {
+            "value": "none",
+            "label": "None (API only)",
+            "recommended": true
+          },
+          {
+            "value": "playwright",
+            "label": "Playwright",
+            "recommended": false
+          }
+        ]
+      }
+    ],
+    "done": false
+  }
+}

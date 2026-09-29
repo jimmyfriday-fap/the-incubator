@@ -1,0 +1,32 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "attempt 1 is rejected by the gate: two recommended options and an unattributed value",
+  "response": {
+    "draftSpec": {
+      "project": {
+        "name": "Team App"
+      },
+      "decisions": []
+    },
+    "questions": [
+      {
+        "key": "platform",
+        "question": "What kind of product is it?",
+        "impact": 10,
+        "options": [
+          {
+            "value": "web",
+            "label": "A web app",
+            "recommended": true
+          },
+          {
+            "value": "cli",
+            "label": "A command-line tool",
+            "recommended": true
+          }
+        ]
+      }
+    ],
+    "done": false
+  }
+}

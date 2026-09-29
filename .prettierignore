@@ -11,3 +11,5 @@ packages/analyzer/fixtures/
 packages/llm/fixtures/
 docs/BUILD_PROMPT.md
 security/fixtures/
+**/*.gen.ts
+packages/core/fixtures/

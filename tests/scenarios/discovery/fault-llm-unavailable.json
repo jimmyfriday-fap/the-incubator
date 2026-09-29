@@ -1,0 +1,20 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "fault-llm-unavailable",
+  "feature": "discovery",
+  "title": "An LLM adapter that breaks is the tool breaking (exit 1), not a park",
+  "tags": ["fault"],
+  "seed": { "fixtures": [] },
+  "context": {},
+  "mocks": { "ai": ["inline: no fixtures, adapter raises"] },
+  "stages": [
+    {
+      "name": "discover",
+      "input": { "narrative": "Anything", "yes": true },
+      "assertions": [
+        { "path": "state", "op": "eq", "value": "ERROR" },
+        { "path": "exitCode", "op": "eq", "value": 1 }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,356 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://incubator.local/schemas/incubator.schema.json",
+  "title": "IncubatorSpec",
+  "description": "incubator.json: everything the deterministic template engine needs to render a repository.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "incubatorVersion",
+    "mode",
+    "project",
+    "intent",
+    "platform",
+    "stack",
+    "lanes",
+    "deploy",
+    "testing",
+    "security",
+    "agents",
+    "tracker",
+    "templates",
+    "source",
+    "gapReport",
+    "decisions"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "incubatorVersion": { "const": "1.0" },
+    "mode": { "enum": ["greenfield", "brownfield"] },
+    "project": {
+      "title": "Project",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "slug", "description", "owner", "visibility"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,98}[a-z0-9]$" },
+        "description": { "type": "string", "maxLength": 500 },
+        "owner": {
+          "title": "Owner",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "login"],
+          "properties": {
+            "type": { "enum": ["user", "org"] },
+            "login": { "type": "string", "pattern": "^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))?$" }
+          }
+        },
+        "visibility": { "enum": ["private", "public", "internal"] }
+      }
+    },
+    "intent": {
+      "title": "Intent",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["narrative", "personas", "coreFeatures"],
+      "properties": {
+        "narrative": { "type": "string", "maxLength": 20000 },
+        "personas": {
+          "type": "array",
+          "maxItems": 10,
+          "items": { "type": "string", "maxLength": 200 }
+        },
+        "coreFeatures": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "title": "CoreFeature",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "summary", "lane"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,48}$" },
+              "summary": { "type": "string", "minLength": 1, "maxLength": 300 },
+              "lane": { "$ref": "#/$defs/workLane" }
+            }
+          }
+        }
+      }
+    },
+    "platform": {
+      "enum": ["web", "service", "cli", "library", "wordpress-plugin", "wordpress-theme"]
+    },
+    "stack": {
+      "title": "Stack",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pack", "framework", "database", "auth", "packageManager"],
+      "properties": {
+        "pack": { "enum": ["node-web", "wordpress", "python-service", "node-lib"] },
+        "framework": {
+          "enum": [
+            "fastify-react",
+            "fastapi",
+            "wordpress-plugin",
+            "wordpress-theme",
+            "typescript-lib"
+          ]
+        },
+        "database": { "enum": ["postgres", "mariadb", "none"] },
+        "auth": { "enum": ["none", "session", "oauth", "jwt", "wordpress"] },
+        "packageManager": { "enum": ["pnpm", "npm", "composer", "uv"] }
+      }
+    },
+    "lanes": {
+      "title": "Lanes",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environments", "branches", "workLanes"],
+      "properties": {
+        "environments": {
+          "type": "array",
+          "items": { "enum": ["local", "staging", "prod"] },
+          "uniqueItems": true
+        },
+        "branches": {
+          "title": "Branches",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["staging", "prod"],
+          "properties": {
+            "staging": { "$ref": "#/$defs/branchName" },
+            "prod": { "$ref": "#/$defs/branchName" }
+          }
+        },
+        "workLanes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/workLane" }
+        }
+      }
+    },
+    "deploy": {
+      "title": "Deploy",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "staging", "prod"],
+      "properties": {
+        "target": { "enum": ["vps-tailscale", "docker-host", "package-release"] },
+        "registry": { "type": "string", "maxLength": 200 },
+        "staging": {
+          "title": "StagingTarget",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["host", "tailnetOnly"],
+          "properties": {
+            "host": { "$ref": "#/$defs/host" },
+            "tailnetOnly": { "type": "boolean" }
+          }
+        },
+        "prod": {
+          "title": "ProdTarget",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["host"],
+          "properties": { "host": { "$ref": "#/$defs/host" } }
+        }
+      }
+    },
+    "testing": {
+      "title": "Testing",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["home", "profiles", "coverageThreshold", "completenessThreshold", "e2e"],
+      "properties": {
+        "home": { "enum": ["in-repo", "paired-repo"] },
+        "profiles": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["quick", "full", "chaos", "hardening", "release", "live"] }
+        },
+        "coverageThreshold": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "completenessThreshold": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "e2e": { "enum": ["playwright", "none"] },
+        "pairedRepo": {
+          "title": "PairedRepo",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,98}[a-z0-9]$" }
+          }
+        }
+      }
+    },
+    "security": {
+      "title": "Security",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scanners", "policyGate", "centralRig"],
+      "properties": {
+        "scanners": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["semgrep", "trivy", "gitleaks"] }
+        },
+        "policyGate": { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+        "centralRig": {
+          "title": "CentralRig",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "repo"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "repo": { "type": "string", "pattern": "^([A-Za-z0-9-]+/[A-Za-z0-9._-]+)?$" }
+          }
+        }
+      }
+    },
+    "agents": {
+      "title": "Agents",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary", "also", "runCeilings", "deniedActions", "humanOnlyActions"],
+      "properties": {
+        "primary": { "$ref": "#/$defs/agentId" },
+        "also": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/agentId" } },
+        "runCeilings": {
+          "title": "RunCeilings",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["turns", "toolCalls", "minutes", "usd"],
+          "properties": {
+            "turns": { "type": "integer", "minimum": 0 },
+            "toolCalls": { "type": "integer", "minimum": 0 },
+            "minutes": { "type": "integer", "minimum": 0 },
+            "usd": { "type": "number", "minimum": 0 }
+          }
+        },
+        "deniedActions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/actionId" }
+        },
+        "humanOnlyActions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/actionId" }
+        }
+      }
+    },
+    "tracker": {
+      "title": "Tracker",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["leantime", "local"] },
+        "leantime": {
+          "title": "LeantimeConfig",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["baseUrl", "projectId"],
+          "properties": {
+            "baseUrl": {
+              "anyOf": [
+                { "const": "" },
+                { "type": "string", "format": "uri", "pattern": "^https?://" }
+              ]
+            },
+            "projectId": { "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] },
+            "statusMap": {
+              "type": "object",
+              "additionalProperties": false,
+              "patternProperties": { "^[A-Z_]+$": { "type": "integer" } }
+            }
+          }
+        }
+      }
+    },
+    "templates": {
+      "title": "Templates",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packs"],
+      "properties": {
+        "packs": {
+          "type": "array",
+          "items": {
+            "title": "PackRef",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "version"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z]+(/[a-z0-9-]+)?$" },
+              "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" }
+            }
+          }
+        }
+      }
+    },
+    "source": {
+      "title": "Source",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "ref"],
+      "properties": {
+        "type": { "enum": ["none", "github", "local"] },
+        "ref": { "type": "string", "maxLength": 1000 }
+      }
+    },
+    "gapReport": {
+      "type": "array",
+      "items": {
+        "title": "GapItem",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "evidence", "action"],
+        "properties": {
+          "id": { "type": "string" },
+          "category": { "type": "string" },
+          "status": { "enum": ["present", "partial", "missing"] },
+          "evidence": { "type": "array", "items": { "type": "string" } },
+          "action": { "enum": ["none", "create", "propose"] }
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "title": "Decision",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "question", "answer", "source"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9]*(\\.[a-zA-Z][a-zA-Z0-9]*)*$"
+          },
+          "question": { "type": "string", "maxLength": 500 },
+          "answer": { "type": "string", "maxLength": 2000 },
+          "source": { "enum": ["user", "inferred", "default"] }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "workLane": {
+      "enum": [
+        "workspace",
+        "security",
+        "support/existing",
+        "testing",
+        "infra",
+        "enhancement/existing",
+        "enhancement/new",
+        "ui/fix",
+        "ui/feature"
+      ]
+    },
+    "branchName": { "type": "string", "pattern": "^[A-Za-z0-9._/-]{1,100}$" },
+    "host": { "type": "string", "maxLength": 253, "pattern": "^([A-Za-z0-9.-]*)$" },
+    "agentId": { "enum": ["claude", "copilot", "cursor"] },
+    "actionId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" }
+  }
+}

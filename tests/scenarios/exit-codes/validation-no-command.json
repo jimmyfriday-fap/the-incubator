@@ -13,7 +13,7 @@
       "input": { "argv": [] },
       "assertions": [
         { "path": "exitCode", "op": "eq", "value": 2 },
-        { "path": "stderr", "op": "contains", "value": "usage" }
+        { "path": "stderr", "op": "contains", "value": "Usage" }
       ]
     }
   ]

@@ -1,0 +1,125 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "round 1: infers a node web app, asks 3 questions",
+  "response": {
+    "draftSpec": {
+      "project": {
+        "name": "Stockroom",
+        "slug": "stockroom",
+        "description": "Stock tracking and reorder alerts for independent caf\u00e9s."
+      },
+      "intent": {
+        "personas": ["caf\u00e9 owner", "barista"],
+        "coreFeatures": [
+          {
+            "id": "inventory",
+            "summary": "Track stock levels per item",
+            "lane": "enhancement/new"
+          },
+          {
+            "id": "deliveries",
+            "summary": "Record supplier deliveries against stock",
+            "lane": "enhancement/new"
+          },
+          {
+            "id": "reorder-alerts",
+            "summary": "Alert when an item falls below its reorder level",
+            "lane": "enhancement/new"
+          }
+        ]
+      },
+      "platform": "web",
+      "stack": {
+        "pack": "node-web",
+        "framework": "fastify-react",
+        "database": "postgres"
+      },
+      "decisions": [
+        {
+          "key": "project",
+          "question": "Name and purpose",
+          "answer": "Stockroom \u2014 caf\u00e9 stock tracking",
+          "source": "inferred"
+        },
+        {
+          "key": "intent.personas",
+          "question": "Who uses it",
+          "answer": "caf\u00e9 owners and baristas",
+          "source": "inferred"
+        },
+        {
+          "key": "intent.coreFeatures",
+          "question": "Core features",
+          "answer": "inventory, deliveries, reorder alerts",
+          "source": "inferred"
+        },
+        {
+          "key": "platform",
+          "question": "What kind of product",
+          "answer": "a web app used on tablets",
+          "source": "inferred"
+        },
+        {
+          "key": "stack",
+          "question": "Stack",
+          "answer": "node-web with Postgres for relational stock data",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [
+      {
+        "key": "deploy.target",
+        "question": "Where should staging and production run?",
+        "impact": 8,
+        "options": [
+          {
+            "value": "vps-tailscale",
+            "label": "Your VPS behind Tailscale",
+            "recommended": true
+          },
+          {
+            "value": "docker-host",
+            "label": "A Docker host via SSH",
+            "recommended": false
+          }
+        ]
+      },
+      {
+        "key": "stack.auth",
+        "question": "How do staff sign in?",
+        "impact": 6,
+        "options": [
+          {
+            "value": "session",
+            "label": "Email + password sessions",
+            "recommended": true
+          },
+          {
+            "value": "oauth",
+            "label": "Sign in with Google",
+            "recommended": false
+          }
+        ]
+      },
+      {
+        "key": "testing.home",
+        "question": "Where should the test suite live?",
+        "impact": 4,
+        "options": [
+          {
+            "value": "in-repo",
+            "label": "In this repository",
+            "recommended": true
+          },
+          {
+            "value": "paired-repo",
+            "label": "A separate stockroom-tests repository",
+            "recommended": false
+          }
+        ]
+      }
+    ],
+    "done": false
+  }
+}

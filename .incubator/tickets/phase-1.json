@@ -2,7 +2,7 @@
   "id": "phase-1",
   "title": "Spec and discovery",
   "lane": "enhancement/new",
-  "state": "TAGGED_TO_RELEASE",
+  "state": "READY_FOR_TEST",
   "plan": null,
   "remediations": []
 }

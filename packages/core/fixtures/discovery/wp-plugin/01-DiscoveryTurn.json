@@ -1,0 +1,87 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "round 1: WordPress plugin, one question",
+  "response": {
+    "draftSpec": {
+      "project": {
+        "name": "EventRSVP",
+        "slug": "event-rsvp",
+        "description": "RSVP forms, confirmations and attendee exports for WordPress event posts."
+      },
+      "intent": {
+        "personas": ["site admin", "event attendee"],
+        "coreFeatures": [
+          {
+            "id": "rsvp-form",
+            "summary": "RSVP form on event posts",
+            "lane": "enhancement/new"
+          },
+          {
+            "id": "confirmation-email",
+            "summary": "Confirmation email after an RSVP",
+            "lane": "enhancement/new"
+          },
+          {
+            "id": "attendee-export",
+            "summary": "Export attendee lists as CSV",
+            "lane": "enhancement/new"
+          }
+        ]
+      },
+      "platform": "wordpress-plugin",
+      "stack": {
+        "pack": "wordpress",
+        "framework": "wordpress-plugin",
+        "database": "mariadb",
+        "auth": "wordpress",
+        "packageManager": "composer"
+      },
+      "decisions": [
+        {
+          "key": "project",
+          "question": "Name and purpose",
+          "answer": "EventRSVP",
+          "source": "inferred"
+        },
+        {
+          "key": "intent",
+          "question": "Personas and features",
+          "answer": "admins and attendees; form, email, export",
+          "source": "inferred"
+        },
+        {
+          "key": "platform",
+          "question": "Product type",
+          "answer": "WordPress plugin",
+          "source": "inferred"
+        },
+        {
+          "key": "stack",
+          "question": "Stack",
+          "answer": "the WordPress pack with MariaDB and Composer",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [
+      {
+        "key": "project.visibility",
+        "question": "Should the GitHub repository be private?",
+        "impact": 3,
+        "options": [
+          {
+            "value": "private",
+            "label": "Private",
+            "recommended": true
+          },
+          {
+            "value": "public",
+            "label": "Public (open source)",
+            "recommended": false
+          }
+        ]
+      }
+    ],
+    "done": false
+  }
+}

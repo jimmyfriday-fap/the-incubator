@@ -1,0 +1,360 @@
+{
+  "incubatorVersion": "1.0",
+  "mode": "greenfield",
+  "project": {
+    "name": "Shelfie",
+    "slug": "shelfie",
+    "description": "A small web app where a book club logs what members are reading and votes on the next book.",
+    "owner": {
+      "type": "user",
+      "login": ""
+    },
+    "visibility": "private"
+  },
+  "intent": {
+    "narrative": "Shelfie: a small web app where a book club logs what members are reading and votes on the next book.",
+    "personas": [
+      "Book club member who logs current reads and votes on the next book",
+      "Club organizer who opens and closes votes for the next book"
+    ],
+    "coreFeatures": [
+      {
+        "id": "member-accounts",
+        "summary": "Members join the club and sign in so logs and votes are tied to a person",
+        "lane": "enhancement/new"
+      },
+      {
+        "id": "reading-log",
+        "summary": "Members log the books they are reading, with status such as reading or finished",
+        "lane": "enhancement/new"
+      },
+      {
+        "id": "club-shelf",
+        "summary": "A shared view of what every member is currently reading",
+        "lane": "ui/feature"
+      },
+      {
+        "id": "next-book-vote",
+        "summary": "Members nominate candidate books and vote on the club's next read, with a visible result",
+        "lane": "enhancement/new"
+      }
+    ]
+  },
+  "platform": "web",
+  "stack": {
+    "pack": "node-web",
+    "framework": "fastify-react",
+    "database": "postgres",
+    "auth": "session",
+    "packageManager": "pnpm"
+  },
+  "lanes": {
+    "environments": [
+      "local",
+      "staging",
+      "prod"
+    ],
+    "branches": {
+      "staging": "main",
+      "prod": "production"
+    },
+    "workLanes": [
+      "workspace",
+      "security",
+      "support/existing",
+      "testing",
+      "infra",
+      "enhancement/existing",
+      "enhancement/new",
+      "ui/fix",
+      "ui/feature"
+    ]
+  },
+  "deploy": {
+    "target": "docker-host",
+    "staging": {
+      "host": "",
+      "tailnetOnly": true
+    },
+    "prod": {
+      "host": ""
+    }
+  },
+  "testing": {
+    "home": "in-repo",
+    "profiles": [
+      "quick",
+      "full",
+      "chaos",
+      "hardening",
+      "release",
+      "live"
+    ],
+    "coverageThreshold": 80,
+    "completenessThreshold": 70,
+    "e2e": "playwright"
+  },
+  "security": {
+    "scanners": [
+      "semgrep",
+      "trivy",
+      "gitleaks"
+    ],
+    "policyGate": "HIGH",
+    "centralRig": {
+      "enabled": false,
+      "repo": ""
+    }
+  },
+  "agents": {
+    "primary": "claude",
+    "also": [
+      "copilot",
+      "cursor"
+    ],
+    "runCeilings": {
+      "turns": 60,
+      "toolCalls": 400,
+      "minutes": 45,
+      "usd": 10
+    },
+    "deniedActions": [
+      "force-push",
+      "rewrite-history",
+      "delete-or-skip-test",
+      "disable-or-weaken-gate",
+      "quarantine-without-owner-and-expiry",
+      "edit-incubator-lock",
+      "commit-secrets",
+      "absolute-machine-paths",
+      "plan-files-at-repo-root",
+      "shell-true-subprocess"
+    ],
+    "humanOnlyActions": [
+      "promote-to-production",
+      "rollback-production",
+      "rotate-secrets",
+      "edit-accepted-risks",
+      "contracts-pin",
+      "change-run-ceilings",
+      "merge-to-production"
+    ]
+  },
+  "tracker": {
+    "type": "local"
+  },
+  "templates": {
+    "packs": []
+  },
+  "source": {
+    "type": "none",
+    "ref": ""
+  },
+  "gapReport": [],
+  "decisions": [
+    {
+      "key": "project.name",
+      "question": "What is the project called?",
+      "answer": "Shelfie, taken from the narrative.",
+      "source": "inferred"
+    },
+    {
+      "key": "project.slug",
+      "question": "What is the project slug?",
+      "answer": "shelfie, derived from the project name.",
+      "source": "inferred"
+    },
+    {
+      "key": "project.description",
+      "question": "How is the project described?",
+      "answer": "Condensed from the narrative: book club reading log plus voting on the next book.",
+      "source": "inferred"
+    },
+    {
+      "key": "intent.personas",
+      "question": "Who uses the app?",
+      "answer": "Book club members, plus an organizer who runs the votes.",
+      "source": "inferred"
+    },
+    {
+      "key": "intent.coreFeatures",
+      "question": "What are the core features?",
+      "answer": "Member accounts, reading log, shared club shelf and next-book voting.",
+      "source": "inferred"
+    },
+    {
+      "key": "platform",
+      "question": "Which platform?",
+      "answer": "web, because the narrative says web app.",
+      "source": "inferred"
+    },
+    {
+      "key": "stack.pack",
+      "question": "Which template pack?",
+      "answer": "node-web is the standard pack for a small web app.",
+      "source": "inferred"
+    },
+    {
+      "key": "stack.framework",
+      "question": "Which framework?",
+      "answer": "fastify-react is the node-web framework.",
+      "source": "inferred"
+    },
+    {
+      "key": "stack.database",
+      "question": "Which database?",
+      "answer": "postgres, because reading logs and votes need persistent relational storage.",
+      "source": "inferred"
+    },
+    {
+      "key": "stack.packageManager",
+      "question": "Which package manager?",
+      "answer": "pnpm, the default for node-web.",
+      "source": "inferred"
+    },
+    {
+      "key": "testing.home",
+      "question": "Where do tests live?",
+      "answer": "in-repo, since a small app doesn't need a paired test repo.",
+      "source": "inferred"
+    },
+    {
+      "key": "testing.e2e",
+      "question": "Which e2e framework?",
+      "answer": "playwright, because a web UI with voting flows benefits from e2e tests.",
+      "source": "inferred"
+    },
+    {
+      "key": "agents.primary",
+      "question": "Which primary coding agent?",
+      "answer": "claude.",
+      "source": "inferred"
+    },
+    {
+      "key": "tracker.type",
+      "question": "Which work tracker?",
+      "answer": "local, because no Leantime instance was mentioned.",
+      "source": "inferred"
+    },
+    {
+      "key": "stack.auth",
+      "question": "How should club members sign in?",
+      "answer": "session",
+      "source": "default"
+    },
+    {
+      "key": "deploy.target",
+      "question": "Where will Shelfie be deployed?",
+      "answer": "docker-host",
+      "source": "default"
+    },
+    {
+      "key": "project.visibility",
+      "question": "What visibility should the repository have?",
+      "answer": "private",
+      "source": "default"
+    },
+    {
+      "key": "project.owner.type",
+      "question": "Is the repository owned by your personal account or by an organization?",
+      "answer": "user",
+      "source": "default"
+    },
+    {
+      "key": "agents.also",
+      "question": "Default for agents.also",
+      "answer": "[\"copilot\",\"cursor\"]",
+      "source": "default"
+    },
+    {
+      "key": "agents.deniedActions",
+      "question": "Default for agents.deniedActions",
+      "answer": "[\"force-push\",\"rewrite-history\",\"delete-or-skip-test\",\"disable-or-weaken-gate\",\"quarantine-without-owner-and-expiry\",\"edit-incubator-lock\",\"commit-secrets\",\"absolute-machine-paths\",\"plan-files-at-repo-root\",\"shell-true-subprocess\"]",
+      "source": "default"
+    },
+    {
+      "key": "agents.humanOnlyActions",
+      "question": "Default for agents.humanOnlyActions",
+      "answer": "[\"promote-to-production\",\"rollback-production\",\"rotate-secrets\",\"edit-accepted-risks\",\"contracts-pin\",\"change-run-ceilings\",\"merge-to-production\"]",
+      "source": "default"
+    },
+    {
+      "key": "agents.runCeilings.minutes",
+      "question": "Default for agents.runCeilings.minutes",
+      "answer": "45",
+      "source": "default"
+    },
+    {
+      "key": "agents.runCeilings.toolCalls",
+      "question": "Default for agents.runCeilings.toolCalls",
+      "answer": "400",
+      "source": "default"
+    },
+    {
+      "key": "agents.runCeilings.turns",
+      "question": "Default for agents.runCeilings.turns",
+      "answer": "60",
+      "source": "default"
+    },
+    {
+      "key": "agents.runCeilings.usd",
+      "question": "Default for agents.runCeilings.usd",
+      "answer": "10",
+      "source": "default"
+    },
+    {
+      "key": "deploy.prod.host",
+      "question": "Default for deploy.prod.host",
+      "answer": "\"\"",
+      "source": "default"
+    },
+    {
+      "key": "deploy.staging.host",
+      "question": "Default for deploy.staging.host",
+      "answer": "\"\"",
+      "source": "default"
+    },
+    {
+      "key": "deploy.staging.tailnetOnly",
+      "question": "Default for deploy.staging.tailnetOnly",
+      "answer": "true",
+      "source": "default"
+    },
+    {
+      "key": "project.owner.login",
+      "question": "Default for project.owner.login",
+      "answer": "\"\"",
+      "source": "default"
+    },
+    {
+      "key": "security.centralRig.enabled",
+      "question": "Default for security.centralRig.enabled",
+      "answer": "false",
+      "source": "default"
+    },
+    {
+      "key": "security.centralRig.repo",
+      "question": "Default for security.centralRig.repo",
+      "answer": "\"\"",
+      "source": "default"
+    },
+    {
+      "key": "security.policyGate",
+      "question": "Default for security.policyGate",
+      "answer": "\"HIGH\"",
+      "source": "default"
+    },
+    {
+      "key": "testing.completenessThreshold",
+      "question": "Default for testing.completenessThreshold",
+      "answer": "70",
+      "source": "default"
+    },
+    {
+      "key": "testing.coverageThreshold",
+      "question": "Default for testing.coverageThreshold",
+      "answer": "80",
+      "source": "default"
+    }
+  ]
+}

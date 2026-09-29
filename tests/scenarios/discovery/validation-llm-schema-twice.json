@@ -1,0 +1,32 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-llm-schema-twice",
+  "feature": "discovery",
+  "title": "Two schema-invalid LLM replies park the run (exit 2)",
+  "tags": ["validation"],
+  "seed": {
+    "fixtures": [
+      {
+        "schemaName": "DiscoveryTurn",
+        "response": { "$text": "Here is a summary instead of JSON." }
+      },
+      {
+        "schemaName": "DiscoveryTurn",
+        "response": { "draftSpec": { "platform": "mainframe" }, "questions": [], "done": true }
+      }
+    ]
+  },
+  "context": {},
+  "mocks": { "ai": ["inline"] },
+  "stages": [
+    {
+      "name": "discover",
+      "input": { "narrative": "Anything", "yes": true },
+      "assertions": [
+        { "path": "state", "op": "eq", "value": "PARKED" },
+        { "path": "parkedReason", "op": "eq", "value": "llm_schema" },
+        { "path": "exitCode", "op": "eq", "value": 2 }
+      ]
+    }
+  ]
+}

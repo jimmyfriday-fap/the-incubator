@@ -12,9 +12,12 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "schema"
   ],
   "dependencies": {
-    "@incubator/runtime": "workspace:*"
+    "@incubator/runtime": "workspace:*",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
   }
 }

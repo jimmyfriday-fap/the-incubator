@@ -1,0 +1,21 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-needs-input",
+  "feature": "discovery",
+  "title": "Open questions without a human or --yes park the run (exit 2)",
+  "tags": ["validation"],
+  "seed": { "fixtures": "wp-plugin" },
+  "context": {},
+  "mocks": { "ai": ["packages/core/fixtures/discovery/wp-plugin"] },
+  "stages": [
+    {
+      "name": "discover",
+      "input": { "yes": false },
+      "assertions": [
+        { "path": "state", "op": "eq", "value": "PARKED" },
+        { "path": "parkedReason", "op": "eq", "value": "needs_input" },
+        { "path": "exitCode", "op": "eq", "value": 2 }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+Stockroom: a web app for independent cafés to track stock levels, record deliveries from suppliers and get reorder alerts when beans or milk run low. Owners and baristas use it on tablets during service.

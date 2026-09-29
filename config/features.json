@@ -3,6 +3,10 @@
     {
       "id": "exit-codes",
       "summary": "Every CLI command honours the 0/1/2/130 exit-code contract."
+    },
+    {
+      "id": "discovery",
+      "summary": "A narrative becomes an approved incubator.json with at most 5 questions per round and 2 rounds."
     }
   ]
 }

@@ -1,0 +1,24 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "happy-saas-web-yes",
+  "feature": "discovery",
+  "title": "A web-app narrative with --yes becomes an approved node-web spec",
+  "tags": ["happy"],
+  "seed": { "fixtures": "saas-web" },
+  "context": {},
+  "mocks": { "ai": ["packages/core/fixtures/discovery/saas-web"] },
+  "stages": [
+    {
+      "name": "discover",
+      "input": { "yes": true },
+      "assertions": [
+        { "path": "state", "op": "eq", "value": "DONE" },
+        { "path": "exitCode", "op": "eq", "value": 0 },
+        { "path": "spec.stack.pack", "op": "eq", "value": "node-web" },
+        { "path": "spec.project.slug", "op": "eq", "value": "stockroom" },
+        { "path": "spec.intent.coreFeatures", "op": "length", "value": 3 },
+        { "path": "questionsAsked", "op": "eq", "value": [3] }
+      ]
+    }
+  ]
+}

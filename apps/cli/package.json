@@ -16,8 +16,12 @@
     "bin"
   ],
   "dependencies": {
+    "@incubator/core": "workspace:*",
+    "@incubator/llm": "workspace:*",
     "@incubator/runtime": "workspace:*",
-    "@incubator/core": "workspace:*"
+    "@incubator/spec": "workspace:*",
+    "@inquirer/prompts": "^8.7.2",
+    "commander": "^15.0.0"
   },
   "bin": {
     "incubator": "./bin/incubator.mjs"

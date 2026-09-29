@@ -1,0 +1,78 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "attempt 2 (retry with validation errors): fixed; one question is about a pack-fixed key and gets dropped",
+  "response": {
+    "draftSpec": {
+      "project": {
+        "name": "Team App"
+      },
+      "decisions": [
+        {
+          "key": "project.name",
+          "question": "Name",
+          "answer": "placeholder until confirmed",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [
+      {
+        "key": "platform",
+        "question": "What kind of product is it?",
+        "impact": 10,
+        "options": [
+          {
+            "value": "web",
+            "label": "A web app",
+            "recommended": true
+          },
+          {
+            "value": "cli",
+            "label": "A command-line tool",
+            "recommended": false
+          },
+          {
+            "value": "service",
+            "label": "An API service",
+            "recommended": false
+          }
+        ]
+      },
+      {
+        "key": "lanes.environments",
+        "question": "Which environments do you need?",
+        "impact": 8,
+        "options": [
+          {
+            "value": "all",
+            "label": "local, staging, prod",
+            "recommended": true
+          },
+          {
+            "value": "prod",
+            "label": "prod only",
+            "recommended": false
+          }
+        ]
+      },
+      {
+        "key": "project.name",
+        "question": "What is it called?",
+        "impact": 7,
+        "options": [
+          {
+            "value": "Team Hub",
+            "label": "Team Hub",
+            "recommended": true
+          },
+          {
+            "value": "Team Portal",
+            "label": "Team Portal",
+            "recommended": false
+          }
+        ]
+      }
+    ],
+    "done": false
+  }
+}

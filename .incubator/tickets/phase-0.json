@@ -2,7 +2,7 @@
   "id": "phase-0",
   "title": "Bootstrap and dogfood",
   "lane": "enhancement/new",
-  "state": "DEV_IN_PROGRESS",
+  "state": "TEST_PASSED",
   "plan": null,
   "remediations": []
 }

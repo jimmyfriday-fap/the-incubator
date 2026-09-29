@@ -1,0 +1,181 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "round 1: six questions proposed; the engine keeps the top five by impact",
+  "response": {
+    "draftSpec": {
+      "project": {
+        "name": "Hookrelay",
+        "slug": "hookrelay",
+        "description": "Verified webhook intake with storage and Slack forwarding."
+      },
+      "intent": {
+        "personas": ["platform engineer"],
+        "coreFeatures": [
+          {
+            "id": "intake",
+            "summary": "Receive and verify Stripe and GitHub webhooks",
+            "lane": "enhancement/new"
+          },
+          {
+            "id": "event-store",
+            "summary": "Persist every event",
+            "lane": "enhancement/new"
+          },
+          {
+            "id": "slack-forwarding",
+            "summary": "Forward selected events to Slack with retries",
+            "lane": "enhancement/new"
+          },
+          {
+            "id": "dead-letter",
+            "summary": "Dead-letter queue for failed deliveries",
+            "lane": "enhancement/new"
+          }
+        ]
+      },
+      "platform": "service",
+      "stack": {
+        "pack": "python-service",
+        "framework": "fastapi",
+        "auth": "jwt",
+        "packageManager": "uv"
+      },
+      "decisions": [
+        {
+          "key": "project",
+          "question": "Name",
+          "answer": "Hookrelay",
+          "source": "inferred"
+        },
+        {
+          "key": "intent",
+          "question": "Features",
+          "answer": "intake, store, forward, dead-letter",
+          "source": "inferred"
+        },
+        {
+          "key": "platform",
+          "question": "Product type",
+          "answer": "an HTTP service",
+          "source": "inferred"
+        },
+        {
+          "key": "stack",
+          "question": "Stack",
+          "answer": "FastAPI on the python-service pack",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [
+      {
+        "key": "deploy.target",
+        "question": "Where does it run?",
+        "impact": 9,
+        "options": [
+          {
+            "value": "docker-host",
+            "label": "Docker host",
+            "recommended": true
+          },
+          {
+            "value": "vps-tailscale",
+            "label": "VPS behind Tailscale",
+            "recommended": false
+          }
+        ]
+      },
+      {
+        "key": "stack.database",
+        "question": "Where are events stored?",
+        "impact": 7,
+        "options": [
+          {
+            "value": "postgres",
+            "label": "Postgres",
+            "recommended": true
+          },
+          {
+            "value": "none",
+            "label": "No database (log only)",
+            "recommended": false
+          }
+        ]
+      },
+      {
+        "key": "testing.home",
+        "question": "Where do tests live?",
+        "impact": 5,
+        "options": [
+          {
+            "value": "in-repo",
+            "label": "In this repo",
+            "recommended": true
+          },
+          {
+            "value": "paired-repo",
+            "label": "A paired tests repo",
+            "recommended": false
+          }
+        ]
+      },
+      {
+        "key": "tracker.type",
+        "question": "Which tracker holds tickets?",
+        "impact": 4,
+        "options": [
+          {
+            "value": "local",
+            "label": "Files in the repo",
+            "recommended": true
+          },
+          {
+            "value": "leantime",
+            "label": "Leantime",
+            "recommended": false
+          }
+        ]
+      },
+      {
+        "key": "agents.primary",
+        "question": "Which AI agent drives development?",
+        "impact": 3,
+        "options": [
+          {
+            "value": "claude",
+            "label": "Claude Code",
+            "recommended": true
+          },
+          {
+            "value": "copilot",
+            "label": "GitHub Copilot",
+            "recommended": false
+          },
+          {
+            "value": "cursor",
+            "label": "Cursor",
+            "recommended": false
+          }
+        ]
+      },
+      {
+        "key": "testing.coverageThreshold",
+        "question": "Coverage threshold?",
+        "impact": 2,
+        "options": [
+          {
+            "value": "80",
+            "label": "80 %",
+            "recommended": true
+          },
+          {
+            "value": "90",
+            "label": "90 %",
+            "recommended": false
+          }
+        ]
+      }
+    ],
+    "done": false
+  }
+}

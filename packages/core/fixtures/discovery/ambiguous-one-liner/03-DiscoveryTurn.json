@@ -1,0 +1,36 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "round 2: the answers are enough",
+  "response": {
+    "draftSpec": {
+      "project": {
+        "slug": "team-hub"
+      },
+      "intent": {
+        "coreFeatures": [
+          {
+            "id": "home",
+            "summary": "A shared home page for the team",
+            "lane": "enhancement/new"
+          }
+        ]
+      },
+      "decisions": [
+        {
+          "key": "project.slug",
+          "question": "Slug",
+          "answer": "from the chosen name",
+          "source": "inferred"
+        },
+        {
+          "key": "intent.coreFeatures",
+          "question": "Features",
+          "answer": "a shared home page to start",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [],
+    "done": true
+  }
+}

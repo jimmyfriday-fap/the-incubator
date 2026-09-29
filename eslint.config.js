@@ -16,6 +16,8 @@ export default defineConfig(
       'packages/analyzer/fixtures/**',
       'security/fixtures/**',
       '**/__golden__/**',
+      // Generated from JSON Schema and drift-tested (packages/spec/src/spec.test.ts).
+      '**/*.gen.ts',
     ],
   },
   js.configs.recommended,

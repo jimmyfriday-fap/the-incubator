@@ -576,8 +576,8 @@ interface LlmAdapter {
   `claude-opus-5-5`. The key comes from the keychain (`incubator auth set anthropic`) or
   `ANTHROPIC_API_KEY`.
 - **`fake`** replays recorded fixtures from `packages/llm/fixtures/<scenario>/<nn>.json`, keyed by
-  `sha256(schemaName ‖ normalized user prompt)`. `INCUBATOR_RECORD=1` with a live adapter writes new
-  fixtures. A missing fixture is a `ToolError` with the key printed, so fixtures are easy to add.
+  `sha256(schemaName ‖ normalized user prompt)`. `INCUBATOR_RECORD=<dir>` with a live adapter writes new
+  keyed fixtures; `INCUBATOR_FIXTURE_REKEY=1` deliberately re-keys them after a prompt change. A missing fixture is a `ToolError` with the key printed, so fixtures are easy to add.
 - **Selection order:** the config's `llm.preferred`, then the first eligible of
   `claude-cli > copilot-cli > cursor-cli > anthropic-api`. `doctor` prints the capability table.
 

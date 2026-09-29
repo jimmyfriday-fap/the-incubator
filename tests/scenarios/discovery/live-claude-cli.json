@@ -1,0 +1,23 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "live-claude-cli",
+  "feature": "discovery",
+  "title": "The real claude CLI drafts a valid spec (INCUBATOR_LIVE=1 only)",
+  "tags": ["live"],
+  "seed": { "fixtures": "live-claude-cli" },
+  "context": {},
+  "mocks": { "ai": [] },
+  "stages": [
+    {
+      "name": "discover",
+      "input": {
+        "narrative": "Shelfie: a small web app where a book club logs what members are reading and votes on the next book.",
+        "yes": true
+      },
+      "assertions": [
+        { "path": "state", "op": "eq", "value": "DONE" },
+        { "path": "spec.platform", "op": "eq", "value": "web" }
+      ]
+    }
+  ]
+}

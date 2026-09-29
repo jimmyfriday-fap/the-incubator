@@ -42,6 +42,8 @@ describe('scenario contract layer', () => {
           expect(failures, `${s.file} stage ${stage.name}`).toEqual([]);
         }
       },
+      // why: live scenarios wait on real model rounds.
+      scenario.tags.includes('live') ? 300_000 : undefined,
     );
   }
 });

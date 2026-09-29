@@ -1,0 +1,23 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "round 2: answers integrated, nothing left to ask",
+  "response": {
+    "draftSpec": {
+      "deploy": {
+        "staging": {
+          "tailnetOnly": false
+        }
+      },
+      "decisions": [
+        {
+          "key": "deploy.staging.tailnetOnly",
+          "question": "Is staging tailnet-only?",
+          "answer": "no: a Docker host is reached over SSH",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [],
+    "done": true
+  }
+}
