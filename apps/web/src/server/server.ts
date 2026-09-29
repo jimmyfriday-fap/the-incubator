@@ -353,6 +353,8 @@ export function createApp(opts: ServerOptions): WebApp {
   });
 
   app.get('/api/*', (_req, reply) => reply.code(404).send({ error: 'not found' }));
+  // why: browsers ask for /favicon.ico regardless of the page's icon link; answer without an error.
+  app.get('/favicon.ico', (_req, reply) => reply.code(204).send());
 
   app.get('/*', (req, reply) => {
     const asset = readAsset(uiDir, req.url);

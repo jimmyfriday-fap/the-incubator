@@ -1056,6 +1056,25 @@ Name:` → theme; `pyproject.toml` + FastAPI/uvicorn → `python-service`;
 - **Smoke test:** Playwright `_electron.launch`, with `xvfb-run` on Linux CI, drives a fake
   greenfield run to `DONE`. The fakes are enabled by a test-only launch arg that the packaged app
   refuses unless `INCUBATOR_TEST_BUILD=1` was set **at build time**.
+- **As built (Phase 6).**
+  - **Main process.** esbuild bundles it into `app/dist/main.mjs` (ESM, `electron` external).
+    `apps/desktop/scripts/build.mjs` stages the files the engine reads next to its modules: the
+    schemas, prompts, `canonical.json` and the built UI.
+  - **Shared wiring.** The live wiring moved to `createLiveEngine` in `packages/core`, so the CLI and
+    the desktop share it.
+  - **Template packs.** They ship as one `packs.json` archive, because electron-builder drops
+    `.github/`, `.gitignore` and `.gitattributes`. At startup the app extracts the archive into
+    `<userData>/packs/<sha256>/`, and the templates package reads `INCUBATOR_PACKS_DIR`.
+  - **Keychain.** The keychain binding and this platform's `.node` binary sit in `vendor/keyring`,
+    unpacked from the asar.
+  - **Test builds.** A build-time constant (`__INCUBATOR_TEST_BUILD__`) removes the fake wiring
+    from release bundles entirely. A release build given the test flag exits 2 before any window
+    opens.
+  - **Sandbox.** The renderer sandbox is forced with `app.enableSandbox()`. Only an explicit
+    `--no-sandbox` skips it, for root in containers.
+  - **Release lane.** `promote-to-production.yml` is the base render, adopted verbatim.
+    `deploy-production.yml` reuses `desktop.yml` to build the installers on all three OSes and
+    drafts a GitHub Release. A human publishes it.
 
 ---
 

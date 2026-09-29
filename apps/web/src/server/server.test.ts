@@ -92,6 +92,7 @@ describe('request security', () => {
     });
     expect(rebound.statusCode).toBe(403);
     // And the happy path, with the security headers and no CORS.
+    expect((await fetch(`${o}/favicon.ico`, { headers: { cookie: api.cookie } })).status).toBe(204);
     const ok = await fetch(`${o}/api/runs`, { headers: { cookie: api.cookie } });
     expect(ok.status).toBe(200);
     expect(ok.headers.get('content-security-policy')).toContain("default-src 'self'");
@@ -256,7 +257,7 @@ describe('run events (SSE)', () => {
       const reader = r.body!.getReader();
       let text = '';
       while (!text.includes(': keep-alive'))
-        text += new TextDecoder().decode((await reader.read()).value as Uint8Array);
+        text += new TextDecoder().decode((await reader.read()).value);
       ac.abort();
       return text;
     };

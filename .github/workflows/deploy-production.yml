@@ -1,0 +1,60 @@
+name: deploy-production
+
+# The Incubator's own production lane. It is reachable only through promote-to-production, which
+# dispatches it on the production branch. It builds the desktop installers on all three OSes and
+# drafts a GitHub Release with them; publishing the draft stays a human action.
+on:
+  workflow_dispatch:
+    inputs:
+      promote_run:
+        description: The promote-to-production run that dispatched this deploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # why: promote-to-production dispatches with --ref production; anything else is a mistake.
+      - name: Only the production branch deploys
+        if: github.ref != 'refs/heads/production'
+        run: |
+          echo "::error::deploy-production runs only on production (got ${GITHUB_REF})"
+          exit 1
+
+  desktop:
+    needs: guard
+    uses: ./.github/workflows/desktop.yml
+
+  release:
+    needs: desktop
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: the-incubator-*
+          merge-multiple: true
+          path: installers
+      # why: a draft, so a human reviews the unsigned installers before anything is published.
+      - name: Draft the GitHub release
+        run: |
+          tag="desktop-${GITHUB_SHA::12}"
+          gh release create "$tag" installers/* --draft --target "$GITHUB_SHA" \
+            --title "The Incubator desktop ${GITHUB_SHA::12}" \
+            --notes "Unsigned desktop build from production at ${GITHUB_SHA} (promote run ${PROMOTE_RUN})."
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PROMOTE_RUN: ${{ inputs.promote_run }}

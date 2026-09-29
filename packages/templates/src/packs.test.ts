@@ -139,3 +139,19 @@ describe('pack combinations', () => {
     });
   }
 });
+
+describe('packsDir', () => {
+  it('honours INCUBATOR_PACKS_DIR (the desktop app extracts its packs there)', async () => {
+    const { packsDir } = await import('./registry.js');
+    const before = process.env['INCUBATOR_PACKS_DIR'];
+    try {
+      delete process.env['INCUBATOR_PACKS_DIR'];
+      expect(packsDir()).toBe(BUNDLED_PACKS_DIR);
+      process.env['INCUBATOR_PACKS_DIR'] = 'some/where';
+      expect(packsDir()).toBe(path.resolve('some/where'));
+    } finally {
+      if (before === undefined) delete process.env['INCUBATOR_PACKS_DIR'];
+      else process.env['INCUBATOR_PACKS_DIR'] = before;
+    }
+  });
+});

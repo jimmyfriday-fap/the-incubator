@@ -115,6 +115,18 @@ same engine as the CLI.
 
 **PENDING LOCAL VERIFICATION:** the actual browser launch on a desktop. This container has no GUI.
 
+## Found after the first CI run
+
+- **Favicon 404.** CI's e2e uses the runner's Google Chrome, which requests `/favicon.ico`. The
+  resulting 404 was a console error, and the e2e tests fail on any console error, so check failed
+  on all three OSes. The headless shell used locally never asks for the icon. Reproduced locally
+  with Playwright's full-Chromium channel (`INCUBATOR_E2E_CHANNEL=chromium`: 2 failures). Fixed:
+  the UI ships `favicon.svg`, and the server answers `/favicon.ico` with 204. Result: 3/3 passing.
+- **Intermittent review diff.** Repeated runs showed an occasional empty review diff (2 of 6
+  runs). The first tree preview renders the spec on the server's single thread, and the diff
+  response queued behind it, beyond vitest's 1-second `expect.poll` default. The UI polls now wait
+  up to 15 s; the result was 6/6 passing.
+
 ## `pnpm check`
 
 `check full` gained three steps: `typecheck-ui`, `ui-build` and `e2e`. `typecheck-ui` is also in

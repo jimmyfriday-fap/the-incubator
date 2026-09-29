@@ -1,0 +1,40 @@
+# electron-builder 26 (TDD §9.3). The app directory is staged by scripts/build.mjs; nothing is
+# installed or rebuilt here. Builds are unsigned (open question Q5): signing needs a human's identity.
+appId: dev.incubator.desktop
+productName: The Incubator
+electronVersion: 44.5.0
+directories:
+  app: app
+  output: release
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+asar: true
+# why: native modules cannot load from inside the asar archive.
+asarUnpack:
+  - vendor/keyring/*.node
+# why: the main process is one bundle; electron-builder would otherwise walk up to the workspace
+# and pack its node_modules.
+# (Template packs are shipped as packs.json because electron-builder drops dotfiles like .github/.)
+files:
+  - '**/*'
+  - '!node_modules{,/**}'
+artifactName: the-incubator-${version}-${os}-${arch}.${ext}
+publish: null
+linux:
+  target: [AppImage, deb]
+  category: Development
+  maintainer: The Incubator contributors <incubator@users.noreply.github.com>
+  executableName: the-incubator
+mac:
+  target: [dmg, zip]
+  category: public.app-category.developer-tools
+  identity: null
+  hardenedRuntime: false
+win:
+  target: [nsis]
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true

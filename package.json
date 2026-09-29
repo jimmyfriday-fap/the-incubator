@@ -14,6 +14,7 @@
     "check:quick": "node scripts/check.mjs quick",
     "test": "vitest run --project unit",
     "test:e2e": "pnpm --filter @incubator/web build:ui && vitest run --project e2e --outputFile.json=.reports/e2e.json",
+    "test:desktop-smoke": "vitest run --project desktop-smoke --outputFile.json=.reports/desktop-smoke.json",
     "test:profile": "node scripts/test-profile.mjs",
     "format": "prettier --write .",
     "lint": "eslint --max-warnings=0 .",

@@ -19,3 +19,7 @@ regexes = ['''(?:env|kc)-key-123456''', '''lt_api_key_secret_1234''']
 description = "Tests use fake secrets named test-secret-*; real secrets never carry that prefix."
 regexTarget = "match"
 regexes = ['''test-secret-[A-Za-z0-9_-]+''']
+
+[[allowlists]]
+description = "Desktop build output (git-ignored): bundled third-party library code, not repository content."
+paths = ['''^apps/desktop/(app|app-test|release|release-test)/''']

@@ -24,3 +24,9 @@ private/
 # OS/editor noise
 .DS_Store
 Thumbs.db
+
+# Desktop staging and packaging output (apps/desktop/scripts/build.mjs, electron-builder)
+apps/desktop/app/
+apps/desktop/app-test/
+apps/desktop/release/
+apps/desktop/release-test/

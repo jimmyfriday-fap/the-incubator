@@ -9,7 +9,12 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.live.test.ts", "src/testing-fixtures/**"],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.live.test.ts",
+    "src/testing-fixtures/**",
+    "src/main.ts"
+  ],
   "references": [
     {
       "path": "../../packages/runtime/tsconfig.build.json"

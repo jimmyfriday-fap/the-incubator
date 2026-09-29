@@ -14,10 +14,6 @@
       "reason": "The monorepo CI runs check on three operating systems and the packs matrix; generated repos get the single-job template."
     },
     {
-      "glob": ".github/workflows/promote-to-production.yml",
-      "reason": "The Incubator's own release lane (package-release plus desktop artifacts) lands with the Electron build in Phase 6."
-    },
-    {
       "glob": ".gitignore",
       "reason": "Monorepo-specific ignores (*.tsbuildinfo, apps/desktop/release/) and no stack marker region."
     },

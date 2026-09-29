@@ -39,7 +39,9 @@ export default defineConfig({
           ],
           exclude: ['**/*.live.test.ts', '**/node_modules/**', '**/dist/**', 'apps/web/e2e/**'],
           setupFiles: ['tests/setup/no-network.ts'],
-          testTimeout: 30_000,
+          // why: git-heavy integration tests spawn dozens of processes; Windows runners spawn them
+          // several times slower (8-18 s per test observed), so 30 s left no headroom there.
+          testTimeout: process.platform === 'win32' ? 120_000 : 30_000,
         },
       },
       {
@@ -51,6 +53,18 @@ export default defineConfig({
           setupFiles: ['tests/setup/no-network.ts'],
           testTimeout: 120_000,
           hookTimeout: 60_000,
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'desktop-smoke',
+          // Electron launched through Playwright (desktop.yml; locally under xvfb-run on Linux).
+          include: ['apps/desktop/smoke/**/*.smoke.test.ts'],
+          setupFiles: ['tests/setup/no-network.ts'],
+          testTimeout: 180_000,
+          hookTimeout: 60_000,
+          fileParallelism: false,
         },
       },
       ...(live

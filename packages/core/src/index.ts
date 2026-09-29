@@ -15,3 +15,5 @@ export * from './verify.js';
 export * from './handoff.js';
 export * from './adopt.js';
 export * from './preview.js';
+export * from './config.js';
+export * from './live.js';

@@ -44,6 +44,9 @@ async function open() {
 }
 
 const state = (page: Page) => page.getByTestId('run-state');
+// why: the first tree preview renders the whole spec on the server (1-2 s of CPU on its one thread),
+// so a UI poll can wait behind it; vitest's default expect.poll timeout (1 s) is too short.
+const UI = { timeout: 15_000 };
 
 describe('web UI (Playwright, fakes)', () => {
   it('greenfield: narrative → questions → review with diff and owner → published DONE', async () => {
@@ -70,14 +73,18 @@ describe('web UI (Playwright, fakes)', () => {
 
     const review = page.getByTestId('review');
     await review.waitFor({ timeout: 30_000 });
-    await expect.poll(() => page.getByTestId('spec-diff').locator('tr').count()).toBeGreaterThan(0);
+    await expect
+      .poll(() => page.getByTestId('spec-diff').locator('tr').count(), UI)
+      .toBeGreaterThan(0);
     expect(await page.getByTestId('decisions').locator('li').count()).toBeGreaterThan(0);
     expect(await page.getByTestId('decisions').textContent()).toMatch(/user|inferred|default/);
     await page.getByTestId('diff-from').selectOption('0');
-    await expect.poll(() => page.getByTestId('spec-diff').textContent()).toContain('/project/slug');
+    await expect
+      .poll(() => page.getByTestId('spec-diff').textContent(), UI)
+      .toContain('/project/slug');
     // The tree preview exists at REVIEW and opens files from memory.
     await page.getByTestId('tree').getByRole('button', { name: 'CLAUDE.md', exact: true }).click();
-    await expect.poll(() => page.getByTestId('file-view').textContent()).toContain('Stockroom');
+    await expect.poll(() => page.getByTestId('file-view').textContent(), UI).toContain('Stockroom');
 
     expect(await page.getByTestId('approve').isDisabled()).toBe(true);
     await page.getByTestId('owner-login').fill('octo');
@@ -89,7 +96,7 @@ describe('web UI (Playwright, fakes)', () => {
     const link = page.getByTestId('repo-link');
     expect(await link.getAttribute('href')).toBe('https://github.com/octo/stockroom');
     expect(h.github.repos.has('octo/stockroom')).toBe(true);
-    await expect.poll(() => page.getByTestId('run-log').textContent()).toContain('run.done');
+    await expect.poll(() => page.getByTestId('run-log').textContent(), UI).toContain('run.done');
     await shot(page, 'greenfield-3-done');
     await page.getByTestId('log-filter').selectOption('warn');
     const warned = await page.getByTestId('run-log').locator('li').allTextContents();
@@ -98,7 +105,7 @@ describe('web UI (Playwright, fakes)', () => {
 
     // Back home, the run is listed.
     await page.getByRole('link', { name: 'The Incubator' }).click();
-    await expect.poll(() => page.getByTestId('runs').textContent()).toContain('DONE');
+    await expect.poll(() => page.getByTestId('runs').textContent(), UI).toContain('DONE');
     expect(errors, errors.join('\n')).toEqual([]);
   });
 
@@ -112,7 +119,7 @@ describe('web UI (Playwright, fakes)', () => {
     await page.getByTestId('review').waitFor({ timeout: 30_000 });
     expect(await page.getByTestId('owner-login').inputValue()).toBe('octo');
     const tree = page.getByTestId('tree');
-    await expect.poll(() => tree.textContent()).toContain('create');
+    await expect.poll(() => tree.textContent(), UI).toContain('create');
     expect(await tree.textContent()).toContain('proposed');
     await shot(page, 'brownfield-1-review');
     await page.getByTestId('approve').click();

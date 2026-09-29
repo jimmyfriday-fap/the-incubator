@@ -8,17 +8,28 @@ import { evaluateWhen } from './when.js';
 
 export const BUNDLED_PACKS_DIR = fileURLToPath(new URL('../packs', import.meta.url));
 
+/**
+ * The packs directory renders use: `INCUBATOR_PACKS_DIR` when set (the desktop app extracts its packs
+ * there, because installers drop dotfiles such as `.github/`), else the packs shipped with this module.
+ * `actions-lock.json` and `versions.json` sit in its parent directory.
+ */
+export function packsDir(): string {
+  const env = process.env['INCUBATOR_PACKS_DIR'];
+  return env ? path.resolve(env) : BUNDLED_PACKS_DIR;
+}
+
 export interface PackRegistry {
   packs: ReadonlyMap<string, Pack>;
   actionsLock: Record<string, { tag: string; sha: string }>;
   versions: Record<string, unknown>;
 }
 
-let cached: PackRegistry | undefined;
+let cached: { dir: string; reg: PackRegistry } | undefined;
 
-/** Loads every pack under `dir` (default: the bundled packs). Cached for the bundled dir. */
-export function loadRegistry(dir: string = BUNDLED_PACKS_DIR): PackRegistry {
-  if (dir === BUNDLED_PACKS_DIR && cached) return cached;
+/** Loads every pack under `dir` (default: `packsDir()`). Cached for the default directory. */
+export function loadRegistry(dir: string = packsDir()): PackRegistry {
+  const isDefault = dir === packsDir();
+  if (isDefault && cached?.dir === dir) return cached.reg;
   const packs = new Map<string, Pack>();
   const candidates: string[] = [];
   for (const name of readdirSync(dir).sort()) {
@@ -40,7 +51,7 @@ export function loadRegistry(dir: string = BUNDLED_PACKS_DIR): PackRegistry {
     actionsLock: (read('actions-lock.json') as { actions: PackRegistry['actionsLock'] }).actions,
     versions: read('versions.json') as Record<string, unknown>,
   };
-  if (dir === BUNDLED_PACKS_DIR) cached = reg;
+  if (isDefault) cached = { dir, reg };
   return reg;
 }
 

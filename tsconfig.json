@@ -10,6 +10,7 @@
     "packages/*/src/**/*.ts",
     "apps/*/src/**/*.ts",
     "apps/*/e2e/**/*.ts",
+    "apps/*/smoke/**/*.ts",
     "tests/**/*.ts",
     "*.config.ts"
   ],
