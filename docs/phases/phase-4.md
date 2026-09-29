@@ -112,6 +112,15 @@ incubator adopt <url|path> [--repo owner/name] [--org] [--no-publish] [--yes]
   These are template sources and fixture repositories, and they are checked in the packs matrix,
   which has their toolchains. macOS runners have no PHP.
 
+## CI
+
+- ci run [36642417939](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36642417939)
+  passed at `424aad3`: `check` on ubuntu, windows and macos, all 10 `packs` cells, and `gate`.
+- The same commit's security-scan policy gate blocked on a semgrep HIGH finding,
+  `dockerfile.security.missing-user`, in the analyzer fixture
+  `packages/analyzer/fixtures/python-service/Dockerfile`. The fixture now drops root with
+  `USER nobody`, and its gap-report snapshot is unchanged.
+
 ## `pnpm check`
 
 ```text
