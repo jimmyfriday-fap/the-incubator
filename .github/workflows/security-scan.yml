@@ -2,7 +2,7 @@ name: security-scan
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
   schedule:
     - cron: '17 4 * * 1'
