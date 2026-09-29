@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Syntax lint: `node --check` for JS modules, `php -l` for PHP, `compile()` for Python (no .pyc written).
-import { EXIT, isMain, listFiles, report, runGuard } from './lib/common.mjs';
+import { EXIT, isMain, listFiles, matchesAny, report, runGuard } from './lib/common.mjs';
 import { run, which } from './lib/proc.mjs';
 
 const PY_CHECK = [
@@ -72,7 +72,11 @@ export async function checkSyntax(root, files) {
 if (isMain(import.meta.url)) {
   runGuard(async ({ flags }) => {
     const root = process.cwd();
-    const { findings, missingTools } = await checkSyntax(root, listFiles(root));
+    // --exclude a,b: globs to skip (e.g. template sources that are checked where they are rendered).
+    const exclude =
+      typeof flags.exclude === 'string' ? flags.exclude.split(',').filter(Boolean) : [];
+    const files = listFiles(root).filter((f) => !matchesAny(f, exclude));
+    const { findings, missingTools } = await checkSyntax(root, files);
     if (missingTools.length) {
       process.stderr.write(`syntax: required tool(s) not on PATH: ${missingTools.join(', ')}\n`);
       return EXIT.TOOL;

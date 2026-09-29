@@ -38,6 +38,27 @@ describe('bundled packs', () => {
     expect(issues).toEqual([]);
   });
 
+  it('every file in a pack is used by its manifest (no silently unshipped files)', () => {
+    const reg = loadRegistry();
+    const orphans: string[] = [];
+    for (const pack of reg.packs.values()) {
+      const m = pack.manifest;
+      const used = new Set<string>(['pack.json']);
+      const globs: string[] = [];
+      for (const f of m.files) {
+        if (f.src.endsWith('/**')) globs.push(f.src.slice(0, -2));
+        else used.add(f.src);
+      }
+      for (const mp of m.markerPatches ?? [])
+        for (const e of mp.entries) if (e.src) used.add(e.src);
+      for (const jp of m.jsonPatches ?? [])
+        for (const o of jp.ops) if (o.valueSrc) used.add(o.valueSrc);
+      for (const rel of pack.files.keys())
+        if (!used.has(rel) && !globs.some((g) => rel.startsWith(g))) orphans.push(`${m.id}/${rel}`);
+    }
+    expect(orphans).toEqual([]);
+  });
+
   it('every manifest is valid and every pack file is LF text without a BOM or absolute path', () => {
     const reg = loadRegistry();
     expect(reg.packs.size).toBeGreaterThanOrEqual(8);

@@ -440,6 +440,17 @@
       "src": "files/scripts/deploy/verify-promote-target.mjs",
       "dest": "scripts/deploy/verify-promote-target.mjs",
       "mode": "0755"
+    },
+    {
+      "src": "files/scripts/guard/secret-scan.mjs",
+      "dest": "scripts/guard/secret-scan.mjs",
+      "mode": "0755",
+      "role": "toolkit"
+    },
+    {
+      "src": "files/scripts/guard/lib/markers.d.mts",
+      "dest": "scripts/guard/lib/markers.d.mts",
+      "role": "toolkit"
     }
   ],
   "settings": {

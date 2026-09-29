@@ -79,7 +79,8 @@
       "guard": "drift"
     },
     "syntax": {
-      "guard": "syntax"
+      "guard": "syntax",
+      "args": ["--exclude", "packages/templates/packs/**"]
     },
     "workflow-lint": {
       "guard": "workflow-lint"
