@@ -1,6 +1,7 @@
 // Dogfood (TDD §10): this repository's own incubator.json is rendered, and every file the `base` pack
 // owns must equal the repository byte for byte, unless .incubator/dogfood-exceptions.json lists it
 // with a reason. The pack copies of the guard toolkit must also equal the repository's (packs-sync).
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,6 +26,20 @@ describe('dogfood', () => {
       return !existsSync(d) || !readFileSync(d).equals(readFileSync(path.join(root, src)));
     });
     expect(stale.map(([, dest]) => dest)).toEqual([]);
+  });
+
+  it('no pack source is ignored by git (a fresh clone must carry every pack file)', () => {
+    const r = spawnSync(
+      'git',
+      ['ls-files', '--others', '--ignored', '--exclude-standard', 'packages/templates/packs'],
+      {
+        cwd: root,
+        encoding: 'utf8',
+        shell: false,
+      },
+    );
+    if (r.status !== 0) return; // not a git checkout
+    expect(r.stdout.split('\n').filter((l) => l && !l.includes('/node_modules/'))).toEqual([]);
   });
 
   it("base renders this repository's own files byte for byte", async () => {
