@@ -42,10 +42,10 @@ async function main() {
 
 if (isMain(import.meta.url)) {
   main().then(
-    (code) => process.exit(code),
+    (code) => (process.exitCode = code),
     (err) => {
       process.stderr.write(`test-profile: ${err.message}\n`);
-      process.exit(EXIT.TOOL);
+      process.exitCode = EXIT.TOOL;
     },
   );
 }

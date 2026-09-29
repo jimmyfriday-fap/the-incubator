@@ -6,4 +6,5 @@ const code = await main(process.argv.slice(2), {
   stdout: (t) => process.stdout.write(t),
   stderr: (t) => process.stderr.write(t),
 });
-process.exit(code);
+// why: exit only after stdout has drained (pipe writes are asynchronous on Windows).
+process.stdout.write('', () => process.exit(code));

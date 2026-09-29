@@ -44,5 +44,5 @@ if (isMain(import.meta.url)) {
       process.stdout.write(`wrote ${t.file}\n`);
     }
   }
-  process.exit(flags.check && stale ? EXIT.POLICY : EXIT.OK);
+  process.exitCode = flags.check && stale ? EXIT.POLICY : EXIT.OK;
 }

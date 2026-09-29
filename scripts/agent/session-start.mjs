@@ -43,10 +43,10 @@ async function main() {
 
 if (isMain(import.meta.url)) {
   main().then(
-    () => process.exit(0),
+    () => (process.exitCode = 0),
     (e) => {
       process.stdout.write(`session-start hook error: ${e.message}\n`);
-      process.exit(0);
+      process.exitCode = 0;
     },
   );
 }

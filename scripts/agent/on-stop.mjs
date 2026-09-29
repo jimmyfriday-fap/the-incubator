@@ -81,10 +81,10 @@ async function main() {
 
 if (isMain(import.meta.url)) {
   main().then(
-    (c) => process.exit(c),
+    (c) => (process.exitCode = c),
     (e) => {
       process.stderr.write(`on-stop hook error: ${e.message}\n`);
-      process.exit(EXIT.TOOL);
+      process.exitCode = EXIT.TOOL;
     },
   );
 }

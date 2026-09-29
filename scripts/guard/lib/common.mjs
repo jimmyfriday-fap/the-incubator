@@ -181,10 +181,10 @@ export function runGuard(fn) {
   Promise.resolve()
     .then(() => fn(parseArgs(process.argv.slice(2))))
     .then(
-      (code) => process.exit(code ?? EXIT.OK),
+      (code) => (process.exitCode = code ?? EXIT.OK),
       (err) => {
         process.stderr.write(`guard error: ${err instanceof Error ? err.message : String(err)}\n`);
-        process.exit(EXIT.TOOL);
+        process.exitCode = EXIT.TOOL;
       },
     );
 }
