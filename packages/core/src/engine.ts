@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   InterruptedError,
@@ -5,9 +6,10 @@ import {
   PolicyError,
   ToolError,
   type Clock,
+  type Exec,
   type Logger,
 } from '@incubator/runtime';
-import type { LlmAdapter, LlmAdapterId } from '@incubator/llm';
+import type { Capabilities, LlmAdapter, LlmAdapterId } from '@incubator/llm';
 import { complete } from '@incubator/llm';
 import {
   completeSpec,
@@ -35,6 +37,16 @@ import type { RunInput, RunStore } from './store.js';
 import { INCUBATOR_VERSION } from './version.js';
 import { Publisher, type PublishDeps, type PublishSummary, type StepContext } from './publish.js';
 import { scaffoldSpec } from './scaffold.js';
+import {
+  AGENT_ADAPTERS,
+  activeTicket,
+  buildHandoffArgv,
+  handoffPrompt,
+  launchHandoff,
+  type HandoffAgent,
+  type HandoffOutcome,
+  type HandoffPlan,
+} from './handoff.js';
 
 export interface LlmSelector {
   select(
@@ -51,6 +63,8 @@ export interface EngineDeps {
   llmTimeoutMs?: number;
   /** GitHub, git and verification; required to go past SCAFFOLD into VERIFY/PUBLISH. */
   publish?: PublishDeps;
+  /** Handoff: probes an agent CLI and runs processes. */
+  handoff?: { exec: Exec; probe(adapter: LlmAdapterId): Promise<Capabilities> };
 }
 
 export interface RunEvent {
@@ -204,14 +218,124 @@ export class Engine {
     this.enter(runId, 'HANDOFF');
   }
 
-  private handoffStep(runId: string): void {
+  /** HANDOFF: seed one ticket per feature through the tracker (idempotent by Incubator id). */
+  private async handoffStep(runId: string): Promise<void> {
     const spec = this.approvedSpec(runId);
-    // Local tickets are rendered into the repository at SCAFFOLD; remote trackers sync here.
+    await this.effect(runId, async () => {
+      // Local tickets are rendered into the repository at SCAFFOLD; remote trackers sync here.
+      const tracker =
+        spec.tracker.type === 'local' ? null : await this.deps.publish?.tracker?.(spec);
+      if (spec.tracker.type !== 'local' && !tracker)
+        throw new PolicyError(`no ${spec.tracker.type} tracker is configured`, {
+          code: 'no_tracker',
+        });
+      for (const f of tracker ? spec.intent.coreFeatures : []) {
+        const step = `handoff.ticket.F-${f.id}`;
+        if (this.state(runId).steps[step]?.status === 'ok') continue;
+        const r = await tracker!.ensureTicket({
+          id: `F-${f.id}`,
+          title: f.summary,
+          lane: f.lane,
+          description: `${f.summary}\n\nPlan: docs/plans/000-bootstrap.md (${spec.project.slug})`,
+        });
+        this.record(runId, 'step.ok', { step, data: r });
+      }
+    });
     this.record(runId, 'step.ok', {
       step: 'handoff.tickets',
       data: { tracker: spec.tracker.type },
     });
     this.record(runId, 'run.done', {});
+  }
+
+  /**
+   * Prepares `incubator handoff`: the repository (scaffold-only output, or a fresh clone of the
+   * published repo), the agent's headless argv from its probed capabilities, the ceilings and the
+   * prompt with the executor plan inlined.
+   */
+  async prepareHandoff(
+    runId: string,
+    opts: { agent?: HandoffAgent } = {},
+  ): Promise<{ plan: HandoffPlan; prompt: string; ticket: string | null }> {
+    const s = this.state(runId);
+    if (!s.done)
+      throw new PolicyError(`run ${runId} is not finished (${s.state}); publish it first`, {
+        code: 'not_done',
+      });
+    if (!this.deps.handoff) throw new ToolError('handoff is not configured for this engine');
+    const spec = this.approvedSpec(runId);
+    let repo = s.input.out;
+    if (!repo) {
+      const summary = this.publishSummary(runId);
+      if (!summary)
+        throw new PolicyError(`run ${runId} has no published repository`, {
+          code: 'not_published',
+        });
+      repo = path.join(this.deps.store.runDir(runId), 'handoff', spec.project.slug);
+      if (!existsSync(path.join(repo, '.git'))) {
+        const pub = this.deps.publish;
+        if (!pub)
+          throw new ToolError('publishing is not configured (needed to clone the repository)');
+        const token = await pub.resolveToken();
+        const gh = pub.github(token!.token);
+        await pub.git.clone(
+          gh.remoteUrl({ owner: spec.project.owner.login, name: spec.project.slug }),
+          repo,
+          {
+            ...(token ? { token: token.token } : {}),
+          },
+        );
+      }
+    }
+    const agent = opts.agent ?? spec.agents.primary;
+    const caps = await this.deps.handoff.probe(AGENT_ADAPTERS[agent]);
+    if (!caps.installed || !caps.path)
+      throw new PolicyError(`${AGENT_ADAPTERS[agent]} is not installed`, { code: 'agent_missing' });
+    const c = spec.agents.runCeilings;
+    const ceilings = {
+      turns: c.turns > 0 ? c.turns : 60,
+      toolCalls: c.toolCalls > 0 ? c.toolCalls : 400,
+      minutes: c.minutes > 0 ? c.minutes : 45,
+      usd: c.usd > 0 ? c.usd : 10,
+    };
+    const planPath = path.join(repo, 'docs', 'plans', '000-bootstrap.md');
+    if (!existsSync(planPath))
+      throw new PolicyError(`no executor plan at ${planPath}`, { code: 'no_plan' });
+    const plan: HandoffPlan = {
+      agent,
+      bin: caps.path,
+      argv: buildHandoffArgv(caps, ceilings),
+      cwd: repo,
+      planPath,
+      ceilings,
+      unenforceable: [],
+    };
+    return {
+      plan,
+      prompt: handoffPrompt(readFileSync(planPath, 'utf8')),
+      ticket: activeTicket(repo, spec),
+    };
+  }
+
+  /** `incubator handoff --launch`: runs the agent headless, bounded by the ceilings, logged per run. */
+  async launchHandoff(
+    runId: string,
+    opts: { agent?: HandoffAgent; onEvent?: (chunk: string) => void } = {},
+  ): Promise<HandoffOutcome> {
+    const { plan, prompt, ticket } = await this.prepareHandoff(runId, opts);
+    this.record(runId, 'handoff.launch', {
+      agent: plan.agent,
+      argv: plan.argv,
+      ceilings: plan.ceilings,
+      ticket,
+    });
+    const outcome = await launchHandoff(this.deps.handoff!.exec, plan, prompt, {
+      logFile: path.join(this.deps.store.runDir(runId), 'logs', 'handoff.log'),
+      ticket,
+      ...(opts.onEvent ? { onEvent: opts.onEvent } : {}),
+    });
+    this.record(runId, 'handoff.result', { ...outcome });
+    return outcome;
   }
 
   /** The publish summary recorded for a run, if it got that far. */
@@ -412,7 +536,7 @@ export class Engine {
             await this.publishStep(runId);
             break;
           case 'HANDOFF':
-            this.handoffStep(runId);
+            await this.handoffStep(runId);
             break;
           case 'DONE':
           case 'PARKED':

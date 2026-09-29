@@ -83,7 +83,7 @@ describe('LeantimeTracker', () => {
     new LeantimeTracker({
       baseUrl: 'https://pm.example.com',
       projectId: 7,
-      apiKey: new SecretString('lt_api_key_secret_1234'),
+      apiKey: new SecretString('test-secret-leantime-key'),
       statusMap: { TAGGED_TO_RELEASE: 3, ENRICHMENT_IN_PROGRESS: 4 },
       fetch: s.fetch,
     });
@@ -98,7 +98,7 @@ describe('LeantimeTracker', () => {
       params: {
         values: { projectId: 7, tags: 'incubator:F-inventory,lane:enhancement/new', status: 3 },
       },
-      key: 'lt_api_key_secret_1234',
+      key: 'test-secret-leantime-key',
     });
   });
 

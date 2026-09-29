@@ -10,8 +10,9 @@ import {
   nodeExec,
 } from '@incubator/runtime';
 import { FakeGitHub, createGitOps, type GitOps } from '@incubator/git';
+import { FakeTracker } from '@incubator/tracker';
 import { FakeLlmAdapter, type FixtureTurn, type LlmAdapter } from '@incubator/llm';
-import { Engine } from './engine.js';
+import { Engine, type EngineDeps } from './engine.js';
 import { RunStore } from './store.js';
 import type { VerifyResult } from './publish.js';
 
@@ -95,7 +96,11 @@ export const FAKE_GITHUB_TOKEN = 'ghp_fake_token_for_tests_0123456789';
 
 /** An engine wired to a fake GitHub (bare repositories), real git and a scripted verifier. */
 export function fakePublishEngine(
-  opts: { verify?: () => VerifyResult; github?: ConstructorParameters<typeof FakeGitHub>[1] } = {},
+  opts: {
+    verify?: () => VerifyResult;
+    github?: ConstructorParameters<typeof FakeGitHub>[1];
+    handoff?: EngineDeps['handoff'];
+  } = {},
 ) {
   const home = mkdtempSync(path.join(tmpdir(), 'incubator-home-'));
   const clock = new FixedClock('2026-05-01T12:00:00Z');
@@ -106,11 +111,13 @@ export function fakePublishEngine(
   const { git, state: gitFaults } = faultyGit(createGitOps(nodeExec));
   let verifyCalls = 0;
   const verifyFaults = { failNext: false };
+  const tracker = new FakeTracker();
   const engine = new Engine({
     store,
     clock,
     log,
     llm: { select: () => Promise.reject(new ToolError('no LLM in publish tests')) },
+    ...(opts.handoff ? { handoff: opts.handoff } : {}),
     publish: {
       resolveToken: () =>
         Promise.resolve({ token: new SecretString(FAKE_GITHUB_TOKEN), source: 'env' as const }),
@@ -125,6 +132,7 @@ export function fakePublishEngine(
         return Promise.resolve(opts.verify?.() ?? { ok: true, summary: 'check quick: ok (fake)' });
       },
       identity: () => Promise.resolve({ name: 'Incubator Test', email: 'test@example.invalid' }),
+      tracker: () => Promise.resolve(tracker),
     },
   });
   return {
@@ -136,6 +144,7 @@ export function fakePublishEngine(
     github,
     gitFaults,
     verifyFaults,
+    tracker,
     verifyCalls: () => verifyCalls,
   };
 }

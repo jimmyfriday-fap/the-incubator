@@ -15,6 +15,7 @@
     ],
     "full": [
       "tools-fetch",
+      "secret-scan",
       "bom",
       "abs-path",
       "isolation",
@@ -44,6 +45,7 @@
     "workflow-lint": { "guard": "workflow-lint" },
     "workflow-lint-strict": { "guard": "workflow-lint", "args": ["--require-actionlint"] },
     "completeness": { "guard": "completeness" },
-    "rule-fixtures": { "guard": "rule-fixtures" }
+    "rule-fixtures": { "guard": "rule-fixtures" },
+    "secret-scan": { "guard": "secret-scan" }
   }
 }

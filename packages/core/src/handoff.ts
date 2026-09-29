@@ -1,0 +1,201 @@
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { globalRedactor, ParkError, type Exec } from '@incubator/runtime';
+import type { Capabilities, LlmAdapterId } from '@incubator/llm';
+import type { IncubatorSpec } from '@incubator/spec';
+import { loadPrompt } from './prompts.js';
+
+export type HandoffAgent = 'claude' | 'copilot' | 'cursor';
+
+export const AGENT_ADAPTERS: Record<HandoffAgent, LlmAdapterId> = {
+  claude: 'claude-cli',
+  copilot: 'copilot-cli',
+  cursor: 'cursor-cli',
+};
+
+export interface Ceilings {
+  turns: number;
+  toolCalls: number;
+  minutes: number;
+  usd: number;
+}
+
+export interface HandoffPlan {
+  agent: HandoffAgent;
+  bin: string;
+  argv: string[];
+  cwd: string;
+  planPath: string;
+  ceilings: Ceilings;
+  /** Ceilings this adapter cannot enforce from its stream (reported, never silently dropped). */
+  unenforceable: (keyof Ceilings)[];
+}
+
+/**
+ * What a headless agent may run without asking: file edits plus the repository's own gates and
+ * local git. Pushing, promoting and anything else stays unavailable (agent profile, ADR-017).
+ */
+export const HANDOFF_ALLOWED_TOOLS = [
+  'Read',
+  'Edit',
+  'Write',
+  'Glob',
+  'Grep',
+  'Bash(node scripts/check.mjs:*)',
+  'Bash(node scripts/test-profile.mjs:*)',
+  'Bash(node scripts/scaffold.mjs:*)',
+  'Bash(git status:*)',
+  'Bash(git diff:*)',
+  'Bash(git add:*)',
+  'Bash(git commit:*)',
+  'Bash(git checkout -b:*)',
+];
+
+/** Headless argv from probed capabilities: print mode, streaming JSON, and max turns when offered. */
+export function buildHandoffArgv(caps: Capabilities, ceilings: Ceilings): string[] {
+  const f = caps.flags;
+  if (!f.printMode || !f.streamJson)
+    throw new ParkError(
+      'handoff_unsupported',
+      'this CLI has no headless streaming mode (print + stream-json)',
+    );
+  return [
+    ...f.printMode,
+    ...f.streamJson,
+    ...(f.verbose ? [f.verbose] : []),
+    ...(f.maxTurns ? [f.maxTurns, String(ceilings.turns)] : []),
+    ...(f.acceptEdits ?? []),
+    ...(f.allowedTools ? [f.allowedTools, HANDOFF_ALLOWED_TOOLS.join(',')] : []),
+  ];
+}
+
+export function handoffPrompt(planText: string): string {
+  return `${loadPrompt('handoff').body}\n\n${planText.trim()}\n`;
+}
+
+/**
+ * Counts turns, tool calls and cost from a stream-json event stream (Claude-style `assistant`
+ * messages with `tool_use` blocks and a final `result` with `total_cost_usd`; other CLIs that emit
+ * the same shapes are covered, anything else leaves the minutes ceiling in charge).
+ */
+export class CeilingMonitor {
+  turns = 0;
+  toolCalls = 0;
+  costUsd: number | null = null;
+  tripped: string | null = null;
+  #buf = '';
+
+  constructor(
+    private readonly ceilings: Ceilings,
+    private readonly turnsByFlag: boolean,
+  ) {}
+
+  feed(chunk: string): string | null {
+    this.#buf += chunk;
+    let i: number;
+    while ((i = this.#buf.indexOf('\n')) >= 0) {
+      const line = this.#buf.slice(0, i).trim();
+      this.#buf = this.#buf.slice(i + 1);
+      if (line) this.event(line);
+    }
+    return this.tripped;
+  }
+
+  private event(line: string): void {
+    let e: {
+      type?: string;
+      message?: { content?: { type?: string }[] };
+      total_cost_usd?: number;
+      cost_usd?: number;
+    };
+    try {
+      e = JSON.parse(line) as typeof e;
+    } catch {
+      return;
+    }
+    if (e.type === 'assistant') {
+      this.turns++;
+      this.toolCalls += (e.message?.content ?? []).filter((c) => c.type === 'tool_use').length;
+    }
+    const cost = e.total_cost_usd ?? e.cost_usd;
+    if (typeof cost === 'number') this.costUsd = cost;
+    if (this.tripped) return;
+    if (!this.turnsByFlag && this.turns > this.ceilings.turns)
+      this.tripped = `turns ${this.turns} > ${this.ceilings.turns}`;
+    else if (this.toolCalls > this.ceilings.toolCalls)
+      this.tripped = `tool calls ${this.toolCalls} > ${this.ceilings.toolCalls}`;
+    else if (this.costUsd !== null && this.costUsd > this.ceilings.usd)
+      this.tripped = `cost $${this.costUsd} > $${this.ceilings.usd}`;
+  }
+}
+
+export interface HandoffOutcome {
+  exitCode: number | null;
+  turns: number;
+  toolCalls: number;
+  costUsd: number | null;
+  tripped: string | null;
+  ticketState: string | null;
+}
+
+/** The active ticket for the Stop hook: the first feature ticket not yet READY_FOR_TEST. */
+export function activeTicket(repo: string, spec: IncubatorSpec): string | null {
+  for (const f of spec.intent.coreFeatures) {
+    const file = path.join(repo, '.incubator', 'tickets', `F-${f.id}.json`);
+    if (!existsSync(file)) return `F-${f.id}`;
+    const t = JSON.parse(readFileSync(file, 'utf8')) as { state?: string };
+    if (t.state !== 'READY_FOR_TEST' && t.state !== 'TEST_PASSED' && t.state !== 'DEPLOYED')
+      return `F-${f.id}`;
+  }
+  return null;
+}
+
+export function ticketState(repo: string, id: string): string | null {
+  const file = path.join(repo, '.incubator', 'tickets', `${id}.json`);
+  return existsSync(file)
+    ? ((JSON.parse(readFileSync(file, 'utf8')) as { state?: string }).state ?? null)
+    : null;
+}
+
+/**
+ * Runs the agent CLI headless in the repository clone, bounded by the run ceilings. Output is
+ * redacted into `logFile`. A tripped ceiling kills the process tree and parks the run with evidence.
+ */
+export async function launchHandoff(
+  exec: Exec,
+  plan: HandoffPlan,
+  prompt: string,
+  opts: { logFile: string; ticket: string | null; onEvent?: (line: string) => void },
+): Promise<HandoffOutcome> {
+  mkdirSync(path.dirname(opts.logFile), { recursive: true });
+  if (opts.ticket) {
+    mkdirSync(path.join(plan.cwd, '.incubator', 'state'), { recursive: true });
+    writeFileSync(path.join(plan.cwd, '.incubator', 'state', 'active-ticket'), `${opts.ticket}\n`);
+  }
+  const monitor = new CeilingMonitor(
+    plan.ceilings,
+    plan.argv.includes(String(plan.ceilings.turns)),
+  );
+  const abort = new AbortController();
+  const r = await exec.run(plan.bin, plan.argv, {
+    cwd: plan.cwd,
+    stdin: prompt,
+    timeoutMs: plan.ceilings.minutes * 60_000,
+    signal: abort.signal,
+    onStdout: (chunk) => {
+      appendFileSync(opts.logFile, globalRedactor.redact(chunk));
+      opts.onEvent?.(chunk);
+      if (monitor.feed(chunk) && !abort.signal.aborted) abort.abort();
+    },
+    onStderr: (chunk) => appendFileSync(opts.logFile, globalRedactor.redact(chunk)),
+  });
+  const tripped = monitor.tripped ?? (r.timedOut ? `minutes > ${plan.ceilings.minutes}` : null);
+  return {
+    exitCode: r.code,
+    turns: monitor.turns,
+    toolCalls: monitor.toolCalls,
+    costUsd: monitor.costUsd,
+    tripped,
+    ticketState: opts.ticket ? ticketState(plan.cwd, opts.ticket) : null,
+  };
+}

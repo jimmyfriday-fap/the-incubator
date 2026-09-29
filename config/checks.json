@@ -20,6 +20,7 @@
     ],
     "full": [
       "tools-fetch",
+      "secret-scan",
       "bom",
       "abs-path",
       "isolation",
@@ -44,22 +45,55 @@
     ]
   },
   "steps": {
-    "tools-fetch": { "script": "scripts/tools-fetch.mjs" },
-    "bom": { "guard": "bom" },
-    "abs-path": { "guard": "abs-path" },
-    "isolation": { "guard": "isolation" },
-    "deps-boundary": { "guard": "deps-boundary" },
-    "contracts-pin": { "guard": "contracts-pin" },
-    "plan-lint": { "guard": "plan-lint" },
-    "lane-contract": { "guard": "lane-contract" },
-    "scenarios": { "guard": "scenarios" },
-    "quarantine": { "guard": "quarantine" },
-    "drift": { "guard": "drift" },
-    "syntax": { "guard": "syntax" },
-    "workflow-lint": { "guard": "workflow-lint" },
-    "workflow-lint-strict": { "guard": "workflow-lint", "args": ["--require-actionlint"] },
-    "completeness": { "guard": "completeness" },
-    "rule-fixtures": { "guard": "rule-fixtures" },
+    "tools-fetch": {
+      "script": "scripts/tools-fetch.mjs"
+    },
+    "bom": {
+      "guard": "bom"
+    },
+    "abs-path": {
+      "guard": "abs-path"
+    },
+    "isolation": {
+      "guard": "isolation"
+    },
+    "deps-boundary": {
+      "guard": "deps-boundary"
+    },
+    "contracts-pin": {
+      "guard": "contracts-pin"
+    },
+    "plan-lint": {
+      "guard": "plan-lint"
+    },
+    "lane-contract": {
+      "guard": "lane-contract"
+    },
+    "scenarios": {
+      "guard": "scenarios"
+    },
+    "quarantine": {
+      "guard": "quarantine"
+    },
+    "drift": {
+      "guard": "drift"
+    },
+    "syntax": {
+      "guard": "syntax"
+    },
+    "workflow-lint": {
+      "guard": "workflow-lint"
+    },
+    "workflow-lint-strict": {
+      "guard": "workflow-lint",
+      "args": ["--require-actionlint"]
+    },
+    "completeness": {
+      "guard": "completeness"
+    },
+    "rule-fixtures": {
+      "guard": "rule-fixtures"
+    },
     "tests-collected": {
       "guard": "tests-collected",
       "args": ["--report", ".reports/unit.json", "--format", "vitest-json", "--min", "1"]
@@ -68,14 +102,31 @@
       "nodeBin": ["prettier", "prettier"],
       "args": ["--check", "--log-level", "warn", "."]
     },
-    "lint": { "nodeBin": ["eslint", "eslint"], "args": ["--max-warnings=0", "."] },
-    "typecheck": { "nodeBin": ["typescript", "tsc"], "args": ["-p", "tsconfig.json"] },
-    "build": { "nodeBin": ["typescript", "tsc"], "args": ["-b", "tsconfig.build.json"] },
-    "unit": { "nodeBin": ["vitest", "vitest"], "args": ["run", "--project", "unit"] },
+    "lint": {
+      "nodeBin": ["eslint", "eslint"],
+      "args": ["--max-warnings=0", "."]
+    },
+    "typecheck": {
+      "nodeBin": ["typescript", "tsc"],
+      "args": ["-p", "tsconfig.json"]
+    },
+    "build": {
+      "nodeBin": ["typescript", "tsc"],
+      "args": ["-b", "tsconfig.build.json"]
+    },
+    "unit": {
+      "nodeBin": ["vitest", "vitest"],
+      "args": ["run", "--project", "unit"]
+    },
     "unit-coverage": {
       "nodeBin": ["vitest", "vitest"],
       "args": ["run", "--project", "unit", "--coverage"]
     },
-    "audit": { "pm": ["audit", "--audit-level", "high", "--prod"] }
+    "audit": {
+      "pm": ["audit", "--audit-level", "high", "--prod"]
+    },
+    "secret-scan": {
+      "guard": "secret-scan"
+    }
   }
 }

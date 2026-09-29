@@ -13,6 +13,9 @@ export const CANDIDATES = {
   maxTurns: ['--max-turns', '--max-steps'],
   model: ['--model', '-m'],
   systemPrompt: ['--system-prompt', '--append-system-prompt'],
+  verbose: ['--verbose'],
+  acceptEdits: [['--permission-mode', 'acceptEdits']],
+  allowedTools: ['--allowedTools', '--allowed-tools'],
 } as const;
 
 function hasFlag(help: string, flag: string): boolean {
@@ -24,7 +27,8 @@ function pickArgs(help: string, options: readonly (readonly string[])[]): string
   for (const option of options) {
     const [flag, value] = option;
     if (flag === undefined || !hasFlag(help, flag)) continue;
-    if (value && value !== '' && value !== '*' && !help.toLowerCase().includes(value)) continue;
+    if (value && value !== '' && value !== '*' && !help.toLowerCase().includes(value.toLowerCase()))
+      continue;
     return [...option];
   }
   return undefined;
@@ -50,6 +54,9 @@ export function capabilitiesFromHelp(version: string, help: string, path?: strin
   set('maxTurns', pickFlag(help, CANDIDATES.maxTurns));
   set('model', pickFlag(help, CANDIDATES.model));
   set('systemPrompt', pickFlag(help, CANDIDATES.systemPrompt));
+  set('verbose', pickFlag(help, CANDIDATES.verbose));
+  set('acceptEdits', pickArgs(help, CANDIDATES.acceptEdits));
+  set('allowedTools', pickFlag(help, CANDIDATES.allowedTools));
   const stdinPrompt = /stdin|standard input|piped/i.test(help);
   const reasons: string[] = [];
   if (!flags.printMode) reasons.push('no non-interactive print mode');

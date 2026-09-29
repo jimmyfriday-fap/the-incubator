@@ -252,4 +252,22 @@ describe('publish', () => {
     expect(readFileSync(path.join(out, 'incubator.json'), 'utf8')).toContain('"slug": "tallyho"');
     expect(h.github.calls).toEqual([]);
   });
+
+  it('seeds Leantime tickets at HANDOFF once, even across a failure', async () => {
+    const h = fakePublishEngine();
+    h.tracker.failNext = 'ensureTicket';
+    const runId = h.engine.startFromSpec(
+      spec('node-web.in-repo.vps-tailscale', {
+        tracker: {
+          type: 'leantime',
+          leantime: { baseUrl: 'https://pm.example.com', projectId: 1, statusMap: {} },
+        },
+      }),
+      { kind: 'scaffold', surface: 'test' },
+    );
+    expect((await runToEnd(h, runId, 2)).state).toBe('DONE');
+    expect([...h.tracker.tickets.keys()]).toEqual(['F-inventory', 'F-reorder-alerts']);
+    expect(h.tracker.calls.filter((c) => c === 'ensureTicket F-inventory')).toHaveLength(2);
+    expect(h.tracker.calls.filter((c) => c === 'ensureTicket F-reorder-alerts')).toHaveLength(1);
+  });
 });

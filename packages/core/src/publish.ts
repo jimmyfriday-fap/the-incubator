@@ -18,6 +18,7 @@ import {
   type ResolvedToken,
 } from '@incubator/git';
 import type { IncubatorSpec } from '@incubator/spec';
+import type { TrackerAdapter } from '@incubator/tracker';
 import { LOCK_PATH, writeTree, type RenderResult } from '@incubator/templates';
 import { scaffoldSpec } from './scaffold.js';
 
@@ -37,6 +38,8 @@ export interface PublishDeps {
   verify(dirs: { app: string; paired?: string }): Promise<VerifyResult>;
   /** `git config user.*` when set; the token's login with a noreply address otherwise. */
   identity?(): Promise<GitIdentity | null>;
+  /** The remote tracker for HANDOFF (Leantime); local tickets need none. */
+  tracker?(spec: IncubatorSpec): Promise<TrackerAdapter | null>;
 }
 
 export interface StepContext {

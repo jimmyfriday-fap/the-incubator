@@ -46,6 +46,12 @@ export interface Capabilities {
     maxTurns?: string;
     model?: string;
     systemPrompt?: string;
+    /** Extra flag some CLIs need to stream JSON in print mode. */
+    verbose?: string;
+    /** Lets a headless handoff edit files without prompting (e.g. `--permission-mode acceptEdits`). */
+    acceptEdits?: string[];
+    /** Flag taking an allow-list of tools/commands for a headless handoff. */
+    allowedTools?: string;
   };
   stdinPrompt: boolean;
   eligible: { discovery: boolean; analysis: boolean; handoff: boolean };

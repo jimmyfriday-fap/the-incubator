@@ -11,6 +11,11 @@ regexTarget = "line"
 regexes = ['''^\s*"key": "[0-9a-f]{64}",?$''']
 
 [[allowlists]]
-description = "Keychain/env precedence tests use obviously fake keys (packages/llm/src/llm.test.ts)."
+description = "Fake keys in test history: keychain/env precedence (llm tests) and an early Leantime tracker test."
 regexTarget = "match"
-regexes = ['''(?:env|kc)-key-123456''']
+regexes = ['''(?:env|kc)-key-123456''', '''lt_api_key_secret_1234''']
+
+[[allowlists]]
+description = "Tests use fake secrets named test-secret-*; real secrets never carry that prefix."
+regexTarget = "match"
+regexes = ['''test-secret-[A-Za-z0-9_-]+''']
