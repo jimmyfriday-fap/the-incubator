@@ -62,6 +62,9 @@ importers:
       '@incubator/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@incubator/git':
+        specifier: workspace:*
+        version: link:../../packages/git
       '@incubator/llm':
         specifier: workspace:*
         version: link:../../packages/llm
@@ -71,6 +74,12 @@ importers:
       '@incubator/spec':
         specifier: workspace:*
         version: link:../../packages/spec
+      '@incubator/templates':
+        specifier: workspace:*
+        version: link:../../packages/templates
+      '@incubator/tracker':
+        specifier: workspace:*
+        version: link:../../packages/tracker
       '@inquirer/prompts':
         specifier: ^8.7.2
         version: 8.7.2(@types/node@22.20.4)

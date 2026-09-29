@@ -1,4 +1,5 @@
 import { ExitCode } from '@incubator/runtime';
+import { missingScopes, resolveGitHubToken } from '@incubator/git';
 import type { CliDeps } from '../deps.js';
 import type { Io } from '../io.js';
 
@@ -18,6 +19,32 @@ export async function runDoctor(deps: CliDeps, io: Io): Promise<number> {
   } else {
     ok = false;
     lines.push('git        MISSING (required)');
+  }
+  lines.push('', 'GitHub:');
+  const token = await resolveGitHubToken({
+    keychain: deps.keychain,
+    exec: deps.exec,
+    env: process.env,
+  });
+  if (!token) {
+    lines.push(
+      '  token      missing: incubator auth set github, gh auth login, or GITHUB_TOKEN (publish needs it)',
+    );
+  } else {
+    lines.push(`  token      from ${token.source}`);
+    try {
+      const info = await deps.github(token.token).tokenInfo();
+      const missing = missingScopes(info.kind, info.scopes);
+      lines.push(`  login      ${info.login}`);
+      lines.push(
+        info.kind === 'classic'
+          ? `  scopes     ${info.scopes.join(', ') || '(none)'}${missing.length ? `  ✖ missing: ${missing.join(', ')}` : '  ✔ repo, workflow'}`
+          : `  kind       ${info.kind}: verified by probe at publish`,
+      );
+      if (missing.length) ok = false;
+    } catch (e) {
+      lines.push(`  check      ✖ ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
   lines.push('', 'LLM adapters:');
   const probes = await deps.llm.probeAll();

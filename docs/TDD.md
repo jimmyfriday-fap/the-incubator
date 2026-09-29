@@ -870,6 +870,17 @@ Incubator-Run: <runId>
 The author and committer come from `git config user.*` when set. Otherwise they are the token's login
 with the GitHub noreply email.
 
+**States.** `token.resolve` and `repo.nameCheck` run at the start of SCAFFOLD (before any render or
+verify work), `render` is the SCAFFOLD step, `verify` is VERIFY, and steps 5–10 are PUBLISH. A
+`PolicyError` in any of them parks the run with its code as the reason (for example `name_taken`,
+`verify_failed`, `token_scopes`), so `incubator publish <runId>` or `resume` continues after the fix;
+a `ToolError` exits 1 with the journal intact.
+
+**Settings come from the packs.** Each pack manifest declares the Actions variables and secrets its
+workflows read (`settings.variables` / `settings.secrets`, optionally conditional and targeted at the
+paired tests repository). A golden test fails if a rendered workflow reads a `secrets.*` or `vars.*`
+that no manifest declares.
+
 **Secrets and variables.** Required Actions **variables** are created with the value
 `__INCUBATOR_UNSET__`. Required **secrets** are _not_ created, because a secret can't be created
 without a value. Both lists are rendered into `DEPLOY.md` § "Required settings" and printed in the
@@ -952,6 +963,8 @@ Name:` → theme; `pyproject.toml` + FastAPI/uvicorn → `python-service`;
       - **minutes** by a wall-clock timeout with a tree kill;
       - **USD** from cost fields in the stream when present. If none are present, the ceiling is
         reported as "not enforceable for this adapter" and minutes/turns apply;
+    - the agent may edit files and run only the repository's own gates and local git (a probed
+      accept-edits mode plus an allowed-tools list with no push or promote);
     - output is streamed, redacted, to `logs/handoff.log` and to `RunEvent`s;
     - it ends when the ticket reaches `READY_FOR_TEST` (via the generated Stop hook, §3.6) or a
       ceiling trips. A tripped ceiling parks the run with evidence.

@@ -2,8 +2,10 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Engine, RunStore } from '@incubator/core';
-import { discoveryFixtureDir } from '@incubator/core/testing';
+import { completeSpec } from '@incubator/spec';
+import { FAKE_GITHUB_TOKEN, discoveryFixtureDir, fakePublishEngine } from '@incubator/core/testing';
 import { FakeLlmAdapter, createLlmRegistry } from '@incubator/llm';
+import { FakeGitHub } from '@incubator/git';
 import { FixedClock, Logger, MemoryKeychain, MemorySink, nodeExec } from '@incubator/runtime';
 import { describe, expect, it } from 'vitest';
 import type { CliDeps, DepsFactory } from './deps.js';
@@ -44,6 +46,7 @@ function testDeps(fixture: string): { factory: DepsFactory; deps: () => CliDeps;
       llm,
       store,
       engine: new Engine({ store, clock, log, llm }),
+      github: () => new FakeGitHub(nodeExec, { login: 'octo' }),
     };
     return deps;
   };
@@ -227,3 +230,131 @@ describe('incubator scaffold', () => {
     );
   });
 });
+
+describe('publish, handoff, auth, gc', () => {
+  const fakeAgent = path.resolve(
+    import.meta.dirname,
+    '../../../packages/core/fixtures/handoff/fake-agent.mjs',
+  );
+  function publishDeps() {
+    const agentCaps = {
+      installed: true,
+      path: process.execPath,
+      version: '1',
+      flags: { printMode: [fakeAgent, '-p'], streamJson: ['--output-format', 'stream-json'] },
+      stdinPrompt: true,
+      eligible: { discovery: false, analysis: false, handoff: true },
+      reasons: [],
+    };
+    const h = fakePublishEngine({
+      handoff: { exec: nodeExec, probe: () => Promise.resolve(agentCaps) },
+    });
+    const keychain = new MemoryKeychain();
+    const deps: CliDeps = {
+      home: h.home,
+      clock: h.clock,
+      exec: nodeExec,
+      keychain,
+      log: new Logger([new MemorySink()], {}, undefined, h.clock),
+      config: {},
+      llm: createLlmRegistry({ exec: nodeExec, keychain, env: { INCUBATOR_HOME: h.home } }),
+      store: h.store,
+      engine: h.engine,
+      github: () => h.github,
+    };
+    return { h, deps, factory: (() => deps) as DepsFactory };
+  }
+  const specFile = () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'publish-spec-'));
+    const draft = JSON.parse(
+      readFileSync(
+        path.resolve(
+          import.meta.dirname,
+          '../../../packages/templates/fixtures/combos/node-lib.in-repo.package-release.json',
+        ),
+        'utf8',
+      ),
+    ) as { project: Record<string, unknown> };
+    draft.project['owner'] = { type: 'user', login: 'octo' };
+    writeFileSync(path.join(dir, 'spec.json'), JSON.stringify(draft));
+    return path.join(dir, 'spec.json');
+  };
+
+  it('publishes a spec and prints the summary; handoff prints then launches', async () => {
+    const { h, factory } = publishDeps();
+    const t = io();
+    expect(await main(['publish', specFile()], t.io, factory)).toBe(0);
+    const err = t.err.join('');
+    expect(err).toContain('✔ published https://github.com/octo/tallyho');
+    expect(err).toContain('NPM_TOKEN');
+    expect(t.out.join('') + err).not.toContain(FAKE_GITHUB_TOKEN);
+    const runId = /incubator handoff (\S+) --launch/.exec(err)![1]!;
+    const printed = io();
+    expect(await main(['handoff', runId], printed.io, factory)).toBe(0);
+    expect(printed.out.join('')).toContain('fake-agent.mjs -p --output-format stream-json');
+    expect(printed.err.join('')).toContain('ticket      F-counter');
+    process.env['FAKE_AGENT_MODE'] = 'complete';
+    const launched = io();
+    expect(await main(['handoff', runId, '--launch'], launched.io, factory)).toBe(0);
+    expect(launched.err.join('')).toContain(
+      'F-counter is READY_FOR_TEST (2 turns, 1 tool calls, $0.42)',
+    );
+    process.env['FAKE_AGENT_MODE'] = 'spend';
+    expect(await main(['handoff', runId, '--launch', '--agent', 'nope'], io().io, factory)).toBe(2);
+    expect(h.github.repos.has('octo/tallyho')).toBe(true);
+  });
+
+  it('parks a publish on a taken name and resumes it by run id', async () => {
+    const { h, factory } = publishDeps();
+    await h.github.createRepo({
+      owner: 'octo',
+      name: 'tallyho',
+      ownerType: 'user',
+      visibility: 'private',
+      description: 'theirs',
+    });
+    const t = io();
+    expect(await main(['publish', specFile()], t.io, factory)).toBe(2);
+    const runId = /resume with: incubator resume (\S+)/.exec(t.err.join(''))![1]!;
+    h.github.repos.delete('octo/tallyho');
+    const again = io();
+    expect(await main(['publish', runId], again.io, factory)).toBe(0);
+    expect(again.err.join('')).toContain('✔ published');
+    expect(await main(['publish', 'no-such-file.json'], io().io, factory)).toBe(2);
+  });
+
+  it('stores credentials in the keychain only and reports their sources', async () => {
+    const { deps, factory } = publishDeps();
+    const t = { ...io(), secret: 'test-secret-github-token' };
+    const withSecret = { ...t.io, readSecret: () => Promise.resolve(`${t.secret}\n`) };
+    expect(await main(['auth', 'set', 'github'], withSecret, factory)).toBe(0);
+    expect(await deps.keychain.get('incubator', 'github')).toBe('test-secret-github-token');
+    expect(t.err.join('') + t.out.join('')).not.toContain('test-secret-github-token');
+    const st = io();
+    expect(await main(['auth', 'status'], st.io, factory)).toBe(0);
+    expect(st.out.join('')).toContain('github     from keychain');
+    expect(await main(['auth', 'set', 'nope'], withSecret, factory)).toBe(2);
+    expect(await main(['auth', 'delete', 'github'], io().io, factory)).toBe(0);
+    expect(await deps.keychain.get('incubator', 'github')).toBeNull();
+  });
+
+  it('gc removes old finished runs and leftover workspaces, keeping parked runs', async () => {
+    const { h, factory } = publishDeps();
+    const done = h.engine.startFromSpec(
+      h.engine.approvedSpec(
+        h.engine.startFromSpec(completeSpecFrom(specFile()), { kind: 'scaffold', surface: 'test' }),
+      ),
+      { kind: 'scaffold', surface: 'test', keep: true },
+    );
+    await h.engine.advance(done, undefined as never);
+    const dry = io();
+    expect(await main(['gc', '--days', '30', '--dry-run'], dry.io, factory)).toBe(0);
+    expect(dry.out.join('')).toContain(`would remove workspace of ${done}`);
+    expect(await main(['gc', '--days', '0'], io().io, factory)).toBe(0);
+    expect(() => h.engine.state(done)).toThrow();
+  });
+});
+
+function completeSpecFrom(file: string) {
+  return completeSpec(JSON.parse(readFileSync(file, 'utf8')) as never).spec;
+}

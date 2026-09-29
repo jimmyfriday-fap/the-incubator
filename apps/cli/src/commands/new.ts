@@ -21,6 +21,8 @@ export interface NewOptions {
   yes?: boolean;
   out?: string;
   adapter?: string;
+  scaffoldTo?: string;
+  keep?: boolean;
 }
 
 export function choosePrompter(io: Io, yes: boolean | undefined): Prompter {
@@ -40,6 +42,7 @@ export function reportRun(deps: CliDeps, io: Io, state: RunState, out?: string):
     return ExitCode.Policy;
   }
   const spec = deps.engine.draft(state.runId) as unknown as IncubatorSpec;
+  if (state.state === 'DONE' && !state.input.specOnly) return reportDone(deps, io, state, spec);
   const text = serializeSpec(spec);
   if (state.state === 'DONE' || state.state === 'APPROVED') {
     if (out) {
@@ -57,6 +60,37 @@ export function reportRun(deps: CliDeps, io: Io, state: RunState, out?: string):
   return ExitCode.Ok;
 }
 
+/** The end of a full run: where the tree went, or the publish summary with what is left to set. */
+export function reportDone(deps: CliDeps, io: Io, state: RunState, spec: IncubatorSpec): number {
+  if (state.input.out) {
+    io.stderr(`✔ scaffolded ${spec.project.slug} into ${state.input.out} (run ${state.runId})\n`);
+    return ExitCode.Ok;
+  }
+  const s = deps.engine.publishSummary(state.runId);
+  if (!s) {
+    io.stderr(`✔ run ${state.runId} finished\n`);
+    return ExitCode.Ok;
+  }
+  const lines = [
+    `✔ published ${s.repo} (run ${state.runId})`,
+    ...(s.pairedRepo ? [`  tests      ${s.pairedRepo}`] : []),
+    `  commit     ${s.commit.slice(0, 12)}`,
+    ...(s.variablesCreated.length
+      ? [`  variables  created with __INCUBATOR_UNSET__: ${s.variablesCreated.join(', ')}`]
+      : []),
+    ...(s.secretsToSet.length
+      ? [
+          '  secrets    set these before deploying (Settings → Secrets and variables → Actions):',
+          ...s.secretsToSet.map((x) => `             - ${x.name} (${x.repo}): ${x.description}`),
+        ]
+      : []),
+    ...s.warnings.map((w) => `  ⚠ ${w}`),
+    `  next       incubator handoff ${state.runId} --launch`,
+  ];
+  io.stderr(`${lines.join('\n')}\n`);
+  return ExitCode.Ok;
+}
+
 export async function runNew(deps: CliDeps, io: Io, opts: NewOptions): Promise<number> {
   if (opts.prompt && opts.promptFile)
     throw new PolicyError('use either --prompt or --prompt-file, not both', { code: 'usage' });
@@ -69,16 +103,12 @@ export async function runNew(deps: CliDeps, io: Io, opts: NewOptions): Promise<n
     });
   if (opts.adapter && !isLlmAdapterId(opts.adapter))
     throw new PolicyError(`unknown adapter ${opts.adapter}`, { code: 'usage' });
-  if (!opts.specOnly) {
-    throw new PolicyError(
-      'this build supports `incubator new --spec-only`; scaffolding arrives with `incubator scaffold`',
-      { code: 'usage' },
-    );
-  }
   const runId = deps.engine.start({
     kind: 'new',
     narrative: narrative.trim(),
-    specOnly: true,
+    ...(opts.specOnly ? { specOnly: true } : {}),
+    ...(opts.scaffoldTo ? { out: path.resolve(opts.scaffoldTo) } : {}),
+    ...(opts.keep ? { keep: true } : {}),
     yes: Boolean(opts.yes),
     ...(opts.adapter ? { adapter: opts.adapter } : {}),
     surface: 'cli',

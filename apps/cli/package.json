@@ -17,9 +17,12 @@
   ],
   "dependencies": {
     "@incubator/core": "workspace:*",
+    "@incubator/git": "workspace:*",
     "@incubator/llm": "workspace:*",
     "@incubator/runtime": "workspace:*",
     "@incubator/spec": "workspace:*",
+    "@incubator/templates": "workspace:*",
+    "@incubator/tracker": "workspace:*",
     "@inquirer/prompts": "^8.7.2",
     "commander": "^15.0.0"
   },
