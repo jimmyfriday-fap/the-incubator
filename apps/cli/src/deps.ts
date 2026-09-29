@@ -37,6 +37,8 @@ export interface CliDeps {
   engine: Engine;
   /** GitHub client for a token (doctor's token check; publish uses the same factory). */
   github: (token: SecretString) => GitHubAdapter;
+  /** Tests: resolves to stop long-running commands (`ui`) instead of waiting for a signal. */
+  stop?: Promise<unknown>;
 }
 
 export type DepsFactory = (opts: { verbose: boolean; stderr: (t: string) => void }) => CliDeps;

@@ -1024,6 +1024,24 @@ Name:` → theme; `pyproject.toml` + FastAPI/uvicorn → `python-service`;
   - **Run log:** SSE, auto-scroll, filter by level.
 - Playwright e2e runs against the server wired with fake deps (`INCUBATOR_FAKES=1`, only honoured by
   the test entry point, never by the shipped CLI).
+- **As built (Phase 5).**
+  - **Runs in the web UI.** The web prompter never blocks. CLARIFY parks the run with `needs_input`,
+    and REVIEW parks it with `needs_review`. `POST /answers` and `POST /approve` resume the run from
+    its journal. A `RunDriver` allows one background task per run, and `/resume` (alias `/publish`)
+    re-enters any other parked run.
+  - **Tree preview.** `Engine.preview` renders the complete spec in memory; nothing is written to a
+    workspace. `/file?path=` looks the path up in that rendered map, so no path ever reaches the file
+    system. Adopt files carry their delta status (create / identical / proposed / owned).
+  - **Review screen.** It has a GitHub-owner field, because discovery leaves `project.owner.login`
+    empty and publishing needs it.
+  - **E2E tests.** They drive `playwright-core` (1.56, the version that matches the preinstalled
+    Chromium) from a Vitest `e2e` project, which resolves workspace sources like the unit tests do.
+    The fakes are wired in-process by `apps/web/src/testing-fixtures/fake-web.ts`, so there is no
+    `INCUBATOR_FAKES` switch at all. CI uses the runner's preinstalled Chrome
+    (`INCUBATOR_E2E_CHANNEL=chrome`), so no browser is downloaded.
+  - **Opening the browser.** `incubator ui` opens the default browser (`open`, `xdg-open`, or
+    `rundll32 url.dll,FileProtocolHandler`, argv only), or prints the single-use link with
+    `--no-open`.
 
 ### 9.3 Electron (`apps/desktop`, ADR-012)
 

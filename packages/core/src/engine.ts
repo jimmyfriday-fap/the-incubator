@@ -38,6 +38,7 @@ import { INCUBATOR_VERSION } from './version.js';
 import { Publisher, type PublishDeps, type PublishSummary, type StepContext } from './publish.js';
 import { scaffoldSpec } from './scaffold.js';
 import { Adopter, adoptReport, isEmptyDelta, writeReport, type AdoptContext } from './adopt.js';
+import { PreviewCache, type Preview } from './preview.js';
 import { analyze, gapReport, summarizeGaps, viewFromDir } from '@incubator/analyzer';
 import {
   AGENT_ADAPTERS,
@@ -468,6 +469,48 @@ export class Engine {
     });
     this.record(runId, 'handoff.result', { ...outcome });
     return outcome;
+  }
+
+  /** The spec of the latest revision when it is complete (REVIEW onwards), else null. */
+  finalSpec(runId: string): IncubatorSpec | null {
+    const last = this.entries(runId).findLast((e) => e.type === 'spec.revision');
+    return last?.['final'] === true
+      ? (this.deps.store.readSpecRevision(runId, last['rev'] as number) as unknown as IncubatorSpec)
+      : null;
+  }
+
+  /** Spec revisions of a run, oldest first (for the spec diff). */
+  revisions(runId: string): { rev: number; final: boolean; edited: boolean; inferred: boolean }[] {
+    return this.entries(runId)
+      .filter((e) => e.type === 'spec.revision')
+      .map((e) => ({
+        rev: e['rev'] as number,
+        final: e['final'] === true,
+        edited: e['edited'] === true,
+        inferred: e['inferred'] === true,
+      }));
+  }
+
+  specRevision(runId: string, rev: number): Record<string, unknown> {
+    return this.deps.store.readSpecRevision(runId, rev);
+  }
+
+  readonly #previews = new PreviewCache();
+
+  /** The tree the run's complete spec renders to (with adopt delta statuses), or null before REVIEW. */
+  async preview(runId: string): Promise<Preview | null> {
+    const spec = this.finalSpec(runId);
+    if (!spec) return null;
+    const adopt = this.state(runId).input.kind === 'adopt';
+    return this.#previews.preview(
+      spec,
+      adopt ? path.join(this.deps.store.runDir(runId), 'workspace', 'repo') : undefined,
+    );
+  }
+
+  async previewFile(runId: string, filePath: string): Promise<Buffer | null> {
+    const spec = this.finalSpec(runId);
+    return spec ? this.#previews.file(spec, filePath) : null;
   }
 
   /** The publish summary recorded for a run, if it got that far. */

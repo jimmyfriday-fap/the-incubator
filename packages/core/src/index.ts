@@ -14,3 +14,4 @@ export * from './publish.js';
 export * from './verify.js';
 export * from './handoff.js';
 export * from './adopt.js';
+export * from './preview.js';

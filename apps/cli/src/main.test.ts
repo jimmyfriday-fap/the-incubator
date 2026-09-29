@@ -386,6 +386,57 @@ describe('publish, handoff, auth, gc', () => {
     expect(await deps.keychain.get('incubator', 'github')).toBeNull();
   });
 
+  it('ui serves the localhost UI until stopped, printing the single-use link with --no-open', async () => {
+    const { deps } = publishDeps();
+    let stop!: () => void;
+    const stopped = new Promise<void>((r) => (stop = r));
+    const t = io();
+    const running = main(['ui', '--no-open'], t.io, () => ({ ...deps, stop: stopped }));
+    let url = '';
+    for (let i = 0; i < 200 && !url; i++) {
+      url = t.out.join('').trim();
+      if (!url) await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/\?t=[\w-]{43}$/);
+    const boot = await fetch(url, { redirect: 'manual' });
+    expect(boot.status).toBe(302);
+    const cookie = boot.headers.get('set-cookie')!.split(';')[0]!;
+    const origin = new URL(url).origin;
+    expect((await fetch(`${origin}/api/runs`, { headers: { cookie } })).status).toBe(200);
+    stop();
+    expect(await running).toBe(0);
+    await expect(fetch(`${origin}/api/runs`)).rejects.toThrow();
+    expect(t.err.join('')).toContain(`serving ${origin}`);
+  });
+
+  it('opens the browser with the platform opener and no shell', async () => {
+    const { openBrowser } = await import('./commands/ui.js');
+    const calls: string[][] = [];
+    const exec = {
+      which: () => Promise.resolve(null),
+      run: (b: string, a: readonly string[]) => {
+        calls.push([b, ...a]);
+        return Promise.resolve({
+          code: b === 'xdg-open' ? 3 : 0,
+          signal: null,
+          stdout: '',
+          stderr: '',
+          timedOut: false,
+        });
+      },
+    };
+    expect(await openBrowser(exec, 'http://127.0.0.1:1/?t=x', 'darwin')).toBe(true);
+    expect(await openBrowser(exec, 'http://127.0.0.1:1/?t=x', 'win32')).toBe(true);
+    expect(await openBrowser(exec, 'http://127.0.0.1:1/?t=x', 'linux')).toBe(false);
+    expect(calls).toEqual([
+      ['open', 'http://127.0.0.1:1/?t=x'],
+      ['rundll32', 'url.dll,FileProtocolHandler', 'http://127.0.0.1:1/?t=x'],
+      ['xdg-open', 'http://127.0.0.1:1/?t=x'],
+    ]);
+    const failing = { which: exec.which, run: () => Promise.reject(new Error('ENOENT')) };
+    expect(await openBrowser(failing, 'u', 'linux')).toBe(false);
+  });
+
   it('gc removes old finished runs and leftover workspaces, keeping parked runs', async () => {
     const { h, factory } = publishDeps();
     const done = h.engine.startFromSpec(

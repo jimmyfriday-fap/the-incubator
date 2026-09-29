@@ -15,6 +15,7 @@
       "format",
       "lint",
       "typecheck",
+      "typecheck-ui",
       "unit",
       "tests-collected"
     ],
@@ -36,9 +37,12 @@
       "format",
       "lint",
       "typecheck",
+      "typecheck-ui",
       "build",
+      "ui-build",
       "unit-coverage",
       "tests-collected",
+      "e2e",
       "completeness",
       "rule-fixtures",
       "audit"
@@ -128,6 +132,17 @@
     },
     "secret-scan": {
       "guard": "secret-scan"
+    },
+    "typecheck-ui": {
+      "nodeBin": ["typescript", "tsc"],
+      "args": ["-p", "apps/web/src/ui/tsconfig.json"]
+    },
+    "ui-build": {
+      "pm": ["--filter", "@incubator/web", "build:ui"]
+    },
+    "e2e": {
+      "nodeBin": ["vitest", "vitest"],
+      "args": ["run", "--project", "e2e", "--outputFile.json=.reports/e2e.json"]
     }
   }
 }

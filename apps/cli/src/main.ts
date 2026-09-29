@@ -10,6 +10,7 @@ import { runHandoff } from './commands/handoff.js';
 import { runAuthDelete, runAuthSet, runAuthStatus } from './commands/auth.js';
 import { runGc } from './commands/gc.js';
 import { runAdopt, type AdoptOptions } from './commands/adopt.js';
+import { runUi } from './commands/ui.js';
 import { liveDeps, type CliDeps, type DepsFactory } from './deps.js';
 import type { Io } from './io.js';
 
@@ -142,6 +143,15 @@ export async function main(
     .option('--dry-run', 'only list what would be removed')
     .action((opts: { days?: string; dryRun?: boolean }) => {
       code = runGc(getDeps(), io, opts);
+    });
+
+  program
+    .command('ui')
+    .description('open the localhost web UI (127.0.0.1, random port, single-use link)')
+    .option('--no-open', 'print the link instead of opening a browser')
+    .action(async (opts: { open?: boolean }) => {
+      const d = getDeps();
+      code = await runUi(d, io, opts, d.stop);
     });
 
   program

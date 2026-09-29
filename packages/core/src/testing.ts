@@ -103,6 +103,8 @@ export function fakePublishEngine(
     verify?: () => VerifyResult;
     github?: ConstructorParameters<typeof FakeGitHub>[1];
     handoff?: EngineDeps['handoff'];
+    /** Discovery turns for greenfield runs (default: no LLM). */
+    llm?: LlmAdapter | FixtureTurn[] | { dir: string };
   } = {},
 ) {
   const home = mkdtempSync(path.join(tmpdir(), 'incubator-home-'));
@@ -115,11 +117,16 @@ export function fakePublishEngine(
   let verifyCalls = 0;
   const verifyFaults = { failNext: false };
   const tracker = new FakeTracker();
+  // why: one adapter for the whole run, so fixture turns advance round by round.
+  const llm = opts.llm && ('invoke' in opts.llm ? opts.llm : new FakeLlmAdapter(opts.llm));
   const engine = new Engine({
     store,
     clock,
     log,
-    llm: { select: () => Promise.reject(new ToolError('no LLM in publish tests')) },
+    llm: {
+      select: () =>
+        llm ? Promise.resolve(llm) : Promise.reject(new ToolError('no LLM in publish tests')),
+    },
     ...(opts.handoff ? { handoff: opts.handoff } : {}),
     publish: {
       resolveToken: () =>

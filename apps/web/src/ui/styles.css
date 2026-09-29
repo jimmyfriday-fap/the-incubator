@@ -1,0 +1,306 @@
+:root {
+  --bg: #f7f7f5;
+  --card: #ffffff;
+  --text: #1d1d1b;
+  --muted: #6b6b66;
+  --line: #e2e2dc;
+  --accent: #2d5bd7;
+  --ok: #1d7a3a;
+  --warn: #9a6400;
+  --bad: #b3261e;
+  color-scheme: light dark;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  font-size: 15px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615;
+    --card: #20201e;
+    --text: #ececea;
+    --muted: #9a9a94;
+    --line: #34342f;
+    --accent: #7ea0ff;
+    --ok: #5cc27d;
+    --warn: #e0a84a;
+    --bad: #ff8a80;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+a {
+  color: var(--accent);
+}
+
+code,
+pre,
+textarea.code {
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 13px;
+}
+
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px 48px;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 16px 0;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 18px;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--bad);
+  white-space: pre-wrap;
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.home {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.run {
+  display: grid;
+  gap: 16px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.card.wide {
+  grid-column: 1 / -1;
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: 17px;
+}
+
+label {
+  display: block;
+  margin: 8px 0;
+}
+
+label.inline {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+input:not([type]),
+input[type='text'],
+textarea,
+select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+select {
+  width: auto;
+}
+
+button {
+  margin-top: 8px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+button.link {
+  background: none;
+  color: var(--accent);
+  padding: 0;
+  margin: 0;
+  text-align: left;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  margin-left: 6px;
+}
+
+.state-done,
+.status-create,
+.source-user {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.state-parked,
+.status-proposed,
+.source-default {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.source-inferred {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.question {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 0 0 12px;
+}
+
+.option {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.option.recommended {
+  font-weight: 600;
+}
+
+.review-grid,
+.tree-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 800px) {
+  .review-grid,
+  .tree-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.diff {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.diff td {
+  border-top: 1px solid var(--line);
+  padding: 4px 6px;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.diff td:first-child {
+  width: 28%;
+  word-break: break-all;
+}
+
+.diff .before {
+  color: var(--bad);
+}
+
+.diff .after {
+  color: var(--ok);
+}
+
+.decisions ul,
+.tree,
+.runs {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.decisions li {
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+
+.tree {
+  max-height: 480px;
+  overflow: auto;
+}
+
+.tree li {
+  padding: 2px 0;
+}
+
+.viewer pre,
+.card pre {
+  overflow: auto;
+  max-height: 480px;
+  background: var(--bg);
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.log {
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding-left: 24px;
+  font-size: 13px;
+}
+
+.log .level-warn {
+  color: var(--warn);
+}
+
+.log .level-error {
+  color: var(--bad);
+}

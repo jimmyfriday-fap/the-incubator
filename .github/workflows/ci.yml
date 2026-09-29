@@ -31,6 +31,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+        env:
+          # why: the e2e step drives the runner's preinstalled Google Chrome (no browser download).
+          INCUBATOR_E2E_CHANNEL: chrome
       # why: triage records the failure through the tracker adapter; continue-on-error guarantees it can never change the verdict.
       - name: CI failure triage
         if: failure()

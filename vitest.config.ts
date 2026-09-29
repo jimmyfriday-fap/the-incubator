@@ -42,6 +42,17 @@ export default defineConfig({
           testTimeout: 30_000,
         },
       },
+      {
+        extends: true,
+        test: {
+          name: 'e2e',
+          // Playwright against the built UI and the server on fakes (`pnpm test:e2e`, check full).
+          include: ['apps/*/e2e/**/*.e2e.test.ts'],
+          setupFiles: ['tests/setup/no-network.ts'],
+          testTimeout: 120_000,
+          hookTimeout: 60_000,
+        },
+      },
       ...(live
         ? [
             {
