@@ -419,6 +419,27 @@ describe('fake and recording adapters', () => {
 });
 
 describe('registry', () => {
+  it('reports an adapter whose probe throws a ToolError as unusable instead of aborting', async () => {
+    const dir = fakeCliDir(COPILOT_HELP, '');
+    const home = mkdtempSync(path.join(tmpdir(), 'home-'));
+    const unrunnable = Object.assign(new FakeLlmAdapter([]), {
+      id: 'unrunnable-shim',
+      probe: () =>
+        Promise.reject(
+          new ToolError('cannot run x.cmd without a shell', { code: 'cmd_shim_unparseable' }),
+        ),
+    });
+    const reg = createLlmRegistry({
+      exec: execWith(dir),
+      keychain: new MemoryKeychain(),
+      env: { INCUBATOR_HOME: home },
+      extra: [unrunnable, new FakeLlmAdapter([])],
+    });
+    const probes = await reg.probeAll();
+    expect(probes['unrunnable-shim']?.eligible.discovery).toBe(false);
+    expect(probes['unrunnable-shim']?.reasons.join(' ')).toMatch(/without a shell/);
+    expect((await reg.select('discovery', 'fake')).id).toBe('fake');
+  });
   it('selects the first eligible adapter or explains why none is', async () => {
     const dir = fakeCliDir(COPILOT_HELP, '');
     const home = mkdtempSync(path.join(tmpdir(), 'home-'));

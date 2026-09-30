@@ -49,6 +49,22 @@ export function anthropicKeySource(
   };
 }
 
+/** One adapter that cannot be probed (e.g. a shim that needs a shell) must not abort the whole registry. */
+async function safeProbe(adapter: LlmAdapter): Promise<Capabilities> {
+  try {
+    return await adapter.probe();
+  } catch (e) {
+    if (!(e instanceof ToolError)) throw e;
+    return {
+      installed: true,
+      flags: {},
+      stdinPrompt: false,
+      eligible: { discovery: false, analysis: false, handoff: false },
+      reasons: [e.message],
+    };
+  }
+}
+
 export function createLlmRegistry(deps: {
   exec: Exec;
   keychain: Keychain;
@@ -87,7 +103,7 @@ export function createLlmRegistry(deps: {
     adapters,
     async probeAll() {
       const out: Record<string, Capabilities> = {};
-      for (const [id, a] of adapters) out[id] = await a.probe();
+      for (const [id, a] of adapters) out[id] = await safeProbe(a);
       return out;
     },
     async select(purpose, preferred) {
@@ -100,7 +116,7 @@ export function createLlmRegistry(deps: {
           rejected.push(`${id}: unknown adapter`);
           continue;
         }
-        const caps = await adapter.probe();
+        const caps = await safeProbe(adapter);
         if (caps.eligible[purpose])
           return deps.recordDir ? new RecordingAdapter(adapter, deps.recordDir) : adapter;
         rejected.push(`${id}: ${caps.reasons.join('; ') || 'not eligible'}`);
