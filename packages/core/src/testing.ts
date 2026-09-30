@@ -1,6 +1,7 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   FixedClock,
   Logger,
@@ -41,8 +42,10 @@ export function fakeEngine(llm: LlmAdapter | FixtureTurn[] | { dir: string }) {
 }
 
 export function discoveryFixtureDir(name: string): string {
+  // why: fileURLToPath decodes %20 and drive letters; a raw URL pathname breaks under
+  // "The Incubator.app" (macOS) or any directory with a space.
   return path.resolve(
-    path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')),
+    path.dirname(fileURLToPath(import.meta.url)),
     '..',
     'fixtures',
     'discovery',

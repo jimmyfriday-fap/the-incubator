@@ -102,7 +102,10 @@ async function main(): Promise<void> {
     });
     await win.loadURL(server.url);
   } catch (err) {
-    dialog.showErrorBox('The Incubator could not start', formatError(err));
+    // why: always leave a trace on stderr; a modal would block headless test builds forever.
+    process.stderr.write(`The Incubator could not start: ${formatError(err)}\n`);
+    if (!__INCUBATOR_TEST_BUILD__)
+      dialog.showErrorBox('The Incubator could not start', formatError(err));
     app.exit(1);
     return;
   }

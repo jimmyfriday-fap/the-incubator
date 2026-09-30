@@ -126,24 +126,59 @@ before any window or server starts. The smoke test covers this.
   passed. The test build then never opened a window:
   `electronApplication.firstWindow: Timeout 30000ms exceeded`.
 
-**Root cause.** Both builds used the same `userData` directory, which holds Electron's
-single-instance lock. A release instance from the previous test still held the lock on macOS, so
-the test build handed off to it and quit. I reproduced this locally with a running release
-instance:
+**First fix: separate `userData`.** Both builds used the same `userData` directory, which holds
+Electron's single-instance lock. A test build that shares it with a running instance hands off and
+quits. I reproduced this locally with a running release instance:
 
 ```text
 same userData as release: launch failed: electron.launch: Target page, context or browser has been closed
 test build default userData: window opened
 ```
 
-**Fix.**
+Changes:
 
 - Test builds default to their own `userData` (`<userData> (test build)`).
 - `INCUBATOR_DESKTOP_USER_DATA` overrides the directory.
-- The smoke test gives every launch a fresh home and `userData`.
-- Teardown kills an app that does not close within 15 s, instead of hanging the hook.
+- Every smoke launch gets a fresh home and `userData`.
+- Teardown kills an app that does not close within 15 s.
 
-The packaged Linux smoke test passed 3/3, twice. The macOS re-run is recorded in the next commit.
+That was a real defect, but it was not what broke macOS.
+[desktop run 36650480192](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36650480192)
+at `4869209` failed the same way on macOS, while Linux and Windows passed again.
+
+**Root cause: a space in the app path.** macOS is the only platform whose packaged path contains
+a space (`The Incubator.app`).
+
+1. `discoveryFixtureDir` (`packages/core/src/testing.ts`) built its path from
+   `new URL(import.meta.url).pathname`, which keeps the space as `%20`.
+2. The fake wiring then failed to find its recorded discovery turns.
+3. The startup error went to a modal `dialog.showErrorBox`, which blocks, so no window ever
+   opened.
+
+I reproduced this on Linux by copying the packaged test build under a directory with a space:
+
+```text
+with a space:    electron.launch: Timeout 20000ms exceeded
+without a space: window opened
+```
+
+**Fix.**
+
+- `discoveryFixtureDir` uses `fileURLToPath`. Elsewhere, the guard library already decoded its
+  path, and no other code builds a file path from a URL pathname.
+- A startup error is always written to stderr.
+- Test builds exit without the modal; release builds still show the dialog.
+
+With both packaged executables copied under `/tmp/…/sp ace/`, the Linux smoke test passes:
+
+```text
+✓ release build: launches, locks the renderer down and shows the app
+✓ release build: refuses the test-fakes flag
+✓ test build: completes a fake greenfield run to DONE
+Tests  3 passed (3)
+```
+
+The macOS re-run is recorded in the next commit.
 
 [ci run 36648027006](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36648027006) (check on 3 OSes, `packs`, `gate`) and
 [security-scan run 36648026979](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36648026979) passed at the same commit.
