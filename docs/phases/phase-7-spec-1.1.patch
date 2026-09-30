@@ -1,0 +1,521 @@
+diff --git a/packages/core/src/engine.ts b/packages/core/src/engine.ts
+index ef6c191..d7f1f33 100644
+--- a/packages/core/src/engine.ts
++++ b/packages/core/src/engine.ts
+@@ -12,6 +12,7 @@ import {
+ import type { Capabilities, LlmAdapter, LlmAdapterId } from '@incubator/llm';
+ import { complete } from '@incubator/llm';
+ import {
++  ENHANCEMENT_SPEC_VERSION,
+   completeSpec,
+   discoveryTurnWireSchema,
+   specHash,
+@@ -87,6 +88,16 @@ import {
+   type HandoffPlan,
+ } from './handoff.js';
+ 
++/**
++ * The identity of what the owner asked for. `existingRepo` (the base commit and the scan) is left
++ * out on purpose: the same request against the repository after its own delivery was merged must
++ * produce the same `request.md`, or a re-run could never be recognised as already delivered.
++ */
++function requestHash(spec: IncubatorSpec): string {
++  const { existingRepo: _repoState, ...rest } = spec;
++  return specHash(rest);
++}
++
+ export interface LlmSelector {
+   select(
+     purpose: 'discovery' | 'analysis' | 'handoff',
+@@ -422,7 +433,21 @@ export class Engine {
+           throw new ParkError('no_stack', e.message);
+         throw e;
+       }
+-      const { spec, items } = inspected;
++      const { items } = inspected;
++      const scan = deepScan(viewFromDir(got.dir));
++      const git = this.deps.publish?.git;
++      // Spec 1.1: an enhancement run says which repository, at which commit, and what was scanned.
++      const spec: IncubatorSpec = {
++        ...inspected.spec,
++        incubatorVersion: ENHANCEMENT_SPEC_VERSION,
++        mode: 'enhancement',
++        existingRepo: {
++          ref: got.ref ? `${got.ref.owner}/${got.ref.name}` : repoName,
++          defaultBranch: (await git?.currentBranch(got.dir)) ?? 'main',
++          baseSha: (await git?.headSha(got.dir)) ?? '0'.repeat(40),
++          scanHash: scanHash(scan),
++        },
++      };
+       const issues = [
+         ...validateSpec(spec).issues,
+         ...(validateSpec(spec).ok ? validateSemantics(spec) : []),
+@@ -433,7 +458,6 @@ export class Engine {
+           `the inferred spec is invalid (${issues.length} issue(s))`,
+           { issues },
+         );
+-      const scan = deepScan(viewFromDir(got.dir));
+       mkdirSync(path.dirname(this.enhanceFile(runId, 'x')), { recursive: true });
+       writeFileSync(this.enhanceFile(runId, 'scan.json'), `${JSON.stringify(scan)}\n`);
+       writeFileSync(this.enhanceFile(runId, 'scan-report.md'), renderScanReport(scan));
+@@ -540,10 +564,12 @@ export class Engine {
+     );
+     const planPath =
+       prior?.planPath ?? sameDay ?? `docs/plans/${nextPlanNumber(repoFiles)}-enhance-${date}.md`;
+-    const targets = Object.fromEntries(features.map((f) => [f.id, resolveTargets(scan, f)]));
++    const targets = Object.fromEntries(
++      features.map((f) => [f.id, f.targets ?? resolveTargets(scan, f)]),
++    );
+     const files = buildDelivery({
+       spec,
+-      specHash: specHash(spec),
++      specHash: requestHash(spec),
+       request: this.requestText(runId),
+       scan,
+       scanReport: readFileSync(this.enhanceFile(runId, 'scan-report.md'), 'utf8'),
+@@ -615,7 +641,7 @@ export class Engine {
+         plan = {
+           date,
+           planPath,
+-          specHash: specHash(spec),
++          specHash: requestHash(spec),
+           create: d.create,
+           proposed: d.proposed,
+           gaps,
+@@ -1115,7 +1141,23 @@ export class Engine {
+ 
+   /** Fills defaults (`source: "default"`), validates schema + semantics, then REVIEW. */
+   private finalize(runId: string): void {
+-    const { spec, added } = completeSpec(this.draft(runId));
++    const completed = completeSpec(this.draft(runId));
++    const { added } = completed;
++    let spec = completed.spec;
++    if (this.state(runId).input.kind === 'enhance') {
++      // Targets come from the scan, never from the model; the owner can edit them at REVIEW.
++      const scan = this.readScan(runId);
++      const baseline = this.enhanceBaseline(runId);
++      spec = {
++        ...spec,
++        intent: {
++          ...spec.intent,
++          coreFeatures: spec.intent.coreFeatures.map((f) =>
++            baseline.includes(f.id) || f.targets ? f : { ...f, targets: resolveTargets(scan, f) },
++          ),
++        },
++      };
++    }
+     const issues = [...validateSpec(spec).issues, ...validateSemantics(spec)];
+     if (issues.length)
+       throw new ParkError(
+diff --git a/packages/core/src/enhance.test.ts b/packages/core/src/enhance.test.ts
+index e054e4e..5bd6396 100644
+--- a/packages/core/src/enhance.test.ts
++++ b/packages/core/src/enhance.test.ts
+@@ -301,6 +301,37 @@ describe('enhance', () => {
+     ).toBe(false);
+   });
+ 
++  it('produces a version 1.1 enhancement spec: repository block, and targets resolved from the scan', async () => {
++    const h = engineFor('export-orders');
++    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
++    const head = (await git(['rev-parse', 'HEAD'], dir)).stdout.trim();
++    const runId = start(h, h.github.remoteUrl(ref), ref);
++    const s = await h.engine.advance(runId, new NonInteractivePrompter());
++    expect(s.parked).toMatchObject({ state: 'REVIEW' });
++    const spec = h.engine.finalSpec(runId)!;
++    expect(spec).toMatchObject({ incubatorVersion: '1.1', mode: 'enhancement' });
++    expect(spec.existingRepo).toEqual({
++      ref: 'octo/bare-node',
++      defaultBranch: 'main',
++      baseSha: head,
++      scanHash: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
++    });
++    const scanned = h.engine.entries(runId).find((e) => e.type === 'enhance.scan')!;
++    expect(spec.existingRepo!.scanHash).toBe(scanned['hash']);
++    expect(spec.intent.coreFeatures[0]!.targets).toEqual(['src/server.js']);
++    // The owner's edits to the targets survive into the delivery.
++    const edited = structuredClone(spec);
++    edited.intent.coreFeatures[0]!.targets = ['src/'];
++    h.engine.approve(runId, edited);
++    await h.engine.advance(runId, new DefaultsPrompter());
++    const plan = readFileSync(
++      path.join(workspace(h, runId), 'docs/plans/001-enhance-20260501.md'),
++      'utf8',
++    );
++    expect(plan).toContain('- Target: src/\n');
++    expect(plan).not.toContain('- Target: src/server.js');
++  });
++
+   it('says so when there is nothing to change', async () => {
+     const h = engineFor('no-features');
+     const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+@@ -437,6 +468,13 @@ describe('enhance helpers', () => {
+     expect(featureIssues(turn('enhancement/new', 'old'), ['old']).map((i) => i.code)).toEqual([
+       'feature.duplicate',
+     ]);
++    // Targets come from the scan; a model that sets them is rejected.
++    const withTargets = {
++      intent: {
++        coreFeatures: [{ id: 'x', summary: 's', lane: 'enhancement/new', targets: ['a'] }],
++      },
++    };
++    expect(featureIssues(withTargets, []).map((i) => i.code)).toEqual(['feature.targets']);
+   });
+ 
+   it('numbers plans after the highest existing one', () => {
+diff --git a/packages/core/src/enhance.ts b/packages/core/src/enhance.ts
+index e8aa8d9..8cd6f68 100644
+--- a/packages/core/src/enhance.ts
++++ b/packages/core/src/enhance.ts
+@@ -41,8 +41,10 @@ export function featureIssues(
+   existing: readonly string[],
+ ): Issue[] {
+   const features =
+-    (draftSpec['intent'] as { coreFeatures?: { id?: unknown; lane?: unknown }[] } | undefined)
+-      ?.coreFeatures ?? [];
++    (
++      draftSpec['intent'] as
++        { coreFeatures?: { id?: unknown; lane?: unknown; targets?: unknown }[] } | undefined
++    )?.coreFeatures ?? [];
+   const issues: Issue[] = [];
+   features.forEach((f, i) => {
+     if (!ENHANCEMENT_LANES.includes(String(f.lane)))
+@@ -51,6 +53,12 @@ export function featureIssues(
+         path: `/draftSpec/intent/coreFeatures/${i}/lane`,
+         message: `an enhancement request must use lane enhancement/existing or enhancement/new, not ${String(f.lane)}`,
+       });
++    if (f.targets !== undefined)
++      issues.push({
++        code: 'feature.targets',
++        path: `/draftSpec/intent/coreFeatures/${i}/targets`,
++        message: 'targets are resolved from the scan; do not set them',
++      });
+     if (existing.includes(String(f.id)))
+       issues.push({
+         code: 'feature.duplicate',
+diff --git a/packages/spec/schema/incubator.schema.json b/packages/spec/schema/incubator.schema.json
+index ce2a49e..94fc00a 100644
+--- a/packages/spec/schema/incubator.schema.json
++++ b/packages/spec/schema/incubator.schema.json
+@@ -25,8 +25,24 @@
+   ],
+   "properties": {
+     "$schema": { "type": "string" },
+-    "incubatorVersion": { "const": "1.0" },
+-    "mode": { "enum": ["greenfield", "brownfield"] },
++    "incubatorVersion": {
++      "anyOf": [{ "const": "1.0" }, { "const": "1.1" }],
++      "description": "1.0 for new and adopted projects; 1.1 adds enhancement runs (mode, existingRepo, feature targets)."
++    },
++    "mode": { "enum": ["greenfield", "brownfield", "enhancement"] },
++    "existingRepo": {
++      "title": "ExistingRepo",
++      "type": "object",
++      "additionalProperties": false,
++      "description": "The repository an enhancement run changes: what was scanned, and at which commit.",
++      "required": ["ref", "defaultBranch", "baseSha", "scanHash"],
++      "properties": {
++        "ref": { "type": "string", "minLength": 1, "maxLength": 200 },
++        "defaultBranch": { "$ref": "#/$defs/branchName" },
++        "baseSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
++        "scanHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
++      }
++    },
+     "project": {
+       "title": "Project",
+       "type": "object",
+@@ -72,7 +88,13 @@
+             "properties": {
+               "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,48}$" },
+               "summary": { "type": "string", "minLength": 1, "maxLength": 300 },
+-              "lane": { "$ref": "#/$defs/workLane" }
++              "lane": { "$ref": "#/$defs/workLane" },
++              "targets": {
++                "type": "array",
++                "maxItems": 20,
++                "description": "Repository-relative files or directories the change touches, resolved from the scan (enhancement runs).",
++                "items": { "type": "string", "minLength": 1, "maxLength": 300 }
++              }
+             }
+           }
+         }
+diff --git a/packages/spec/src/constants.ts b/packages/spec/src/constants.ts
+index 9d87679..5e536ad 100644
+--- a/packages/spec/src/constants.ts
++++ b/packages/spec/src/constants.ts
+@@ -1,6 +1,9 @@
+ import type { IncubatorSpec, WorkLane } from './types.gen.js';
+ 
++/** New and adopted projects. */
+ export const INCUBATOR_SPEC_VERSION = '1.0';
++/** Enhancement runs add `mode: "enhancement"`, `existingRepo` and per-feature `targets`. */
++export const ENHANCEMENT_SPEC_VERSION = '1.1';
+ 
+ export const WORK_LANES: readonly WorkLane[] = [
+   'workspace',
+@@ -26,6 +29,7 @@ export const FIXED_BY_PACKS: readonly string[] = [
+   'gapReport',
+   'mode',
+   'source',
++  'existingRepo',
+ ];
+ 
+ /**
+diff --git a/packages/spec/src/index.ts b/packages/spec/src/index.ts
+index 52652d1..eb6ac5a 100644
+--- a/packages/spec/src/index.ts
++++ b/packages/spec/src/index.ts
+@@ -7,8 +7,8 @@ export * from './defaults.js';
+ export * from './semantics.js';
+ export * from './serialize.js';
+ 
+-import { INCUBATOR_SPEC_VERSION } from './constants.js';
++import { ENHANCEMENT_SPEC_VERSION, INCUBATOR_SPEC_VERSION } from './constants.js';
+ 
+ export function isSupportedSpecVersion(version: unknown): boolean {
+-  return version === INCUBATOR_SPEC_VERSION;
++  return version === INCUBATOR_SPEC_VERSION || version === ENHANCEMENT_SPEC_VERSION;
+ }
+diff --git a/packages/spec/src/semantics.ts b/packages/spec/src/semantics.ts
+index aaa6bb9..0986e4b 100644
+--- a/packages/spec/src/semantics.ts
++++ b/packages/spec/src/semantics.ts
+@@ -110,12 +110,39 @@ export function validateSemantics(spec: IncubatorSpec): Issue[] {
+       '/intent/coreFeatures',
+       'feature id "health" is reserved for the built-in health feature',
+     );
++  // Enhancement runs (spec 1.1): the mode, the version and the repository block go together.
++  if (spec.mode === 'enhancement') {
++    if (spec.incubatorVersion !== '1.1')
++      add('enhancement_version', '/incubatorVersion', 'an enhancement spec is version 1.1');
++    if (!spec.existingRepo)
++      add('enhancement_repo', '/existingRepo', 'mode enhancement needs existingRepo');
++  } else if (spec.existingRepo) {
++    add('existing_repo_mode', '/existingRepo', 'existingRepo is only for mode enhancement');
++  }
++  spec.intent.coreFeatures.forEach((f, i) => {
++    for (const t of f.targets ?? []) {
++      if (!isRepoRelative(t))
++        add(
++          'target_path',
++          `/intent/coreFeatures/${i}/targets`,
++          `target "${t}" must be a repository-relative path without ".." or drive letters`,
++        );
++    }
++  });
+   const keys = spec.decisions.map((d) => d.key);
+   const dupDecision = keys.find((k, i) => keys.indexOf(k) !== i);
+   if (dupDecision) add('decision_keys', '/decisions', `decision ${dupDecision} is recorded twice`);
+   return issues;
+ }
+ 
++/** A path that stays inside the repository: relative, forward slashes, no `..`, no control characters. */
++export function isRepoRelative(p: string): boolean {
++  if (p.startsWith('/') || p.includes('\\') || /^[A-Za-z]:/.test(p)) return false;
++  // eslint-disable-next-line no-control-regex -- why: control characters are exactly what is rejected.
++  if (/[\u0000-\u001f\u007f]/.test(p)) return false;
++  return !p.split('/').some((seg) => seg === '..');
++}
++
+ const words = (id: string): string[] => id.split(/[^A-Za-z0-9]+/).filter(Boolean);
+ const pascal = (id: string): string =>
+   words(id)
+diff --git a/packages/spec/src/spec.test.ts b/packages/spec/src/spec.test.ts
+index af73abe..5535176 100644
+--- a/packages/spec/src/spec.test.ts
++++ b/packages/spec/src/spec.test.ts
+@@ -221,8 +221,9 @@ describe('path helpers', () => {
+ });
+ 
+ describe('version and generated types', () => {
+-  it('accepts only the current version', () => {
++  it('accepts the two released versions and nothing else', () => {
+     expect(isSupportedSpecVersion('1.0')).toBe(true);
++    expect(isSupportedSpecVersion('1.1')).toBe(true);
+     expect(isSupportedSpecVersion('0.9')).toBe(false);
+   });
+ 
+@@ -247,3 +248,85 @@ describe('feature identifiers', () => {
+     expect(identifierClash('wordpress', 'guest-list')).toBeNull();
+   });
+ });
++
++describe('enhancement specs (version 1.1)', () => {
++  const base = () =>
++    completeSpec({ stack: { pack: 'node-web' }, project: { name: 'Order Desk' } }).spec;
++  const existingRepo = {
++    ref: 'octo/order-desk',
++    defaultBranch: 'main',
++    baseSha: 'a'.repeat(40),
++    scanHash: 'b'.repeat(64),
++  };
++  const enhancement = (): IncubatorSpec => ({
++    ...base(),
++    incubatorVersion: '1.1',
++    mode: 'enhancement',
++    existingRepo,
++    intent: {
++      ...base().intent,
++      coreFeatures: [
++        {
++          id: 'export-orders',
++          summary: 'Export orders as CSV',
++          lane: 'enhancement/existing',
++          targets: ['src/server.js', 'src/routes/'],
++        },
++      ],
++    },
++  });
++
++  it('keeps every 1.0 spec valid and adds the enhancement shape', () => {
++    expect(validateSpec(base()).issues).toEqual([]);
++    expect(base().incubatorVersion).toBe('1.0');
++    expect(validateSpec(enhancement()).issues).toEqual([]);
++    expect(validateSemantics(enhancement())).toEqual([]);
++  });
++
++  it('rejects malformed repository blocks and unknown versions', () => {
++    const bad = (mutate: (s: Record<string, unknown>) => void) => {
++      const s = structuredClone(enhancement()) as unknown as Record<string, unknown>;
++      mutate(s);
++      return validateSpec(s).ok;
++    };
++    expect(bad((s) => (s['incubatorVersion'] = '2.0'))).toBe(false);
++    expect(bad((s) => ((s['existingRepo'] as { baseSha: string }).baseSha = 'not-a-sha'))).toBe(
++      false,
++    );
++    expect(bad((s) => delete (s['existingRepo'] as Record<string, unknown>)['scanHash'])).toBe(
++      false,
++    );
++    expect(bad((s) => ((s['existingRepo'] as Record<string, unknown>)['extra'] = 1))).toBe(false);
++  });
++
++  it('keeps mode, version and repository block together', () => {
++    const { existingRepo: _dropped, ...rest } = enhancement();
++    const noRepo: IncubatorSpec = rest;
++    expect(validateSemantics(noRepo).map((i) => i.code)).toContain('enhancement_repo');
++    const wrongVersion = { ...enhancement(), incubatorVersion: '1.0' } as IncubatorSpec;
++    expect(validateSemantics(wrongVersion).map((i) => i.code)).toContain('enhancement_version');
++    const stray = { ...base(), existingRepo } as IncubatorSpec;
++    expect(validateSemantics(stray).map((i) => i.code)).toContain('existing_repo_mode');
++  });
++
++  it('confines targets to the repository', () => {
++    for (const t of [
++      '../secrets',
++      '/etc/passwd',
++      'C:\\Windows',
++      'a\\b',
++      'src/../../x',
++      'a\u0000b',
++    ]) {
++      const s = enhancement();
++      s.intent.coreFeatures[0]!.targets = [t];
++      expect(
++        validateSemantics(s).map((i) => i.code),
++        t,
++      ).toContain('target_path');
++    }
++    const ok = enhancement();
++    ok.intent.coreFeatures[0]!.targets = ['src/a.js', 'docs/', 'a..b/c'];
++    expect(validateSemantics(ok)).toEqual([]);
++  });
++});
+diff --git a/packages/spec/src/types.gen.ts b/packages/spec/src/types.gen.ts
+index dc61cd4..3abdf7c 100644
+--- a/packages/spec/src/types.gen.ts
++++ b/packages/spec/src/types.gen.ts
+@@ -1,5 +1,6 @@
+ /* Generated by packages/spec/scripts/gen-types.mjs from schema/*.schema.json. Do not edit. */
+ 
++export type BranchName = string;
+ export type WorkLane =
+   | 'workspace'
+   | 'security'
+@@ -10,7 +11,6 @@ export type WorkLane =
+   | 'enhancement/new'
+   | 'ui/fix'
+   | 'ui/feature';
+-export type BranchName = string;
+ export type Host = string;
+ export type AgentId = 'claude' | 'copilot' | 'cursor';
+ export type ActionId = string;
+@@ -20,8 +20,12 @@ export type ActionId = string;
+  */
+ export interface IncubatorSpec {
+   $schema?: string;
+-  incubatorVersion: '1.0';
+-  mode: 'greenfield' | 'brownfield';
++  /**
++   * 1.0 for new and adopted projects; 1.1 adds enhancement runs (mode, existingRepo, feature targets).
++   */
++  incubatorVersion: '1.0' | '1.1';
++  mode: 'greenfield' | 'brownfield' | 'enhancement';
++  existingRepo?: ExistingRepo;
+   project: Project;
+   intent: Intent;
+   platform: 'web' | 'service' | 'cli' | 'library' | 'wordpress-plugin' | 'wordpress-theme';
+@@ -37,6 +41,15 @@ export interface IncubatorSpec {
+   gapReport: GapItem[];
+   decisions: Decision[];
+ }
++/**
++ * The repository an enhancement run changes: what was scanned, and at which commit.
++ */
++export interface ExistingRepo {
++  ref: string;
++  defaultBranch: BranchName;
++  baseSha: string;
++  scanHash: string;
++}
+ export interface Project {
+   name: string;
+   slug: string;
+@@ -63,6 +76,12 @@ export interface CoreFeature {
+   id: string;
+   summary: string;
+   lane: WorkLane;
++  /**
++   * Repository-relative files or directories the change touches, resolved from the scan (enhancement runs).
++   *
++   * @maxItems 20
++   */
++  targets?: string[];
+ }
+ export interface Stack {
+   pack: 'node-web' | 'wordpress' | 'python-service' | 'node-lib';
+diff --git a/docs/TDD.md b/docs/TDD.md
+--- a/docs/TDD.md
++++ b/docs/TDD.md
+@@ -682,7 +682,7 @@
+ 
+ | Field                                                      | Why                                                                       |
+ | ---------------------------------------------------------- | ------------------------------------------------------------------------- |
+-| `$schema`, `incubatorVersion` const `"1.0"`                | editor support; migration hook                                            |
++| `$schema`, `incubatorVersion` `"1.0"` or `"1.1"`           | editor support; migration hook (1.1 = enhancement runs, §7.4)             |
+ | `project.slug` pattern `^[a-z0-9][a-z0-9-]{0,98}[a-z0-9]$` | a GitHub-safe name, and the base for DB, image and service names          |
+ | `testing.completenessThreshold` (default `70`)             | the brief requires a threshold but gives it no home (ADR-018)             |
+ | `testing.pairedRepo.name` (default `<slug>-tests`)         | an explicit name so resume and adopt can find it                          |
+@@ -1040,13 +1040,15 @@
+   delivery and handoff differ. Web and desktop: "Analyze and enhance" on the Adopt card, the
+   ChangeRequest step, a REVIEW tree that previews the delivery, and an "Enhance" action on finished
+   adopt and enhance runs.
+-- **Spec 1.1, delivered as a patch** (ADR-020). Spec 1.1 adds `mode: "enhancement"`, an
+-  `existingRepo` block (`ref`, `defaultBranch`, `baseSha`, `scanHash`) and per-feature `targets`; every
+-  1.0 spec stays valid. It edits a pinned contract, which only the owner may re-pin, and the
+-  `pre-push` hook refuses a commit that fails `contracts-pin`, so it ships as
+-  `docs/phases/phase-7-spec-1.1.patch` (ticket `R-phase-7-contracts-pin`). Until it is applied,
+-  enhance runs use spec 1.0 (`mode: "brownfield"`) and the resolved targets live in the journaled plan
+-  record.
++- **Spec 1.1** (ADR-020). An enhance run's spec carries `incubatorVersion: "1.1"`, `mode:
++"enhancement"`, an `existingRepo` block (`ref`, `defaultBranch`, `baseSha`, `scanHash`: which
++  repository, at which commit, and which scan) and per-feature `targets` (repository-relative files
++  or directories). Every 1.0 spec stays valid, and greenfield and adopt runs still write 1.0. The
++  scan fills the targets at REVIEW, where the owner can edit them; the model may not set them, or
++  `existingRepo`, or anything outside `intent`. Targets are checked to stay inside the repository (no
++  `..`, absolute path, drive letter or control character). The request's hash leaves out
++  `existingRepo`, so the same request against the repository after its own delivery was merged gives
++  the same `request.md` and is recognised as already delivered.
+ 
+ ---
+ 

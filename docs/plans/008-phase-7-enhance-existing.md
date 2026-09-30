@@ -14,9 +14,12 @@ REVIEW → APPROVED → SCAFFOLD → PUBLISH → HANDOFF → DONE`, all journale
 - A `design.md` lane template for `enhancement/existing` and `enhancement/new`, rendered per feature.
 - Resume checks against the real world for adopt and enhance (branch exists, PR exists).
 - CLI `enhance`; web and desktop "What do you want to change?" step and an "Enhance" action on recent runs.
-- Stage B (last commits): spec 1.1 and the analysis-summary schema with the LLM `ANALYZE` summary.
-  These edit pinned contracts; `pnpm contracts:pin` is a human-only action and is recorded as a
-  request, never run.
+- The LLM `ANALYZE` summary (`analysis-summary.md`). Its schema is a code constant, so no pinned file
+  changes.
+- Spec 1.1, the only change to a pinned contract. `pnpm contracts:pin` is a human-only action, and
+  `lefthook` runs `check:quick` before every push, so a commit that fails `contracts-pin` cannot be
+  pushed without bypassing a gate. It ships as `docs/phases/phase-7-spec-1.1.patch` instead, verified
+  to apply to the pushed head, with the pin recorded as ticket `R-phase-7-contracts-pin`.
 
 Hard rules: never modify an existing file, never spawn through a shell, no symlinks or path-shape
 assumptions in tests, no absolute machine paths, no live tests, no edits to
@@ -37,7 +40,7 @@ assumptions in tests, no absolute machine paths, no live tests, no edits to
 | `apps/web/src/server/server.ts`, `apps/web/src/ui/views/*`                                         | `kind: enhance`, `POST /api/runs/:id/request`, `ChangeRequest`, Enhance action     |
 | `apps/desktop/{scripts/build.mjs,smoke,src/testing-fixtures}`                                      | stage prompt and templates; enhance smoke flow on fakes                            |
 | `tests/scenarios/enhance-existing/`, `tests/adapters/enhance-existing.ts`, `config/features.json`  | 2 happy, 3 validation, 3 fault scenarios                                           |
-| `packages/spec/schema/*.schema.json` (Stage B only)                                                | spec 1.1; `analysis-summary.schema.json`; needs the owner's `contracts:pin`        |
+| `docs/phases/phase-7-spec-1.1.patch`, `.incubator/tickets/R-phase-7-contracts-pin.json`            | spec 1.1 as a patch; the owner applies it and runs `contracts:pin`                 |
 
 ## Acceptance commands
 
@@ -49,11 +52,11 @@ pnpm check
 ```
 
 ```text
-Stage A: pnpm check exits 0
+pnpm check exits 0 on the branch
 the enhance-existing scenarios (2 happy, 3 validation, 3 fault) pass
 the scan report is byte-identical across two runs and starts with "Scanned N of M files"
 every enhance branch diff is `A` only; source file hashes are identical before and after
-Stage B: pnpm check fails on contracts-pin only, and the pin request is recorded in docs/phases/phase-7.md
+Patch: applied to a fresh checkout, pnpm check:quick fails on contracts-pin only (1 finding); the owner runs pnpm contracts:pin
 ```
 
 ## Drift and hallucination guardrails
@@ -66,11 +69,18 @@ Stage B: pnpm check fails on contracts-pin only, and the pin request is recorded
 | A replayed step repeats an effect                        | Duplicate PR or "branch already exists" on resume        | `branchExists` / `findOpenPr` checks; fault scenarios crash after commit and after PR                             |
 | A run that changes nothing opens a PR                    | Noise, and a lie about work done                         | `run.done {noop:true}`, exit 0, message; scenario `validation-noop-nothing-to-change`                             |
 | Tests assume path shape, quoting or symlinks             | Windows 11 with a space in the path broke earlier phases | paths via `path.join`/`relative`; no symlink creation; all spawns through `Exec` (`shell: false`)                 |
-| Editing a pinned contract without the owner              | `contracts:pin` is a human-only action                   | Stage B is last; `check` output shows `contracts-pin` as the only failure; pin request recorded                   |
+| Editing a pinned contract without the owner              | `contracts:pin` is a human-only action                   | spec 1.1 ships as a patch; applied, `contracts-pin` is the only failing step; ticket `R-phase-7-contracts-pin`    |
 | Lanes other than `enhancement/*` slip into enhance specs | Wrong templates and tickets                              | `extraCheck` rejects them; unit test                                                                              |
 
 ## Review rounds
 
-| Round | Finding                                                                | Status |
-| ----- | ---------------------------------------------------------------------- | ------ |
-| 1     | Plan drafted and approved by the owner, including the staged pin split | CLOSED |
+| Round | Finding                                                                                                                                              | Status |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1     | Plan drafted and approved by the owner, including the staged pin split                                                                               | CLOSED |
+| 2     | Adopt replayed `git checkout -b` on an existing branch after a crash                                                                                 | CLOSED |
+| 3     | Adopt re-planned against its own files on resume and reported "compliant" with no PR                                                                 | CLOSED |
+| 4     | `effect()` rewrote every `ParkError` reason to `parked` (lost `no_stack`, `spec_invalid`)                                                            | CLOSED |
+| 5     | `FakeGitHub.openPr` could duplicate a PR, hiding the duplicate-PR window                                                                             | CLOSED |
+| 6     | Scan golden sat inside the scanned fixture; CI triggers mis-parsed; `localeCompare` ordering was ICU-dependent                                       | CLOSED |
+| 7     | `pre-push` runs `check:quick`, so a commit failing `contracts-pin` cannot be pushed without bypassing a gate; spec 1.1 delivered as a verified patch | CLOSED |
+| 8     | The request hash included `existingRepo`, so a re-run after merge was never "already delivered" (found building the patch)                           | CLOSED |

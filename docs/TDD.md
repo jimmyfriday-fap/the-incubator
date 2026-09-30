@@ -1040,10 +1040,13 @@ flowchart LR
   delivery and handoff differ. Web and desktop: "Analyze and enhance" on the Adopt card, the
   ChangeRequest step, a REVIEW tree that previews the delivery, and an "Enhance" action on finished
   adopt and enhance runs.
-- **Staged contract change** (ADR-020). Spec 1.1 (`mode: "enhancement"`, `existingRepo`, per-feature
-  `targets`) and the analysis-summary schema edit pinned contracts; re-pinning is a human-only action.
-  Until the owner re-pins, enhance runs use spec 1.0 (`mode: "brownfield"`) and keep the resolved
-  targets in the plan record.
+- **Spec 1.1, delivered as a patch** (ADR-020). Spec 1.1 adds `mode: "enhancement"`, an
+  `existingRepo` block (`ref`, `defaultBranch`, `baseSha`, `scanHash`) and per-feature `targets`; every
+  1.0 spec stays valid. It edits a pinned contract, which only the owner may re-pin, and the
+  `pre-push` hook refuses a commit that fails `contracts-pin`, so it ships as
+  `docs/phases/phase-7-spec-1.1.patch` (ticket `R-phase-7-contracts-pin`). Until it is applied,
+  enhance runs use spec 1.0 (`mode: "brownfield"`) and the resolved targets live in the journaled plan
+  record.
 
 ---
 

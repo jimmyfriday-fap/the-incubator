@@ -23,21 +23,23 @@ New-project discovery asks, but only works on an idea. The `enhancement/*` lanes
    gaps are opt-in (`--with-gaps`) and arrive as a second, separately reviewable commit.
 3. **Lanes are forced.** Every enhancement feature gets lane `enhancement/existing` (or
    `enhancement/new` for a new module). `extraCheck` rejects any other lane.
-4. **Staged contract change.** Spec 1.1 (`mode: "enhancement"`, `existingRepo`, per-feature
-   `targets`) and the analysis-summary schema edit pinned contracts, and `pnpm contracts:pin` is
-   human-only. Stage A builds everything on spec 1.0 (mode `brownfield`, targets in a run artifact).
-   Stage B is the last commits; after them only `contracts-pin` is red, and the pin is recorded as a
-   request for the owner rather than run.
+4. **Staged contract change, delivered as a patch.** Spec 1.1 (`mode: "enhancement"`, `existingRepo`,
+   per-feature `targets`) edits a pinned contract, and `pnpm contracts:pin` is human-only. Everything
+   that works on spec 1.0 ships normally (mode `brownfield`; targets resolved at delivery and kept in
+   the journaled plan). The spec bump is built last, and because `lefthook` runs `check:quick` before
+   every push, a commit that fails `contracts-pin` cannot be pushed without bypassing a gate. It is
+   therefore delivered as `docs/phases/phase-7-spec-1.1.patch`, verified to apply to the pushed head
+   and to leave `contracts-pin` as the only failing step, with the pin recorded as a request.
 
 ## Consequences
 
-- The schema bump lands together with a pin request; until the owner re-pins, `check` is red on
-  exactly that step.
-- `targets.json` exists only between stages A and B.
-- Two adopt crash windows (branch exists on replay, duplicate PR) are closed for both commands.
+- Until the owner applies the patch and re-pins, enhance runs write spec 1.0; afterwards they write
+  1.1, and greenfield and adopt runs still write 1.0.
+- The LLM analysis summary needs no pinned file (its schema is a code constant).
 
 ## Alternatives considered
 
 - **`adopt --enhance`.** Rejected: see decision 1.
 - **Schema change first.** Rejected by the owner: it blocks the session on a human step.
+- **Push the red commit with the hook bypassed.** Rejected: skipping a gate is a denied action.
 - **No schema change.** Rejected: targets and the source ref belong in the spec, not a side file.

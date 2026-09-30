@@ -4,26 +4,28 @@ Plan: [docs/plans/008-phase-7-enhance-existing.md](../plans/008-phase-7-enhance-
 Decisions: [ADR-020](../adr/020-enhance-command-and-staged-contract.md),
 [ADR-021](../adr/021-deep-scan-caps-and-skip-accounting.md). Design: [TDD §7.4](../TDD.md).
 
-The work is in two stages (ADR-020). **Stage A** works entirely on spec 1.0 and leaves `pnpm check`
-green. **Stage B** edits pinned contracts, which only the owner may re-pin.
+Everything below is on the branch and leaves `pnpm check` green, except one change: spec 1.1 edits a
+pinned contract, which only the owner may re-pin, and the `pre-push` hook refuses a commit that fails
+`contracts-pin`. That change ships as [`phase-7-spec-1.1.patch`](phase-7-spec-1.1.patch) (ADR-020),
+verified to apply to the pushed head; see "Spec 1.1" at the end.
 
-| #   | Criterion (owner's Phase 7 brief)                                                                                   | Status                                      |
-| --- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| 1   | Deep scan: stack, entry points, modules, routes/commands, data model, tests, CI, deploy, conventions, bounded files | PASS                                        |
-| 2   | `RepoView` stays read-only and capped; anything skipped is reported ("scanned N of M files, skipped X because Y")   | PASS                                        |
-| 3   | LLM `ANALYZE` summary (`analysis-summary.md`): tools off, empty cwd, stdin, repo text untrusted                     | PENDING (Stage B)                           |
-| 4   | Enhancement discovery reuses `DRAFT_SPEC`/`CLARIFY`, grounded in the scan, at most 5 questions per round            | PASS                                        |
-| 5   | Spec 1.1 (`mode: "enhancement"`, `existingRepo`, per-feature targets); greenfield specs stay valid                  | PENDING (Stage B; needs the owner's re-pin) |
-| 6   | Each request becomes an `enhancement/*` ticket and a handoff plan using the lane templates and the `design` stage   | PASS                                        |
-| 7   | Canonical-pattern gaps are optional and a separately reviewable commit                                              | PASS                                        |
-| 8   | No existing file is ever modified (added files or `.incubator-proposed` only)                                       | PASS                                        |
-| 9   | CLI `incubator enhance <url\|path>` with adopt's flags (`--no-publish` etc.)                                        | PASS                                        |
-| 10  | Web: "What do you want to change?" step, and "Enhance" on Recent runs                                               | PASS (fakes, real Chromium)                 |
-| 11  | Desktop (Electron build): the same flow                                                                             | PASS on Linux under xvfb; Windows PENDING   |
-| 12  | New states go through the journal; crash-resume works; fault-injection scenarios cover them                         | PASS                                        |
-| 13  | A run that would change nothing says so                                                                             | PASS                                        |
-| 14  | Windows rules: no path-shape assumptions, no symlinks, no shell                                                     | PASS by construction; Windows run PENDING   |
-| 15  | `pnpm check` green                                                                                                  | PASS for Stage A (below)                    |
+| #   | Criterion (owner's Phase 7 brief)                                                                                   | Status                                                                       |
+| --- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 1   | Deep scan: stack, entry points, modules, routes/commands, data model, tests, CI, deploy, conventions, bounded files | PASS                                                                         |
+| 2   | `RepoView` stays read-only and capped; anything skipped is reported ("scanned N of M files, skipped X because Y")   | PASS                                                                         |
+| 3   | LLM `ANALYZE` summary (`analysis-summary.md`): tools off, empty cwd, stdin, repo text untrusted                     | PASS                                                                         |
+| 4   | Enhancement discovery reuses `DRAFT_SPEC`/`CLARIFY`, grounded in the scan, at most 5 questions per round            | PASS                                                                         |
+| 5   | Spec 1.1 (`mode: "enhancement"`, `existingRepo`, per-feature targets); greenfield specs stay valid                  | PENDING LOCAL VERIFICATION (owner: apply the patch, then pnpm contracts:pin) |
+| 6   | Each request becomes an `enhancement/*` ticket and a handoff plan using the lane templates and the `design` stage   | PASS                                                                         |
+| 7   | Canonical-pattern gaps are optional and a separately reviewable commit                                              | PASS                                                                         |
+| 8   | No existing file is ever modified (added files or `.incubator-proposed` only)                                       | PASS                                                                         |
+| 9   | CLI `incubator enhance <url\|path>` with adopt's flags (`--no-publish` etc.)                                        | PASS                                                                         |
+| 10  | Web: "What do you want to change?" step, and "Enhance" on Recent runs                                               | PASS (fakes, real Chromium)                                                  |
+| 11  | Desktop (Electron build): the same flow                                                                             | PASS on Linux under xvfb; Windows PENDING                                    |
+| 12  | New states go through the journal; crash-resume works; fault-injection scenarios cover them                         | PASS                                                                         |
+| 13  | A run that would change nothing says so                                                                             | PASS                                                                         |
+| 14  | Windows rules: no path-shape assumptions, no symlinks, no shell                                                     | PASS by construction; Windows run PENDING                                    |
+| 15  | `pnpm check` green                                                                                                  | PASS (section 5)                                                             |
 
 ## 1. Deep scan and skip accounting
 
@@ -68,6 +70,11 @@ pnpm vitest run --project unit packages/core/src/enhance.test.ts tests/scenarios
 ✓ enhance > parks when the model strays outside the enhancement lanes or outside intent
 ✓ enhance > parks on a repository with no supported stack
 ✓ enhance > hands the delivered plan and its own tickets to the agent
+✓ enhance > summarizes the scan with a model, labels it machine-generated, and delivers it
+✓ enhance > gives the model repository text only as fenced data, and a forged fence stays inert
+✓ enhance > treats a model with no summary turn as a warning, not a failure
+✓ enhance > treats a summary that is invalid twice as a warning, and delivers no summary file
+✓ enhance helpers > ships the analysis-summary prompt versioned and byte-pinned
 ✓ enhance helpers > ships the enhance prompt versioned and byte-pinned
 ✓ scenario contract layer > enhance-existing/happy-local-no-publish
 ✓ scenario contract layer > enhance-existing/happy-with-gaps-pr
@@ -126,7 +133,7 @@ xvfb-run -a pnpm test:desktop-smoke   # after: pnpm --filter @incubator/desktop 
 Screenshots of the flow: `.reports/e2e/enhance-{1-request,2-review,3-done}.png` and
 `.reports/desktop-smoke-enhance.png` (ignored by git).
 
-## 5. `pnpm check` (Stage A)
+## 5. `pnpm check`
 
 ```sh
 xvfb-run -a pnpm check
@@ -134,11 +141,11 @@ xvfb-run -a pnpm check
 
 ```text
  Test Files  41 passed (41)
-      Tests  425 passed | 2 skipped (427)
-Statements   : 91.43% ( 4313/4717 )
-Branches     : 82.98% ( 2838/3420 )
-Functions    : 92.46% ( 933/1009 )
-Lines        : 93.33% ( 3865/4141 )
+      Tests  430 passed | 2 skipped (432)
+Statements   : 91.44% ( 4337/4743 )
+Branches     : 82.99% ( 2860/3446 )
+Functions    : 92.51% ( 940/1016 )
+Lines        : 93.37% ( 3887/4163 )
 ✔ completeness: 94/100 (threshold 70)
 
 ── check full ──
@@ -163,7 +170,10 @@ Found by the new tests, not by review; each has a test that fails without its fi
    so adopt's `spec_invalid` park lost its reason and evidence. `ParkError` now passes through.
 4. **`FakeGitHub.openPr` could open a second PR for the same head**, unlike the real adapter (which
    returns the open one on HTTP 422), so a duplicate could not be seen in tests. The fake now matches.
-5. In the new scan: the golden files lived inside the scanned fixture (the scan counted its own
+5. **The request hash included `existingRepo`** (found while building the spec 1.1 patch), so the same
+   request against the repository after its own delivery was merged produced a different `request.md`
+   and was never recognised as already delivered. The hash now leaves `existingRepo` out.
+6. In the new scan: the golden files lived inside the scanned fixture (the scan counted its own
    output), CI triggers were mis-parsed, and `localeCompare` made ordering depend on ICU. Fixed;
    ordering is by code unit on every platform.
 
@@ -183,8 +193,60 @@ Found by the new tests, not by review; each has a test that fails without its fi
 - The OS keychain, a real browser launch (`incubator ui`), and a real claude/copilot/cursor CLI
   producing discovery turns. Every test here uses recorded turns.
 - Live GitHub and Leantime (`INCUBATOR_LIVE=1`); not run.
-- `pnpm contracts:pin`, after Stage B (owner-only action).
+- Applying `phase-7-spec-1.1.patch` and running `pnpm contracts:pin` (owner-only action; see below).
 
-## Stage B
+## Spec 1.1 (the owner's step)
 
-Not started at the time of writing this section; it is updated when the contract commits land.
+Spec 1.1 adds `mode: "enhancement"`, an `existingRepo` block (`ref`, `defaultBranch`, `baseSha`,
+`scanHash`) and per-feature `targets`, with every 1.0 spec still valid. It edits
+`packages/spec/schema/incubator.schema.json`, a pinned contract. `pnpm contracts:pin` is a human-only
+action (CLAUDE.md), and `lefthook`'s `pre-push` runs `check:quick`, which correctly fails on
+`contracts-pin`, so a commit with this change cannot be pushed without bypassing a gate. It is delivered as
+[`phase-7-spec-1.1.patch`](phase-7-spec-1.1.patch), and the pin is recorded as ticket
+`R-phase-7-contracts-pin`.
+
+```text
+docs/TDD.md                                        | 15 ++--
+packages/core/fixtures/discovery/live-claude-bookclub/0{1,2,3}-DiscoveryTurn.json  (recorded keys only)
+packages/core/src/engine.ts                        | 54 ++++++--
+packages/core/src/enhance.test.ts                  | 38 +++
+packages/core/src/enhance.ts                       | 12 +-
+packages/spec/schema/incubator.schema.json         | 28 ++-
+packages/spec/src/{constants,index,semantics}.ts   | 35 +++
+packages/spec/src/spec.test.ts                     | 85 ++++-
+packages/spec/src/types.gen.ts                     | 25 ++-     (regenerated)
+13 files changed, 273 insertions(+), 25 deletions(-)
+```
+
+It was verified the way the owner will use it: a fresh worktree at the pushed head, `git apply`, then the
+quick gate.
+
+```sh
+git worktree add --detach <dir> <pushed head> && cd <dir> && git apply docs/phases/phase-7-spec-1.1.patch
+pnpm install --frozen-lockfile && pnpm check:quick
+```
+
+```text
+✔ bom … ✔ abs-path … ✔ isolation … ✔ deps-boundary
+✖ contracts-pin        fail
+  - packages/spec/schema/incubator.schema.json: content does not match its pin
+✔ plan-lint … ✔ lane-contract … ✔ scenarios … ✔ quarantine … ✔ drift … ✔ workflow-lint
+✔ format … ✔ lint … ✔ typecheck … ✔ typecheck-ui … ✔ unit … ✔ tests-collected
+```
+
+The full `pnpm check` on the patched tree (unit, coverage, e2e, completeness, rule fixtures, audit)
+failed only on that one step as well. To finish:
+
+```sh
+git apply docs/phases/phase-7-spec-1.1.patch
+pnpm contracts:pin          # your action: re-pins the one changed file
+pnpm check
+git rm docs/phases/phase-7-spec-1.1.patch .incubator/tickets/R-phase-7-contracts-pin.json
+```
+
+The patch also re-keys the three recorded keys of the `live-claude-bookclub` fixture (the prompt's
+allowed values now include the new `mode`); their responses are unchanged, and the test still replays
+them to the same approved spec byte for byte.
+
+One choice to confirm: enhance runs write version 1.1, while new projects and `adopt` keep writing 1.0, so
+no existing golden or recording changes beyond the three keys above.
