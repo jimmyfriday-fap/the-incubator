@@ -1198,3 +1198,5 @@ flowchart LR
 | [017](adr/017-agent-hooks-and-tracker-loop.md)         | Agent hooks: a Stop-hook veto as the verification loop                       |
 | [018](adr/018-completeness-score.md)                   | Completeness score formula and default threshold                             |
 | [019](adr/019-toolchain-fetch-and-ci.md)               | Hash-pinned tool fetching and the CI layout                                  |
+| [020](adr/020-enhance-command-and-staged-contract.md)  | `enhance` command, additive delivery model, staged contract change           |
+| [021](adr/021-deep-scan-caps-and-skip-accounting.md)   | Deep scan: deterministic, capped, honest about skipped files                 |
