@@ -620,7 +620,9 @@ stateDiagram-v2
   [*] --> INTAKE
   INTAKE --> ANALYZE: repo given
   INTAKE --> DRAFT_SPEC: narrative only
-  ANALYZE --> DRAFT_SPEC
+  ANALYZE --> REVIEW: adopt (spec drafted from the detectors)
+  ANALYZE --> REQUEST: enhance (repository scanned)
+  REQUEST --> DRAFT_SPEC: change request given
   DRAFT_SPEC --> CLARIFY: questions open and round < 2
   DRAFT_SPEC --> REVIEW: done or round == 2
   CLARIFY --> DRAFT_SPEC: answers recorded
@@ -634,6 +636,7 @@ stateDiagram-v2
   DONE --> [*]
   INTAKE --> PARKED
   ANALYZE --> PARKED
+  REQUEST --> PARKED
   DRAFT_SPEC --> PARKED
   CLARIFY --> PARKED
   REVIEW --> PARKED
@@ -648,6 +651,10 @@ A pure reducer `(RunState, JournalEvent) → RunState` implements the machine. R
 journal through the reducer, then re-enters the parked-at state. Its preconditions are re-checked (for
 example, a changed workspace hash raises the nudge rule from §3.2). `--spec-only` stops after
 `APPROVED` and writes the spec to `--out` or stdout.
+
+`REQUEST` exists only in enhance runs (§7.4). It holds the owner's change request; without one, the
+run parks with `needs_request` until the CLI (`resume --prompt`) or the UI answers. Adopt runs go
+from `ANALYZE` straight to `REVIEW`, because their spec is drafted from the detectors, not by a model.
 
 ### 5.2 Clarification algorithm
 
@@ -941,8 +948,92 @@ Name:` → theme; `pyproject.toml` + FastAPI/uvicorn → `python-service`;
   single, reviewable source. The detectors are in `packages/analyzer/src/detectors.ts`. A local path is
   `git clone`d into the workspace, which copies exactly the committed tree, so ignored files never
   enter it. `ANALYZE` drafts the spec deterministically from the detectors (`draftFromAnalysis`); it
-  never infers security fields, and no LLM summary is produced yet. The PR body is the Markdown gap
-  report. `incubator adopt --no-publish` stops after the local commit.
+  never infers security fields, and adopt produces no LLM summary (enhance runs do, §7.4). The PR
+  body is the Markdown gap report. `incubator adopt --no-publish` stops after the local commit.
+- **Replay safety (Phase 7).** Phase 7's crash-resume matrix found two defects in the original adopt
+  path, both now fixed and covered for every git and GitHub step:
+  - a crash after the commit re-ran `git checkout -b` on the existing branch, so the commit now
+    recognises its own `Incubator-Run` trailer, re-proves it adds only files, and adopts it;
+  - a crash after the first write re-planned against the run's own files, found them "identical",
+    and ended the run as "already compliant" with no PR. The planned file lists are now journaled
+    (`adopt.plan`) before the first write and reused on replay, as is the gap report.
+
+  The branch name travels in the journal, so a run resumed after midnight does not rename it.
+
+### 7.4 Enhance an existing repository (`enhance`, ADR-020, ADR-021)
+
+`adopt` compares a repository with the canonical pattern; it never asks what the owner wants to
+change. `enhance` joins the brief's two inputs ("an idea and/or an existing repository"): the
+repository is scanned in full, the owner describes the change, and the existing discovery loop
+turns that into enhancement requests grounded in the scan.
+
+```mermaid
+flowchart LR
+  S[URL or path → clone into workspace] --> Sc[Deep scan<br/>stack, entry points, modules, routes,<br/>data model, tests, CI, conventions]
+  Sc --> Rq[REQUEST<br/>What do you want to change?]
+  Rq --> D[DRAFT_SPEC / CLARIFY<br/>enhance prompt, scan digest as untrusted data]
+  D --> Rv[REVIEW<br/>tree = the delivery, with delta statuses]
+  Rv --> De[Delivery, additive only]
+  De -->|commit 1| P[plan, E-tickets, design briefs,<br/>request, scan report, lane templates]
+  De -.->|commit 2, only with --with-gaps| G[canonical-pattern gaps]
+  P & G --> PR[branch incubator/enhance-yyyymmdd<br/>PR, or local with --no-publish]
+  PR --> H[handoff: incubator handoff runId --launch]
+```
+
+- **Deep scan** (`packages/analyzer/src/scan.ts`). Pure and deterministic: manifest parsing and
+  regexes, no model, no execution of repository code. It reports the stack, entry points, a module
+  map with import edges, dependencies, public routes and commands (Express/Fastify, Flask/FastAPI/
+  Django, WordPress REST and AJAX, commander/argparse/WP-CLI), the data model (SQL tables, Prisma,
+  ORM classes, post types), the test layout and coverage signals, CI files and triggers, conventions
+  (lint, format, type checking, hooks, file naming) and a bounded inventory. The same tree gives a
+  byte-identical report.
+- **What was skipped is stated** (ADR-021). `RepoView` stays read-only and capped (5,000 listed files,
+  1 MiB per read, 50,000 entries walked) and gains `stats()`. The first line of every report is
+  `Scanned N of M files; skipped K files because …`, naming binaries, symbolic links (listed, never
+  followed), files over the byte cap, files over the file cap, and a walk that stopped at its cap
+  (`M+`). Ignored dependency and build directories are named on the next line. Every derived list has
+  its own cap with a note when it was cut short.
+- **REQUEST.** The request comes from `--prompt`/`--prompt-file`, from a terminal question, or from the
+  UI's "What do you want to change?" step. It is cleaned (control and bidi characters removed, length
+  capped) and journaled as `enhance.request`.
+- **Discovery reuses the same loop** (`DRAFT_SPEC`, `CLARIFY`, at most 5 questions per round and 2
+  rounds) with its own versioned prompt, `prompts/enhance.md`. The model receives the scan digest
+  fenced as untrusted data. Checks beyond the normal ones reject a turn that changes anything outside
+  `intent`, uses a lane other than `enhancement/existing` or `enhancement/new`, or reuses the id of a
+  feature the repository already has. Two bad turns park the run (`llm_schema`). The security fields
+  are never taken from the model (T6).
+- **Targets** for each request are resolved deterministically from the scan (a word match against
+  routes, commands, models, entry points and module names) and written as `- Target:` lines; when
+  nothing matches, the design stage decides.
+- **The delivery is additive.** Every file is written with the `wx` writer; a differing file becomes
+  `<file>.incubator-proposed`; the commit is proven `A`-only (the same proof adopt uses). It contains:
+  - `docs/plans/NNN-enhance-yyyymmdd.md`: an executor plan in the §3.2 format (`plan-lint` passes),
+    one `**Step N:**` per request;
+  - `.incubator/tickets/E-<id>.json`: one ticket per request on its lane, `TAGGED_TO_RELEASE`;
+  - `.incubator/enhance/<date>/design-<id>.md`: the lane's `design.md` template filled for the ticket
+    (the runner's `design` stage, which until now existed only on paper), plus `request.md` and
+    `scan-report.md`;
+  - the `enhancement/*` lane templates the plan refers to (`design`, `enrich`, `codegen`).
+- **Canonical gaps are optional.** With `--with-gaps` (or the UI checkbox) the adopt delta is added as
+  a second, separately reviewable commit on the same branch and its own section of the PR body. It is
+  never forced; `incubator adopt` remains the tool for gaps alone.
+- **A run that changes nothing says so.** No request produced (`no_features`), or this plan already
+  delivered the same day (`already_delivered`; the scan report alone never counts as a change): the
+  run ends `DONE` with `noop`, exit 0, no branch and no PR.
+- **Resume** (ADR-010). The plan (`enhance.plan`) is journaled before the first write; both commits
+  recognise their own `Incubator-Run`/`Incubator-Part` trailer after a crash; the PR is found, not
+  duplicated. Fault-injection tests crash the run before and after every git and GitHub step, with
+  both commits, and assert one PR, two commits, additions only and an untouched source.
+- **Surfaces.** CLI: `incubator enhance <url|path> [--prompt|--prompt-file] [--with-gaps] [--repo]
+[--org] [--no-publish] [--adapter] [--yes]`, and `resume <runId> --prompt` for a parked request. A
+  separate command rather than `adopt --enhance` (ADR-020): it needs the request, and its branch,
+  delivery and handoff differ. Web and desktop: "Analyze and enhance" on the Adopt card, the
+  ChangeRequest step, a REVIEW tree that previews the delivery, and an "Enhance" action on finished
+  adopt and enhance runs.
+- **Staged contract change** (ADR-020). Spec 1.1 (`mode: "enhancement"`, `existingRepo`, per-feature
+  `targets`) and the analysis-summary schema edit pinned contracts; re-pinning is a human-only action.
+  Until the owner re-pins, enhance runs use spec 1.0 (`mode: "brownfield"`) and keep the resolved
+  targets in the plan record.
 
 ---
 
@@ -956,6 +1047,10 @@ Name:` → theme; `pyproject.toml` + FastAPI/uvicorn → `python-service`;
     without an owner").
   - For the `local` tracker, tickets `F-<featureId>` are rendered into `.incubator/tickets/` in state
     `TAGGED_TO_RELEASE`.
+- **Enhance runs** hand off their own plan and tickets: `incubator handoff <runId>` uses the
+  delivered `docs/plans/NNN-enhance-….md`, selects the first `E-<id>` ticket not yet
+  `READY_FOR_TEST`, and runs in the run's workspace clone on the enhance branch. A run that delivered
+  nothing has nothing to hand off (`no_plan`).
 - **At HANDOFF:** for `leantime`, tickets are created through the API. The step is idempotent: it
   searches by the `incubator:F-<id>` tag first.
 - **`incubator handoff <runId> [--agent claude|copilot|cursor] [--launch]`:**
@@ -1003,9 +1098,10 @@ Name:` → theme; `pyproject.toml` + FastAPI/uvicorn → `python-service`;
   | Method | Path                                     | Purpose                                                              |
   | ------ | ---------------------------------------- | -------------------------------------------------------------------- |
   | GET    | `/session`                               | CSRF token, versions, adapter capabilities                           |
-  | POST   | `/runs`                                  | start `new` or `adopt`                                               |
+  | POST   | `/runs`                                  | start `new`, `adopt` or `enhance`                                    |
   | GET    | `/runs`, `/runs/:id`                     | list and inspect runs                                                |
   | POST   | `/runs/:id/answers`                      | CLARIFY answers                                                      |
+  | POST   | `/runs/:id/request`                      | REQUEST: the enhance run's "What do you want to change?" answer      |
   | POST   | `/runs/:id/approve`                      | REVIEW → APPROVED, with an optional edited spec                      |
   | GET    | `/runs/:id/tree`, `/runs/:id/file?path=` | preview; `path` is normalized and confined to the workspace          |
   | GET    | `/runs/:id/spec-diff?from=&to=`          | a JSON-pointer diff between spec revisions                           |
@@ -1039,6 +1135,11 @@ Name:` → theme; `pyproject.toml` + FastAPI/uvicorn → `python-service`;
     The fakes are wired in-process by `apps/web/src/testing-fixtures/fake-web.ts`, so there is no
     `INCUBATOR_FAKES` switch at all. CI uses the runner's preinstalled Chrome
     (`INCUBATOR_E2E_CHANNEL=chrome`), so no browser is downloaded.
+  - **Enhance (Phase 7).** The Adopt card has "Analyze and enhance" (and a checkbox for the
+    canonical gaps). The run parks at `REQUEST`, and `ChangeRequest` shows the scan's first line
+    ("Scanned N of M files …"), the full report on demand, and a text box. After that the normal
+    questions and review follow; the REVIEW tree previews the delivery, not the canonical tree.
+    Finished adopt and enhance runs offer "Enhance" in Recent runs.
   - **Opening the browser.** `incubator ui` opens the default browser (`open`, `xdg-open`, or
     `rundll32 url.dll,FileProtocolHandler`, argv only), or prints the single-use link with
     `--no-open`.
@@ -1070,6 +1171,9 @@ Name:` → theme; `pyproject.toml` + FastAPI/uvicorn → `python-service`;
   - **Test builds.** A build-time constant (`__INCUBATOR_TEST_BUILD__`) removes the fake wiring
     from release bundles entirely. A release build given the test flag exits 2 before any window
     opens.
+  - **Enhance (Phase 7).** The same UI and server, so no desktop code changed beyond the test
+    build: `INCUBATOR_TEST_FIXTURE=enhance:<name>` picks recorded enhancement turns, and the smoke
+    test enhances a local repository whose path contains a space, to a local branch.
   - **Sandbox.** The renderer sandbox is forced with `app.enableSandbox()`. Only an explicit
     `--no-sandbox` skips it, for root in containers.
   - **Release lane.** `promote-to-production.yml` is the base render, adopted verbatim.
@@ -1100,6 +1204,7 @@ CLIs or a real GitHub org. Never mark a live criterion `PASS` without having run
 | **4 Brownfield**                | Detectors, gap report, no-overwrite writer, `adopt <url\|path>`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 4 fixture repos under `packages/analyzer/fixtures/` (bare Node, WP plugin, Python service, compliant) → expected gap-report snapshots; compliant → empty delta, no PR; before/after hash snapshot shows zero modified files.                                                                                                                                                                                             |
 | **5 Web UI**                    | Fastify server, React UI, SSE; `incubator ui`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Playwright (headless Chromium, preinstalled) covers the greenfield and brownfield flows to DONE on fakes; request-security tests for a missing token, a bad cookie, a wrong Origin, a wrong Host and a missing CSRF header, each expecting 401/403.                                                                                                                                                                      |
 | **6 Electron**                  | Desktop shell, electron-builder config, `desktop.yml` CI matrix (3 OS)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | CI builds artifacts on all three OSes (run URLs recorded); a Linux xvfb smoke test completes a fake greenfield run locally and in CI; Windows/macOS launch smoke runs in CI; installer UX checks are `PENDING LOCAL VERIFICATION`.                                                                                                                                                                                       |
+| **7 Enhance an existing repo**  | Deep scan with skip accounting; `enhance` run (REQUEST, enhance prompt, additive delivery with `design` stage, optional gaps commit, handoff); adopt replay-safety; `incubator enhance`; web and desktop request step                                                                                                                                                                                                                                                                                                                                                                                                                                         | Scenarios `enhance-existing` (2 happy, 3 validation, 3 fault); crash-resume matrix; scan golden; web e2e and desktop smoke on fakes                                                                                                                                                                                                                                                                                      |
 
 **Dogfood checkpoints.** From Phase 2 on, the Incubator's own `incubator.json` (platform `cli`, stack
 `node-lib` + desktop, deploy `package-release` if Q1 is approved) is rendered in CI, and the files

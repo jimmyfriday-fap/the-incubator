@@ -24,20 +24,20 @@ assumptions in tests, no absolute machine paths, no live tests, no edits to
 
 ## Touched files and markers
 
-| File or directory                                                                                  | Marker / note                                                                  |
-| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `packages/analyzer/src/{repo-view,scan,scan-report}.ts`                                            | `stats()`; `deepScan`; `renderScanReport` ("Scanned N of M files")             |
-| `packages/analyzer/fixtures/node-service-rich/`                                                    | routes, migrations, models, CI, lint config; `expected-scan.json` snapshot     |
-| `packages/core/src/{enhance,adopt,engine,state,store}.ts`                                          | Enhancer; `REQUEST` state; resume checks for branch and PR                     |
-| `packages/core/prompts/enhance.md`                                                                 | versioned, snapshot-pinned system prompt for enhance runs                      |
-| `packages/git/src/gitops.ts`, `packages/git/src/github*.ts`                                        | `branchExists`, `findOpenPr`                                                   |
-| `packs/base/files/.incubator/lanes/lane/design.md.eta`, `.incubator/lanes/enhancement/*/design.md` | `design` stage template                                                        |
-| `scripts/guard/lane-contract.mjs`                                                                  | optional `design.md` check (additive)                                          |
-| `apps/cli/src/commands/enhance.ts`, `apps/cli/src/main.ts`                                         | `incubator enhance`                                                            |
-| `apps/web/src/server/server.ts`, `apps/web/src/ui/views/*`                                         | `kind: enhance`, `POST /api/runs/:id/request`, `ChangeRequest`, Enhance action |
-| `apps/desktop/{scripts/build.mjs,smoke,src/testing-fixtures}`                                      | stage prompt and templates; enhance smoke flow on fakes                        |
-| `tests/scenarios/enhance-existing/`, `tests/adapters/enhance-existing.ts`, `config/features.json`  | 2 happy, 3 validation, 3 fault scenarios                                       |
-| `packages/spec/schema/*.schema.json` (Stage B only)                                                | spec 1.1; `analysis-summary.schema.json`; needs the owner's `contracts:pin`    |
+| File or directory                                                                                  | Marker / note                                                                      |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `packages/analyzer/src/{repo-view,scan,scan-report}.ts`                                            | `stats()`; `deepScan`; `renderScanReport` ("Scanned N of M files")                 |
+| `packages/analyzer/fixtures/node-service-rich/`                                                    | routes, migrations, models, CI, lint config; `expected-scan.json` snapshot         |
+| `packages/core/src/{enhance,adopt,engine,state,store,handoff,testing}.ts`                          | Enhancer; `REQUEST` state; `proveAdditions`; journaled `adopt.plan`/`enhance.plan` |
+| `packages/core/prompts/enhance.md`                                                                 | versioned, snapshot-pinned system prompt for enhance runs                          |
+| `packages/git/src/{gitops,github}.ts`                                                              | `currentBranch`; `FakeGitHub.openPr` returns the open PR for the same head         |
+| `packs/base/files/.incubator/lanes/lane/design.md.eta`, `.incubator/lanes/enhancement/*/design.md` | `design` stage template                                                            |
+| `scripts/guard/lane-contract.mjs`                                                                  | optional `design.md` check (additive)                                              |
+| `apps/cli/src/commands/enhance.ts`, `apps/cli/src/main.ts`                                         | `incubator enhance`                                                                |
+| `apps/web/src/server/server.ts`, `apps/web/src/ui/views/*`                                         | `kind: enhance`, `POST /api/runs/:id/request`, `ChangeRequest`, Enhance action     |
+| `apps/desktop/{scripts/build.mjs,smoke,src/testing-fixtures}`                                      | stage prompt and templates; enhance smoke flow on fakes                            |
+| `tests/scenarios/enhance-existing/`, `tests/adapters/enhance-existing.ts`, `config/features.json`  | 2 happy, 3 validation, 3 fault scenarios                                           |
+| `packages/spec/schema/*.schema.json` (Stage B only)                                                | spec 1.1; `analysis-summary.schema.json`; needs the owner's `contracts:pin`        |
 
 ## Acceptance commands
 
