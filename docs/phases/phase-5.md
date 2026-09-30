@@ -4,7 +4,7 @@ Plan: [docs/plans/006-phase-5-web-ui.md](../plans/006-phase-5-web-ui.md).
 
 | #   | Criterion (brief §9 and TDD §10, Phase 5)                                                        | Status                              |
 | --- | ------------------------------------------------------------------------------------------------ | ----------------------------------- |
-| 1   | Playwright e2e covers greenfield and brownfield runs to DONE on the fakes                        | PASS (locally; CI on the next push) |
+| 1   | Playwright e2e covers greenfield and brownfield runs to DONE on the fakes                        | PASS (locally and in CI on 3 OSes)  |
 | 2   | Requests without the token, or with the wrong Origin, are rejected (401/403)                     | PASS                                |
 | 3   | Also rejected: a bad cookie, a wrong Host, a missing or wrong CSRF header                        | PASS                                |
 | 4   | `incubator ui` with the wizard, tree preview, spec diff and live run log (SSE), reusing the core | PASS                                |
@@ -126,6 +126,14 @@ same engine as the CLI.
   runs). The first tree preview renders the spec on the server's single thread, and the diff
   response queued behind it, beyond vitest's 1-second `expect.poll` default. The UI polls now wait
   up to 15 s; the result was 6/6 passing.
+
+## CI
+
+At `692b42c`, both CI runs passed:
+
+- [ci run 36648027006](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36648027006): `check` passed on ubuntu, macos and windows, and it includes the
+  `e2e` step, which drives the runner's Google Chrome. All 10 `packs` cells and `gate` passed too.
+- [security-scan run 36648026979](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36648026979): passed.
 
 ## `pnpm check`
 

@@ -2,13 +2,13 @@
 
 Plan: [docs/plans/007-phase-6-desktop.md](../plans/007-phase-6-desktop.md).
 
-| #   | Criterion (brief §9 and TDD §10, Phase 6)                                             | Status                                           |
-| --- | ------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| 1   | The app builds for Windows, macOS and Linux (electron-builder)                        | PASS on Linux locally; 3 OSes: PENDING CI        |
-| 2   | A smoke test launches it headless and completes a fake greenfield run                 | PASS (Linux, packaged, xvfb); 3 OSes: PENDING CI |
-| 3   | Engine in-process; renderer sandboxed, no Node, navigation locked                     | PASS                                             |
-| 4   | Fakes only in test builds; release builds refuse the test flag                        | PASS                                             |
-| 5   | Installer UX (install, first launch from the OS menu, uninstall), keychain on each OS | PENDING LOCAL VERIFICATION                       |
+| #   | Criterion (brief §9 and TDD §10, Phase 6)                                             | Status                                         |
+| --- | ------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 1   | The app builds for Windows, macOS and Linux (electron-builder)                        | PASS on Linux and Windows in CI; macOS: see §6 |
+| 2   | A smoke test launches it headless and completes a fake greenfield run                 | PASS on Linux and Windows in CI; macOS: see §6 |
+| 3   | Engine in-process; renderer sandboxed, no Node, navigation locked                     | PASS                                           |
+| 4   | Fakes only in test builds; release builds refuse the test flag                        | PASS                                           |
+| 5   | Installer UX (install, first launch from the OS menu, uninstall), keychain on each OS | PENDING LOCAL VERIFICATION                     |
 
 ## 1. Builds
 
@@ -37,8 +37,7 @@ The asar holds only the staged app (9.4 MB). What goes in, and what was fixed on
   asar); `files: !node_modules` stops that.
 
 `desktop.yml` builds the same on `ubuntu-latest`, `macos-latest` and `windows-latest`, runs the
-smoke test against the packaged executables and uploads the installers. **PENDING CI:** the run URL
-is recorded below once it completes.
+smoke test against the packaged executables and uploads the installers. The CI runs are in §6.
 
 ## 2. Smoke test
 
@@ -116,6 +115,38 @@ before any window or server starts. The smoke test covers this.
   launch from the menu.
 - The OS keychain inside the packaged app.
 - A first real promote. It needs a `production` branch and environment, which is a human's setup.
+
+## 6. CI
+
+**First run.** [desktop run 36648027099](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36648027099) at `692b42c`:
+
+- **ubuntu-latest and windows-latest: passed.** Both built the installers, and all 3 smoke tests
+  passed against the packaged executables.
+- **macos-latest: failed.** It built the dmg and zip, and the two release-build smoke tests
+  passed. The test build then never opened a window:
+  `electronApplication.firstWindow: Timeout 30000ms exceeded`.
+
+**Root cause.** Both builds used the same `userData` directory, which holds Electron's
+single-instance lock. A release instance from the previous test still held the lock on macOS, so
+the test build handed off to it and quit. I reproduced this locally with a running release
+instance:
+
+```text
+same userData as release: launch failed: electron.launch: Target page, context or browser has been closed
+test build default userData: window opened
+```
+
+**Fix.**
+
+- Test builds default to their own `userData` (`<userData> (test build)`).
+- `INCUBATOR_DESKTOP_USER_DATA` overrides the directory.
+- The smoke test gives every launch a fresh home and `userData`.
+- Teardown kills an app that does not close within 15 s, instead of hanging the hook.
+
+The packaged Linux smoke test passed 3/3, twice. The macOS re-run is recorded in the next commit.
+
+[ci run 36648027006](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36648027006) (check on 3 OSes, `packs`, `gate`) and
+[security-scan run 36648026979](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36648026979) passed at the same commit.
 
 ## Also in this phase
 

@@ -28,21 +28,36 @@ function target(kind: 'release' | 'test'): { executablePath: string; args: strin
   return { executablePath: electronBin, args: [...extra, dir] };
 }
 
-const running: ElectronApplication[] = [];
+// why: a wedged app must not hang the suite; close politely, then kill what is left. The child
+// process handle is taken at launch (Playwright cannot hand it out after close).
+const running: { app: ElectronApplication; proc: ReturnType<ElectronApplication['process']> }[] =
+  [];
+async function stop(r: (typeof running)[number]): Promise<void> {
+  await Promise.race([
+    r.app.close().catch(() => undefined),
+    new Promise((res) => setTimeout(res, 15_000)),
+  ]);
+  if (r.proc.exitCode === null && r.proc.signalCode === null) r.proc.kill('SIGKILL');
+}
 afterEach(async () => {
-  await Promise.all(running.splice(0).map((a) => a.close().catch(() => undefined)));
+  await Promise.all(running.splice(0).map(stop));
+});
+
+// Each launch gets its own home and userData, so the single-instance lock is never shared.
+const isolated = () => ({
+  INCUBATOR_HOME: mkdtempSync(path.join(os.tmpdir(), 'desktop-home-')),
+  INCUBATOR_DESKTOP_USER_DATA: mkdtempSync(path.join(os.tmpdir(), 'desktop-data-')),
 });
 
 async function launch(kind: 'release' | 'test', args: string[] = []) {
   const t = target(kind);
-  const home = mkdtempSync(path.join(os.tmpdir(), 'desktop-home-'));
   const app = await _electron.launch({
     executablePath: t.executablePath,
     args: [...t.args, ...args],
-    env: { ...process.env, INCUBATOR_HOME: home, ELECTRON_ENABLE_LOGGING: '0' },
+    env: { ...process.env, ...isolated(), ELECTRON_ENABLE_LOGGING: '0' },
     timeout: 60_000,
   });
-  running.push(app);
+  running.push({ app, proc: app.process() });
   return app;
 }
 
@@ -75,7 +90,7 @@ describe('desktop smoke', () => {
     const { nodeExec } = await import('@incubator/runtime');
     const r = await nodeExec.run(t.executablePath, [...t.args, TEST_FAKES_FLAG], {
       timeoutMs: 60_000,
-      env: { INCUBATOR_HOME: mkdtempSync(path.join(os.tmpdir(), 'desktop-home-')) },
+      env: isolated(),
     });
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('is refused: this is not a test build');

@@ -53,6 +53,12 @@ async function main(): Promise<void> {
   }
   // why: every renderer is sandboxed; only an explicit --no-sandbox (root in a container) opts out.
   if (!app.commandLine.hasSwitch('no-sandbox')) app.enableSandbox();
+  // why: the single-instance lock and the extracted packs live in userData, so a test build (or a
+  // test harness) must not share it with an installed release build, or it hands off and quits.
+  const userData = process.env['INCUBATOR_DESKTOP_USER_DATA'];
+  if (userData) app.setPath('userData', path.resolve(userData));
+  else if (__INCUBATOR_TEST_BUILD__)
+    app.setPath('userData', `${app.getPath('userData')} (test build)`);
   if (!app.requestSingleInstanceLock()) {
     app.quit();
     return;
