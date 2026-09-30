@@ -4,3 +4,5 @@ export * from './canonical.js';
 export * from './draft.js';
 export * from './report.js';
 export * from './delta.js';
+export * from './scan.js';
+export * from './scan-report.js';

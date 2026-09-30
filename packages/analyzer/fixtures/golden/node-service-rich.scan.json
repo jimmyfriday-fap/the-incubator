@@ -1,0 +1,355 @@
+{
+  "coverage": {
+    "total": 16,
+    "totalIsLowerBound": false,
+    "listed": 16,
+    "scanned": 15,
+    "skipped": [
+      {
+        "reason": "binary",
+        "count": 1,
+        "examples": [
+          "assets/logo.png"
+        ]
+      }
+    ],
+    "caps": {
+      "maxFiles": 5000,
+      "maxBytes": 1048576
+    }
+  },
+  "analysis": {
+    "name": "parcel-desk",
+    "description": "Parcel tracking API with a small admin CLI.",
+    "stack": {
+      "pack": "node-web",
+      "framework": "fastify-react",
+      "platform": "web",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "file": "package.json",
+          "note": "depends on fastify"
+        }
+      ]
+    },
+    "tests": {
+      "runners": [
+        "vitest"
+      ],
+      "files": 1,
+      "count": 2
+    },
+    "workflows": [
+      ".github/workflows/ci.yml"
+    ],
+    "agents": [],
+    "deploy": {
+      "target": null,
+      "evidence": []
+    },
+    "security": {
+      "scanWorkflow": false,
+      "localRules": 0,
+      "secretScanConfig": false
+    },
+    "hasSpec": false,
+    "truncated": false
+  },
+  "entryPoints": [
+    {
+      "file": "Dockerfile",
+      "kind": "docker",
+      "note": "CMD [\"node\", \"src/index.js\"]"
+    },
+    {
+      "file": "package.json",
+      "kind": "script",
+      "note": "dev: node --watch src/index.js"
+    },
+    {
+      "file": "package.json",
+      "kind": "script",
+      "note": "start: node src/index.js"
+    },
+    {
+      "file": "package.json",
+      "kind": "script",
+      "note": "test: vitest run"
+    },
+    {
+      "file": "src/cli.js",
+      "kind": "package-bin",
+      "note": "bin parcel-desk"
+    },
+    {
+      "file": "src/cli.js",
+      "kind": "conventional",
+      "note": "conventional name"
+    },
+    {
+      "file": "src/index.js",
+      "kind": "conventional",
+      "note": "conventional name"
+    },
+    {
+      "file": "src/index.js",
+      "kind": "package-main",
+      "note": "package.json main"
+    }
+  ],
+  "modules": [
+    {
+      "dir": ".",
+      "files": 2,
+      "languages": [
+        "JavaScript"
+      ]
+    },
+    {
+      "dir": "src",
+      "files": 2,
+      "languages": [
+        "JavaScript"
+      ]
+    },
+    {
+      "dir": "src/db",
+      "files": 1,
+      "languages": [
+        "JavaScript"
+      ]
+    },
+    {
+      "dir": "src/routes",
+      "files": 2,
+      "languages": [
+        "JavaScript"
+      ]
+    },
+    {
+      "dir": "test",
+      "files": 1,
+      "languages": [
+        "JavaScript"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "src",
+      "to": "src/db",
+      "count": 2
+    },
+    {
+      "from": "src",
+      "to": "src/routes",
+      "count": 2
+    },
+    {
+      "from": "src/routes",
+      "to": "src/db",
+      "count": 2
+    }
+  ],
+  "dependencies": [
+    {
+      "file": "package.json",
+      "manager": "npm",
+      "runtime": [
+        "commander@^12.0.0",
+        "fastify@^5.0.0",
+        "pg@^8.11.0"
+      ],
+      "dev": [
+        "eslint@^9.0.0",
+        "typescript@^5.6.0",
+        "vitest@^2.0.0"
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/healthz",
+      "file": "src/index.js",
+      "framework": "node"
+    },
+    {
+      "method": "GET",
+      "path": "/orders",
+      "file": "src/routes/orders.js",
+      "framework": "node"
+    },
+    {
+      "method": "PUT",
+      "path": "/orders/:id",
+      "file": "src/routes/orders.js",
+      "framework": "node"
+    },
+    {
+      "method": "GET",
+      "path": "/users",
+      "file": "src/routes/users.js",
+      "framework": "node"
+    },
+    {
+      "method": "POST",
+      "path": "/users",
+      "file": "src/routes/users.js",
+      "framework": "node"
+    },
+    {
+      "method": "DELETE",
+      "path": "/users/:id",
+      "file": "src/routes/users.js",
+      "framework": "node"
+    }
+  ],
+  "commands": [
+    {
+      "name": "migrate",
+      "file": "src/cli.js",
+      "kind": "commander"
+    },
+    {
+      "name": "seed",
+      "file": "src/cli.js",
+      "kind": "commander"
+    }
+  ],
+  "dataModel": [
+    {
+      "name": "orders",
+      "file": "migrations/001_init.sql",
+      "kind": "sql-table"
+    },
+    {
+      "name": "users",
+      "file": "migrations/001_init.sql",
+      "kind": "sql-table"
+    }
+  ],
+  "tests": {
+    "runners": [
+      "vitest"
+    ],
+    "files": 1,
+    "count": 2,
+    "dirs": [
+      "test"
+    ],
+    "coverageSignals": [
+      "vitest.config.js: coverage config"
+    ]
+  },
+  "ci": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "system": "github-actions",
+      "triggers": [
+        "pull_request",
+        "push",
+        "workflow_dispatch"
+      ]
+    }
+  ],
+  "conventions": {
+    "lint": [
+      "eslint"
+    ],
+    "format": [
+      "prettier"
+    ],
+    "typecheck": [
+      "tsc (strict)"
+    ],
+    "hooks": [],
+    "fileNaming": "undetermined"
+  },
+  "inventory": {
+    "languages": [
+      {
+        "language": "JavaScript",
+        "files": 8
+      },
+      {
+        "language": "JSON",
+        "files": 2
+      },
+      {
+        "language": "Markdown",
+        "files": 1
+      },
+      {
+        "language": "SQL",
+        "files": 1
+      },
+      {
+        "language": "YAML",
+        "files": 1
+      }
+    ],
+    "topDirs": [
+      {
+        "dir": ".",
+        "files": 7
+      },
+      {
+        "dir": "src",
+        "files": 5
+      },
+      {
+        "dir": ".github",
+        "files": 1
+      },
+      {
+        "dir": "assets",
+        "files": 1
+      },
+      {
+        "dir": "migrations",
+        "files": 1
+      },
+      {
+        "dir": "test",
+        "files": 1
+      }
+    ],
+    "largest": [
+      {
+        "file": "src/routes/users.js",
+        "chars": 356
+      },
+      {
+        "file": "src/cli.js",
+        "chars": 334
+      },
+      {
+        "file": "src/index.js",
+        "chars": 323
+      },
+      {
+        "file": "src/routes/orders.js",
+        "chars": 313
+      },
+      {
+        "file": "src/db/pool.js",
+        "chars": 241
+      },
+      {
+        "file": "test/users.test.js",
+        "chars": 195
+      },
+      {
+        "file": "vitest.config.js",
+        "chars": 89
+      },
+      {
+        "file": "eslint.config.js",
+        "chars": 32
+      }
+    ]
+  },
+  "notes": []
+}
