@@ -57,6 +57,63 @@ export function Summary({ run }: { run: RunDetail }) {
           )}
         </>
       )}
+      {run.enhance && (
+        <>
+          {run.enhance.noop && (
+            <p data-testid="noop">
+              Nothing to change
+              {run.enhance.noop === 'no_features'
+                ? ': the request produced no enhancement.'
+                : ': this plan is already in the repository.'}{' '}
+              No branch, no pull request.
+            </p>
+          )}
+          {run.enhance.pr && (
+            <p>
+              Opened pull request{' '}
+              <a data-testid="pr-link" href={run.enhance.pr.url} target="_blank" rel="noreferrer">
+                #{run.enhance.pr.number}
+              </a>
+            </p>
+          )}
+          {run.enhance.plan && (
+            <>
+              {!run.enhance.pr && (
+                <p data-testid="local-branch">Enhance branch written locally (no pull request).</p>
+              )}
+              <p>
+                Plan <code data-testid="plan-path">{run.enhance.plan.planPath}</code>:{' '}
+                {run.enhance.plan.features.length} request(s), {run.enhance.plan.create.length}{' '}
+                file(s) added, {run.enhance.plan.proposed.length} proposed.
+              </p>
+              <ul data-testid="requests">
+                {run.enhance.plan.features.map((f) => (
+                  <li key={f.id}>
+                    <code>{f.id}</code> <span className="muted">{f.lane}</span>
+                    {f.targets.length > 0 && (
+                      <span className="muted"> → {f.targets.join(', ')}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {run.enhance.plan.gaps && (
+                <p className="muted">
+                  Canonical-pattern gaps ride in a separate commit you can drop.
+                </p>
+              )}
+              <p className="muted">
+                Next: <code>incubator handoff {run.runId} --launch</code>
+              </p>
+            </>
+          )}
+          {run.enhance.scanReport && (
+            <details>
+              <summary>Scan report</summary>
+              <pre data-testid="scan-report-final">{run.enhance.scanReport}</pre>
+            </details>
+          )}
+        </>
+      )}
     </section>
   );
 }

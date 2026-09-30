@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import { existsSync, mkdtempSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -49,12 +49,16 @@ const isolated = () => ({
   INCUBATOR_DESKTOP_USER_DATA: mkdtempSync(path.join(os.tmpdir(), 'desktop-data-')),
 });
 
-async function launch(kind: 'release' | 'test', args: string[] = []) {
+async function launch(
+  kind: 'release' | 'test',
+  args: string[] = [],
+  env: Record<string, string> = {},
+) {
   const t = target(kind);
   const app = await _electron.launch({
     executablePath: t.executablePath,
     args: [...t.args, ...args],
-    env: { ...process.env, ...isolated(), ELECTRON_ENABLE_LOGGING: '0' },
+    env: { ...process.env, ...isolated(), ...env, ELECTRON_ENABLE_LOGGING: '0' },
     timeout: 60_000,
   });
   running.push({ app, proc: app.process() });
@@ -117,5 +121,53 @@ describe('desktop smoke', () => {
       'https://github.com/octo/stockroom',
     );
     await page.screenshot({ path: path.resolve(desktop, '../../.reports/desktop-smoke.png') });
+  });
+
+  it('test build: enhances a local repository whose path has a space, to a local branch', async () => {
+    // A path with a space, as on the owner's machine: it must survive the UI, the clone and git.
+    const src = path.join(mkdtempSync(path.join(os.tmpdir(), 'enhance repo ')), 'order desk');
+    cpSync(path.resolve(desktop, '../../packages/analyzer/fixtures/bare-node'), src, {
+      recursive: true,
+      filter: (f) => !f.endsWith('expected-gap-report.json'),
+    });
+    const { nodeExec } = await import('@incubator/runtime');
+    for (const args of [
+      ['init', '-q', '-b', 'main'],
+      ['add', '-A'],
+      ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'existing'],
+    ])
+      expect((await nodeExec.run('git', args, { cwd: src, timeoutMs: 30_000 })).code).toBe(0);
+
+    const app = await launch('test', [TEST_FAKES_FLAG], {
+      INCUBATOR_TEST_FIXTURE: 'enhance:export-orders',
+    });
+    const page = await app.firstWindow();
+    await page.getByTestId('adopt-repo').fill(src);
+    await page.getByTestId('adopt-local').check();
+    await page.getByTestId('start-enhance').click();
+    await page.getByTestId('change-request').waitFor({ timeout: 60_000 });
+    await page
+      .getByTestId('request-text')
+      .fill('Kitchen staff need to export the orders list as a CSV file at the end of the day.');
+    await page.getByTestId('submit-request').click();
+    await page.getByTestId('review').waitFor({ timeout: 60_000 });
+    // A local repository has no GitHub origin to take the owner from, so the review asks for it.
+    await page.getByTestId('owner-login').fill('octo');
+    await page.getByTestId('approve').click();
+    await expect
+      .poll(() => page.getByTestId('run-state').textContent(), { timeout: 90_000 })
+      .toBe('DONE');
+    expect(await page.getByTestId('plan-path').textContent()).toBe(
+      'docs/plans/001-enhance-20260501.md',
+    );
+    await page.getByTestId('local-branch').waitFor();
+    // The owner's checkout was not touched.
+    expect(
+      (await nodeExec.run('git', ['status', '--porcelain'], { cwd: src, timeoutMs: 30_000 }))
+        .stdout,
+    ).toBe('');
+    await page.screenshot({
+      path: path.resolve(desktop, '../../.reports/desktop-smoke-enhance.png'),
+    });
   });
 });

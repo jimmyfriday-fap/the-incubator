@@ -38,9 +38,10 @@ import { INCUBATOR_VERSION } from './version.js';
 import { Publisher, type PublishDeps, type PublishSummary, type StepContext } from './publish.js';
 import { scaffoldSpec } from './scaffold.js';
 import { Adopter, adoptReport, isEmptyDelta, writeReport, type AdoptContext } from './adopt.js';
-import { PreviewCache, type Preview } from './preview.js';
+import { PreviewCache, type Preview, type PreviewStatus } from './preview.js';
 import {
   analyze,
+  cmp,
   coverageLines,
   deepScan,
   gapReport,
@@ -53,7 +54,7 @@ import {
   viewFromDir,
   type RepoScan,
 } from '@incubator/analyzer';
-import { render, type RenderResult } from '@incubator/templates';
+import { render, type RenderResult, type RenderedFile } from '@incubator/templates';
 import {
   Enhancer,
   buildDelivery,
@@ -457,6 +458,43 @@ export class Engine {
   }
 
   /**
+   * What an enhancement delivers for the approved spec: the delivery files, the rendered base pack
+   * (lane templates, canonical gaps) and the pinned names. Pure with respect to the repository, so
+   * the REVIEW preview and the SCAFFOLD step cannot disagree.
+   */
+  private async enhanceDelivery(runId: string, spec: IncubatorSpec, prior?: EnhancePlanRecord) {
+    const dir = path.join(this.deps.store.runDir(runId), 'workspace', 'repo');
+    const baseline = this.enhanceBaseline(runId);
+    const features = spec.intent.coreFeatures.filter((f) => !baseline.includes(f.id));
+    const scan = this.readScan(runId);
+    const base = await render({ ...spec, intent: { ...spec.intent, coreFeatures: [] } });
+    const date = prior?.date ?? enhanceDate(this.deps.clock);
+    // Same day, same plan file: a re-run on a repository that already has this run's plan is a
+    // no-op rather than a second numbered plan.
+    const repoFiles = viewFromDir(dir).files;
+    const sameDay = repoFiles.find((f) =>
+      new RegExp(`^docs/plans/\\d{3}-enhance-${date}\\.md$`).test(f),
+    );
+    const planPath =
+      prior?.planPath ?? sameDay ?? `docs/plans/${nextPlanNumber(repoFiles)}-enhance-${date}.md`;
+    const targets = Object.fromEntries(features.map((f) => [f.id, resolveTargets(scan, f)]));
+    const files = buildDelivery({
+      spec,
+      specHash: specHash(spec),
+      request: this.requestText(runId),
+      scan,
+      scanReport: readFileSync(this.enhanceFile(runId, 'scan-report.md'), 'utf8'),
+      date,
+      planPath,
+      features,
+      targets,
+      base,
+    });
+    const delivery: RenderResult = { ...base, files };
+    return { dir, features, base, date, planPath, targets, files, delivery };
+  }
+
+  /**
    * SCAFFOLD (enhance): pins the plan before the first write, then commits the delivery (and, when
    * asked for, the canonical gaps as a second commit). Nothing to deliver ends the run as a no-op.
    */
@@ -474,31 +512,11 @@ export class Engine {
         noop = 'no_features';
         return;
       }
-      const scan = this.readScan(runId);
-      const base = await render({ ...spec, intent: { ...spec.intent, coreFeatures: [] } });
-      const date = prior?.date ?? enhanceDate(this.deps.clock);
-      // Same day, same plan file: a re-run on a repository that already has this run's plan is a
-      // no-op rather than a second numbered plan.
-      const repoFiles = viewFromDir(dir).files;
-      const sameDay = repoFiles.find((f) =>
-        new RegExp(`^docs/plans/\\d{3}-enhance-${date}\\.md$`).test(f),
-      );
-      const planPath =
-        prior?.planPath ?? sameDay ?? `docs/plans/${nextPlanNumber(repoFiles)}-enhance-${date}.md`;
-      const targets = Object.fromEntries(features.map((f) => [f.id, resolveTargets(scan, f)]));
-      const files = buildDelivery({
+      const { base, date, planPath, targets, files, delivery } = await this.enhanceDelivery(
+        runId,
         spec,
-        specHash: specHash(spec),
-        request: this.requestText(runId),
-        scan,
-        scanReport: readFileSync(this.enhanceFile(runId, 'scan-report.md'), 'utf8'),
-        date,
-        planPath,
-        features,
-        targets,
-        base,
-      });
-      const delivery: RenderResult = { ...base, files };
+        prior,
+      );
       let plan = prior;
       if (!plan) {
         const d = planDelta(delivery, dir);
@@ -843,7 +861,9 @@ export class Engine {
   /** The tree the run's complete spec renders to (with adopt delta statuses), or null before REVIEW. */
   async preview(runId: string): Promise<Preview | null> {
     const spec = this.finalSpec(runId);
-    if (!spec || this.state(runId).input.kind === 'enhance') return null;
+    if (!spec) return null;
+    if (this.state(runId).input.kind === 'enhance')
+      return (await this.enhancePreview(runId, spec)).preview;
     const adopt = this.state(runId).input.kind === 'adopt';
     return this.#previews.preview(
       spec,
@@ -853,7 +873,63 @@ export class Engine {
 
   async previewFile(runId: string, filePath: string): Promise<Buffer | null> {
     const spec = this.finalSpec(runId);
-    return spec ? this.#previews.file(spec, filePath) : null;
+    if (!spec) return null;
+    if (this.state(runId).input.kind === 'enhance')
+      return (await this.enhancePreview(runId, spec)).files.get(filePath)?.bytes ?? null;
+    return this.#previews.file(spec, filePath);
+  }
+
+  readonly #enhancePreviews = new Map<
+    string,
+    Promise<{ preview: Preview; files: Map<string, RenderedFile> }>
+  >();
+
+  /** The enhance delivery as the REVIEW tree shows it: every file with its delta status. */
+  private enhancePreview(runId: string, spec: IncubatorSpec) {
+    const key = `${runId}:${specHash(spec)}`;
+    let hit = this.#enhancePreviews.get(key);
+    if (!hit) {
+      hit = (async () => {
+        const d = await this.enhanceDelivery(runId, spec, undefined);
+        const files = new Map<string, RenderedFile>();
+        const status = new Map<string, PreviewStatus>();
+        if (d.features.length > 0) {
+          for (const [p, f] of d.files) files.set(p, f);
+          const delta = planDelta(d.delivery, d.dir);
+          for (const k of ['create', 'identical', 'proposed', 'owned'] as const)
+            for (const p of delta[k]) status.set(p, k);
+          if (this.state(runId).input.withGaps) {
+            const gd = planDelta(d.base, d.dir);
+            for (const k of ['create', 'identical', 'proposed', 'owned'] as const)
+              for (const p of gd[k])
+                if (!files.has(p) && d.base.files.has(p)) {
+                  files.set(p, d.base.files.get(p)!);
+                  status.set(p, k);
+                }
+          }
+        }
+        return {
+          files,
+          preview: {
+            specHash: specHash(spec),
+            files: [...files.values()]
+              .map((f) => ({
+                path: f.path,
+                bytes: f.bytes.length,
+                mode: f.mode,
+                pack: f.pack,
+                ...(status.has(f.path) ? { status: status.get(f.path)! } : {}),
+              }))
+              .sort((a, b) => cmp(a.path, b.path)),
+          },
+        };
+      })();
+      hit.catch(() => this.#enhancePreviews.delete(key));
+      if (this.#enhancePreviews.size >= 8)
+        this.#enhancePreviews.delete(this.#enhancePreviews.keys().next().value!);
+      this.#enhancePreviews.set(key, hit);
+    }
+    return hit;
   }
 
   /** The publish summary recorded for a run, if it got that far. */

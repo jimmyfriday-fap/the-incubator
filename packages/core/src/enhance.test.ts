@@ -7,7 +7,7 @@ import { completeSpec } from '@incubator/spec';
 import { render, writeTree } from '@incubator/templates';
 import type { RepoScan } from '@incubator/analyzer';
 import type { Capabilities } from '@incubator/llm';
-import { DefaultsPrompter } from './prompter.js';
+import { DefaultsPrompter, NonInteractivePrompter } from './prompter.js';
 import { loadPrompt } from './prompts.js';
 import {
   featureIssues,
@@ -205,6 +205,30 @@ describe('enhance', () => {
     expect(s.state).toBe('DONE');
     expect(h.engine.requestText(runId)).toBe(REQUEST);
     expect(() => h.engine.submitRequest(runId, 'again')).toThrow(/not waiting/);
+  });
+
+  it('previews the delivery at REVIEW with delta statuses, before anything is written', async () => {
+    const h = engineFor('export-orders');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const before = hashes(dir);
+    const runId = start(h, h.github.remoteUrl(ref), ref, { withGaps: true });
+    const s = await h.engine.advance(runId, new NonInteractivePrompter());
+    expect(s.parked).toMatchObject({ state: 'REVIEW' });
+    const preview = (await h.engine.preview(runId))!;
+    const byPath = new Map(preview.files.map((f) => [f.path, f]));
+    expect(byPath.get('docs/plans/001-enhance-20260501.md')).toMatchObject({ status: 'create' });
+    expect(byPath.get('.incubator/tickets/E-export-orders.json')).toMatchObject({
+      status: 'create',
+    });
+    // With --with-gaps the canonical files show up too; a differing file is only ever proposed.
+    expect(byPath.get('CLAUDE.md')).toMatchObject({ status: 'create' });
+    expect(byPath.get('package.json')).toMatchObject({ status: 'proposed' });
+    const plan = await h.engine.previewFile(runId, 'docs/plans/001-enhance-20260501.md');
+    expect(plan!.toString('utf8')).toContain('**Step 1:** Export the day');
+    expect(await h.engine.previewFile(runId, 'no/such/file')).toBeNull();
+    // Nothing was written anywhere yet.
+    expect(hashes(dir)).toEqual(before);
+    expect(existsSync(path.join(workspace(h, runId), 'docs/plans'))).toBe(false);
   });
 
   it('says so when there is nothing to change', async () => {

@@ -235,6 +235,78 @@ describe('brownfield over the API', () => {
   });
 });
 
+describe('enhance over the API', () => {
+  const REQUEST = 'Kitchen staff need to export the orders list as a CSV file.';
+
+  it('scans, asks what to change, previews the delivery and opens the pull request', async () => {
+    const { api, h } = await boot({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    expect((await api.post('/api/runs', { kind: 'enhance' })).status).toBe(400);
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        repo: dir,
+        repoRef: 'octo/bare-node',
+      })
+    ).body;
+    let d = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    expect(d.parked).toMatchObject({ state: 'REQUEST', reason: 'needs_request' });
+    expect(d.enhance?.scanReport).toMatch(/^Scanned \d+ of \d+ files/);
+    expect(d.enhance?.request).toBe('');
+    // An empty answer is refused; a real one continues the run to REVIEW.
+    expect((await api.post(`/api/runs/${runId}/request`, { narrative: '   ' })).status).toBe(422);
+    expect((await api.post(`/api/runs/${runId}/request`, { narrative: REQUEST })).status).toBe(200);
+    d = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    expect(d.parked?.state).toBe('REVIEW');
+    expect(d.enhance?.request).toBe(REQUEST);
+    const tree = (await api.get<{ files: TreeFile[] }>(`/api/runs/${runId}/tree`)).body;
+    const byPath = new Map(tree.files.map((f) => [f.path, f.status]));
+    expect(byPath.get('docs/plans/001-enhance-20260501.md')).toBe('create');
+    expect(byPath.get('.incubator/tickets/E-export-orders.json')).toBe('create');
+    expect(byPath.has('CLAUDE.md')).toBe(false); // gaps are opt-in
+    const file = (
+      await api.get<{ text: string }>(
+        `/api/runs/${runId}/file?path=${encodeURIComponent('docs/plans/001-enhance-20260501.md')}`,
+      )
+    ).body;
+    expect(file.text).toContain('**Step 1:** Export the day');
+    // The request route only answers a run that is waiting for it.
+    expect((await api.post(`/api/runs/${runId}/request`, { narrative: 'again' })).status).toBe(409);
+    expect((await api.post(`/api/runs/${runId}/approve`)).status).toBe(200);
+    d = await until(api, runId, (x) => !x.busy && (x.done || x.state === 'PARKED'));
+    expect(d.state).toBe('DONE');
+    expect(d.enhance?.pr?.url).toBe('https://github.com/octo/bare-node/pull/1');
+    expect(d.enhance?.plan?.features.map((f) => f.id)).toEqual(['export-orders']);
+    expect(d.adopt).toBeNull();
+  });
+
+  it('takes the request with the start call, and lists the repository for "Enhance"', async () => {
+    const { api, h } = await boot({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        repo: dir,
+        repoRef: 'octo/bare-node',
+        request: REQUEST,
+        withGaps: true,
+        noPublish: true,
+      })
+    ).body;
+    let d = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    expect(d.parked?.state).toBe('REVIEW');
+    const tree = (await api.get<{ files: TreeFile[] }>(`/api/runs/${runId}/tree`)).body;
+    expect(tree.files.find((f) => f.path === 'CLAUDE.md')?.status).toBe('create');
+    expect((await api.post(`/api/runs/${runId}/approve`)).status).toBe(200);
+    d = await until(api, runId, (x) => !x.busy && (x.done || x.state === 'PARKED'));
+    expect(d.state).toBe('DONE');
+    expect(d.enhance?.pr).toBeUndefined();
+    expect(d.enhance?.plan?.gaps?.create).toContain('CLAUDE.md');
+    const list = (await api.get<RunListItem[]>('/api/runs')).body;
+    expect(list[0]).toMatchObject({ runId, kind: 'enhance', repo: dir, repoRef: 'octo/bare-node' });
+  });
+});
+
 describe('run events (SSE)', () => {
   it('replays the journal, resumes after Last-Event-ID and streams status; the token never appears', async () => {
     const { server, api, h } = await boot({ heartbeatMs: 20 });

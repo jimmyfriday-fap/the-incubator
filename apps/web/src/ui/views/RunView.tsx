@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LogEntry, RunDetail } from '../../api-types.js';
 import { get, post } from '../api.js';
+import { ChangeRequest } from './ChangeRequest.js';
 import { Questions } from './Questions.js';
 import { Review } from './Review.js';
 import { RunLog } from './RunLog.js';
@@ -50,14 +51,15 @@ export function RunView({ runId }: { runId: string }) {
   if (!run) return <p className={error ? 'error' : 'muted'}>{error ?? 'Loading…'}</p>;
   const reviewing = run.state === 'PARKED' && run.parked?.state === 'REVIEW' && !run.busy;
   const asking = run.state === 'PARKED' && run.parked?.reason === 'needs_input' && !run.busy;
-  const stuck = run.state === 'PARKED' && !reviewing && !asking && !run.busy;
+  const requesting = run.state === 'PARKED' && run.parked?.reason === 'needs_request' && !run.busy;
+  const stuck = run.state === 'PARKED' && !reviewing && !asking && !requesting && !run.busy;
   const act = (p: Promise<unknown>) => p.then(refresh).catch((e: Error) => setError(e.message));
 
   return (
     <div className="run">
       <section className="card wide">
         <h2>
-          {run.kind === 'adopt' ? 'Adopt ' : 'New project '}
+          {run.kind === 'adopt' ? 'Adopt ' : run.kind === 'enhance' ? 'Enhance ' : 'New project '}
           <code>{runId}</code>{' '}
           <span data-testid="run-state" className={`badge state-${run.state.toLowerCase()}`}>
             {run.state}
@@ -68,7 +70,9 @@ export function RunView({ runId }: { runId: string }) {
             </span>
           )}
         </h2>
-        <p className="muted">{run.kind === 'adopt' ? run.input.repo : run.input.narrative}</p>
+        <p className="muted">
+          {run.kind === 'adopt' || run.kind === 'enhance' ? run.input.repo : run.input.narrative}
+        </p>
         {run.error && (
           <p className="error" role="alert" data-testid="run-error">
             {run.error}
@@ -95,6 +99,12 @@ export function RunView({ runId }: { runId: string }) {
         )}
       </section>
 
+      {requesting && (
+        <ChangeRequest
+          run={run}
+          onSubmit={(narrative) => act(post(`/api/runs/${runId}/request`, { narrative }))}
+        />
+      )}
       {asking && run.questions && (
         <Questions
           questions={run.questions}

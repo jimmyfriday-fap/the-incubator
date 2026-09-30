@@ -29,8 +29,8 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => s.close()));
 });
 
-async function open() {
-  const { server, h } = await startFakeServer({ uiDir: UI_DIR });
+async function open(opts: { enhance?: string } = {}) {
+  const { server, h } = await startFakeServer({ uiDir: UI_DIR, ...opts });
   servers.push(server);
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -130,6 +130,57 @@ describe('web UI (Playwright, fakes)', () => {
     expect(await page.getByTestId('gap-report').textContent()).toContain('Incubator gap report');
     await shot(page, 'brownfield-2-done');
     expect(h.github.repos.get('octo/bare-node')!.prs).toHaveLength(1);
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  it('enhance: repository → scan → what to change → review the delivery → pull request DONE', async () => {
+    const { h, page, errors } = await open({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    await page.getByTestId('adopt-repo').fill(dir);
+    await page.getByTestId('adopt-ref').fill('octo/bare-node');
+    await page.getByTestId('start-enhance').click();
+    await page.waitForURL(/\/runs\/[\w-]+$/);
+
+    // The scan is done; the owner says what to change.
+    await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
+    expect(await page.getByTestId('scan-coverage').textContent()).toMatch(
+      /^Scanned \d+ of \d+ files/,
+    );
+    expect(await page.getByTestId('submit-request').isDisabled()).toBe(true);
+    await page
+      .getByTestId('request-text')
+      .fill('Kitchen staff need to export the orders list as a CSV file at the end of the day.');
+    await shot(page, 'enhance-1-request');
+    await page.getByTestId('submit-request').click();
+
+    // Review previews the delivery, not the canonical tree.
+    await page.getByTestId('review').waitFor({ timeout: 30_000 });
+    const tree = page.getByTestId('tree');
+    await expect.poll(() => tree.textContent(), UI).toContain('docs/plans/001-enhance-20260501.md');
+    expect(await tree.textContent()).not.toContain('CLAUDE.md');
+    await tree
+      .getByRole('button', { name: 'docs/plans/001-enhance-20260501.md', exact: true })
+      .click();
+    await expect.poll(() => page.getByTestId('file-view').textContent(), UI).toContain('Step 1');
+    await shot(page, 'enhance-2-review');
+    await page.getByTestId('approve').click();
+
+    await expect.poll(() => state(page).textContent(), { timeout: 60_000 }).toBe('DONE');
+    expect(await page.getByTestId('pr-link').getAttribute('href')).toBe(
+      'https://github.com/octo/bare-node/pull/1',
+    );
+    expect(await page.getByTestId('requests').textContent()).toContain('export-orders');
+    expect(await page.getByTestId('plan-path').textContent()).toBe(
+      'docs/plans/001-enhance-20260501.md',
+    );
+    await shot(page, 'enhance-3-done');
+    expect(h.github.repos.get('octo/bare-node')!.prs).toHaveLength(1);
+
+    // Recent runs offers "Enhance" on the finished run; it starts again at the request step.
+    await page.getByRole('link', { name: 'The Incubator' }).click();
+    await page.locator('[data-testid^="enhance-2"]').first().click();
+    await page.waitForURL(/\/runs\/[\w-]+$/);
+    await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
     expect(errors, errors.join('\n')).toEqual([]);
   });
 

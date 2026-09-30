@@ -19,6 +19,10 @@ export interface RunListItem {
   done: boolean;
   parked: string | null;
   title: string;
+  /** adopt and enhance: the source repository, so a finished run can offer "Enhance". */
+  repo: string | null;
+  /** adopt and enhance: owner/name when the source is not a GitHub URL. */
+  repoRef: string | null;
 }
 
 export interface RunDetail {
@@ -43,6 +47,25 @@ export interface RunDetail {
     warnings: string[];
   } | null;
   adopt: { compliant: boolean; pr?: { number: number; url: string }; report: string | null } | null;
+  enhance: EnhanceDetail | null;
+}
+
+/** What an enhance run shows: the scan, the request, and the outcome. */
+export interface EnhanceDetail {
+  /** The owner's change request so far (empty until it is given). */
+  request: string;
+  /** Why nothing was delivered, when that is the outcome. */
+  noop: string | null;
+  pr?: { number: number; url: string };
+  plan: {
+    planPath: string;
+    create: string[];
+    proposed: string[];
+    gaps: { create: string[]; proposed: string[] } | null;
+    features: { id: string; lane: string; targets: string[] }[];
+  } | null;
+  /** The deterministic scan report (first line: scanned N of M files). */
+  scanReport: string | null;
 }
 
 export interface Revision {
@@ -75,11 +98,15 @@ export interface LogEntry {
 }
 
 export interface StartRunBody {
-  kind: 'new' | 'adopt';
+  kind: 'new' | 'adopt' | 'enhance';
   narrative?: string;
   repo?: string;
-  /** adopt: owner/name when the source is not a GitHub URL. */
+  /** adopt and enhance: owner/name when the source is not a GitHub URL. */
   repoRef?: string;
   org?: boolean;
   noPublish?: boolean;
+  /** enhance: what to change; when absent the run parks at "What do you want to change?". */
+  request?: string;
+  /** enhance: also deliver the canonical-pattern gaps, as a separate commit. */
+  withGaps?: boolean;
 }

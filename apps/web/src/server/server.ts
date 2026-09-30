@@ -56,7 +56,10 @@ function sendError(reply: FastifyReply, err: unknown): FastifyReply {
 
 function title(engine: Engine, runId: string): string {
   const s = engine.state(runId);
-  const text = s.input.kind === 'adopt' ? (s.input.repo ?? '') : (s.input.narrative ?? '');
+  const text =
+    s.input.kind === 'adopt' || s.input.kind === 'enhance'
+      ? (s.input.repo ?? '')
+      : (s.input.narrative ?? '');
   return text.length > 80 ? `${text.slice(0, 77)}…` : text;
 }
 
@@ -108,6 +111,8 @@ export function createApp(opts: ServerOptions): WebApp {
               done: s.done,
               parked: s.parked?.reason ?? null,
               title: title(engine, runId),
+              repo: s.input.repo ?? null,
+              repoRef: s.input.repoRef ? `${s.input.repoRef.owner}/${s.input.repoRef.name}` : null,
             },
           ];
         } catch {
@@ -125,8 +130,10 @@ export function createApp(opts: ServerOptions): WebApp {
           additionalProperties: false,
           required: ['kind'],
           properties: {
-            kind: { enum: ['new', 'adopt'] },
+            kind: { enum: ['new', 'adopt', 'enhance'] },
             narrative: { type: 'string', maxLength: 20000 },
+            request: { type: 'string', maxLength: 20000 },
+            withGaps: { type: 'boolean' },
             repo: { type: 'string', minLength: 1, maxLength: 2000 },
             repoRef: { type: 'string', maxLength: 200 },
             org: { type: 'boolean' },
@@ -153,11 +160,13 @@ export function createApp(opts: ServerOptions): WebApp {
         repoRef = { owner: m[1]!, name: m[2]! };
       }
       const runId = driver.start({
-        kind: 'adopt',
+        kind: b.kind,
         repo: b.repo.trim(),
         ...(repoRef ? { repoRef } : {}),
         ...(b.org ? { ownerType: 'org' as const } : {}),
         ...(b.noPublish ? { noPublish: true } : {}),
+        ...(b.kind === 'enhance' && b.request?.trim() ? { request: b.request.trim() } : {}),
+        ...(b.kind === 'enhance' && b.withGaps ? { withGaps: true } : {}),
       });
       return reply.code(202).send({ runId });
     },
@@ -199,6 +208,10 @@ export function createApp(opts: ServerOptions): WebApp {
         specComplete: engine.finalSpec(runId) !== null,
         publish: engine.publishSummary(runId),
         adopt: s.input.kind === 'adopt' ? engine.adoptSummary(runId) : null,
+        enhance:
+          s.input.kind === 'enhance'
+            ? { ...engine.enhanceSummary(runId), request: engine.requestText(runId) }
+            : null,
       };
     }),
   );
@@ -291,6 +304,24 @@ export function createApp(opts: ServerOptions): WebApp {
     },
     withRun((runId, req: { body: { spec?: IncubatorSpec } | undefined }) => {
       driver.approve(runId, req.body?.spec);
+      return { accepted: true };
+    }),
+  );
+
+  app.post<{ Body: { narrative: string } }>(
+    '/api/runs/:id/request',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['narrative'],
+          properties: { narrative: { type: 'string', minLength: 1, maxLength: 20000 } },
+        },
+      },
+    },
+    withRun((runId, req: { body: { narrative: string } }) => {
+      driver.request(runId, req.body.narrative);
       return { accepted: true };
     }),
   );

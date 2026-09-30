@@ -1,8 +1,10 @@
-import { cpSync, mkdtempSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { nodeExec } from '@incubator/runtime';
-import { discoveryFixtureDir, fakePublishEngine } from '@incubator/core/testing';
+import {
+  discoveryFixtureDir,
+  enhanceFixtureDir,
+  fakePublishEngine,
+  seedExistingRepo,
+} from '@incubator/core/testing';
 import { startServer, type RunningServer } from '../server/server.js';
 
 export const ANALYZER_FIXTURES = path.resolve(
@@ -18,9 +20,16 @@ export type FakeHarness = ReturnType<typeof fakePublishEngine>;
  * verifier and a fake tracker.
  */
 export async function startFakeServer(
-  opts: { discovery?: string; uiDir?: string; heartbeatMs?: number } = {},
+  opts: { discovery?: string; enhance?: string; uiDir?: string; heartbeatMs?: number } = {},
 ): Promise<{ server: RunningServer; h: FakeHarness }> {
-  const h = fakePublishEngine({ llm: { dir: discoveryFixtureDir(opts.discovery ?? 'saas-web') } });
+  // One fake model per server: recorded turns for a new project, or for an enhancement request.
+  const h = fakePublishEngine({
+    llm: {
+      dir: opts.enhance
+        ? enhanceFixtureDir(opts.enhance)
+        : discoveryFixtureDir(opts.discovery ?? 'saas-web'),
+    },
+  });
   const server = await startServer({
     engine: h.engine,
     store: h.store,
@@ -35,29 +44,7 @@ export async function seedAdoptRepo(
   h: FakeHarness,
   fixture: string,
 ): Promise<{ dir: string; ref: { owner: string; name: string } }> {
-  const ref = { owner: 'octo', name: fixture };
-  await h.github.createRepo({
-    ...ref,
-    ownerType: 'user',
-    visibility: 'private',
-    description: 'existing project',
-  });
-  const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'web-adopt-')), fixture);
-  cpSync(path.join(ANALYZER_FIXTURES, fixture), dir, {
-    recursive: true,
-    filter: (s) => !s.endsWith('expected-gap-report.json'),
-  });
-  for (const args of [
-    ['init', '-q', '-b', 'main'],
-    ['add', '-A'],
-    ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'existing'],
-    ['remote', 'add', 'origin', h.github.remoteUrl(ref)],
-    ['push', '-q', 'origin', 'HEAD:refs/heads/main'],
-  ]) {
-    const r = await nodeExec.run('git', args, { cwd: dir, timeoutMs: 30_000 });
-    if (r.code !== 0) throw new Error(`git ${args[0]} failed: ${r.stderr}`);
-  }
-  return { dir, ref };
+  return seedExistingRepo(h.github, fixture, path.join(ANALYZER_FIXTURES, fixture));
 }
 
 /** A logged-in API client for tests: exchanges the launch token for the session cookie and CSRF. */

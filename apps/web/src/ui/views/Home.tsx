@@ -10,6 +10,7 @@ export function Home() {
   const [repoRef, setRepoRef] = useState('');
   const [org, setOrg] = useState(false);
   const [local, setLocal] = useState(false);
+  const [gaps, setGaps] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunListItem[]>([]);
 
@@ -55,8 +56,9 @@ export function Home() {
       <section className="card">
         <h2>Adopt a repository</h2>
         <p className="muted">
-          A GitHub URL or a local path. Nothing in it is modified: missing files arrive as a pull
-          request.
+          A GitHub URL or a local path. Nothing in it is modified: new files arrive as a pull
+          request. Analyze it against the canonical pattern, or scan it and say what you want to
+          change.
         </p>
         <label>
           Repository
@@ -97,7 +99,32 @@ export function Home() {
           }
         >
           Analyze repository
+        </button>{' '}
+        <button
+          data-testid="start-enhance"
+          disabled={!repo.trim()}
+          onClick={() =>
+            void start({
+              kind: 'enhance',
+              repo,
+              ...(repoRef.trim() ? { repoRef: repoRef.trim() } : {}),
+              ...(org ? { org } : {}),
+              ...(local ? { noPublish: true } : {}),
+              ...(gaps ? { withGaps: true } : {}),
+            })
+          }
+        >
+          Analyze and enhance
         </button>
+        <label className="inline">
+          <input
+            data-testid="enhance-gaps"
+            type="checkbox"
+            checked={gaps}
+            onChange={(e) => setGaps(e.target.checked)}
+          />{' '}
+          when enhancing, also add the missing canonical-pattern files (as a separate commit)
+        </label>
       </section>
 
       {error && (
@@ -127,6 +154,24 @@ export function Home() {
                 <span className="muted">
                   {r.kind} · {r.title}
                 </span>
+                {r.done && r.repo && (r.kind === 'adopt' || r.kind === 'enhance') && (
+                  <>
+                    {' '}
+                    <button
+                      className="link"
+                      data-testid={`enhance-${r.runId}`}
+                      onClick={() =>
+                        void start({
+                          kind: 'enhance',
+                          repo: r.repo!,
+                          ...(r.repoRef ? { repoRef: r.repoRef } : {}),
+                        })
+                      }
+                    >
+                      Enhance
+                    </button>
+                  </>
+                )}
               </li>
             ))}
           </ul>

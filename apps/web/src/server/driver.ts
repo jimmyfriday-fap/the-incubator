@@ -128,6 +128,13 @@ export class RunDriver {
     );
   }
 
+  /** The "What do you want to change?" answer of an enhance run, then the run continues. */
+  request(runId: string, text: string): void {
+    this.parkedAt(runId, 'REQUEST', 'needs_request');
+    this.engine.submitRequest(runId, text);
+    this.spawn(runId, () => this.engine.resume(runId, new WebPrompter()));
+  }
+
   /** REVIEW → APPROVED (optionally with an edited spec), then continues in the background. */
   approve(runId: string, spec?: IncubatorSpec): void {
     this.parkedAt(runId, 'REVIEW');
