@@ -242,16 +242,26 @@ export class Engine {
     let empty = false;
     await this.effect(runId, async () => {
       const a = this.adopter();
-      const { result, delta } = await a.plan(dir, spec);
-      const view = viewFromDir(dir);
-      const analysis = analyze(view);
-      const report = adoptReport(analysis, gapReport(view, spec.stack.pack), delta);
-      writeReport(this.deps.store.runDir(runId), report);
-      this.record(runId, 'adopt.delta', {
-        create: delta.create.length,
-        proposed: delta.proposed,
-        owned: delta.owned.length,
-      });
+      const planned = ctx.steps['adopt.plan']?.data as
+        { create: string[]; proposed: string[] } | undefined;
+      const { result, delta } = await a.plan(dir, spec, planned);
+      if (!planned) {
+        // First pass only: the report describes the repository as it was before this run wrote
+        // anything, and the planned lists are pinned before the first write so a replay reuses them.
+        const view = viewFromDir(dir);
+        const analysis = analyze(view);
+        const report = adoptReport(analysis, gapReport(view, spec.stack.pack), delta);
+        writeReport(this.deps.store.runDir(runId), report);
+        this.record(runId, 'adopt.delta', {
+          create: delta.create.length,
+          proposed: delta.proposed,
+          owned: delta.owned.length,
+        });
+        this.record(runId, 'step.ok', {
+          step: 'adopt.plan',
+          data: { create: delta.create, proposed: delta.proposed },
+        });
+      }
       if (isEmptyDelta(delta)) {
         empty = true;
         return;

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { PolicyError, type Clock } from '@incubator/runtime';
+import { PolicyError, sha256Hex, type Clock } from '@incubator/runtime';
 import type { GitIdentity, RepoRef } from '@incubator/git';
 import { completeSpec, type IncubatorSpec } from '@incubator/spec';
 import { PAIRED_PREFIX, render, writeTree, type RenderResult } from '@incubator/templates';
@@ -28,8 +28,10 @@ export function parseGitHubRef(url: string): RepoRef | null {
   return m ? { owner: m[1]!, name: m[2]! } : null;
 }
 
+export const ADOPT_BRANCH_PREFIX = 'incubator/adopt-';
+
 export const adoptBranch = (clock: Clock): string =>
-  `incubator/adopt-${clock.now().toISOString().slice(0, 10).replace(/-/g, '')}`;
+  `${ADOPT_BRANCH_PREFIX}${clock.now().toISOString().slice(0, 10).replace(/-/g, '')}`;
 
 export interface AdoptContext {
   runId: string;
@@ -94,12 +96,30 @@ export class Adopter {
     return { analysis, items, spec };
   }
 
-  async plan(dir: string, spec: IncubatorSpec): Promise<{ result: RenderResult; delta: Delta }> {
+  /**
+   * Renders the spec and plans the delta. On a replay (`prior` is what the first pass journaled) the
+   * planned lists are reused: the workspace may already hold this run's own files, and planning
+   * again would call them "identical" and report the repository as already compliant.
+   */
+  async plan(
+    dir: string,
+    spec: IncubatorSpec,
+    prior?: { create: string[]; proposed: string[] },
+  ): Promise<{ result: RenderResult; delta: Delta }> {
     const result = await render(spec);
+    if (prior)
+      return {
+        result,
+        delta: { create: prior.create, proposed: prior.proposed, identical: [], owned: [] },
+      };
     return { result, delta: planDelta(result, dir) };
   }
 
-  /** Writes only the delta (new files and proposals), commits on the adopt branch and proves it added only. */
+  /**
+   * Writes only the delta (new files and proposals), commits on the adopt branch and proves it added
+   * only. Safe to replay after a crash at any point: a commit that already carries this run's
+   * trailer is verified and adopted instead of being made again (ADR-010, ADR-020).
+   */
   async commit(
     ctx: AdoptContext,
     dir: string,
@@ -109,15 +129,31 @@ export class Adopter {
   ): Promise<string> {
     const done = ctx.steps['adopt.commit'];
     if (done?.status === 'ok') return (done.data as { sha: string }).sha;
-    const base = (await this.deps.git.headSha(dir))!;
-    const keep = new Set([...delta.create, ...delta.proposed]);
+    const head = (await this.deps.git.headSha(dir))!;
+    const branch = await this.deps.git.currentBranch(dir);
+    // The commit landed but its journal entry did not: take it as it is, after re-proving it.
+    if (
+      branch?.startsWith(ADOPT_BRANCH_PREFIX) &&
+      (await this.deps.git.headMessage(dir))?.includes(`Incubator-Run: ${ctx.runId}`)
+    )
+      return this.prove(ctx, dir, `${head}^`, head, branch);
+    // A replay finds this run's own earlier proposals on disk; the writer rightly refuses to touch
+    // them ('wx'), so the ones that are already byte-identical are left out of this pass.
+    const proposals = delta.proposed.filter((p) => {
+      const file = result.files.get(p);
+      const mine = path.join(dir, ...`${p}.incubator-proposed`.split('/'));
+      return !(file && existsSync(mine) && sha256Hex(readFileSync(mine)) === sha256Hex(file.bytes));
+    });
+    const keep = new Set([...delta.create, ...proposals]);
     const subset: RenderResult = {
       ...result,
       files: new Map(
         [...result.files].filter(([p]) => keep.has(p) && !p.startsWith(PAIRED_PREFIX)),
       ),
     };
-    await this.deps.git.checkoutNewBranch(dir, adoptBranch(ctx.clock));
+    const target = adoptBranch(ctx.clock);
+    // The branch may already be checked out if a crash hit between checkout and commit.
+    if (branch !== target) await this.deps.git.checkoutNewBranch(dir, target);
     writeTree(subset, dir, { mode: 'no-overwrite' });
     await this.deps.git.addAll(dir);
     const sha = await this.deps.git.commit(
@@ -125,6 +161,17 @@ export class Adopter {
       `chore: adopt the Incubator canonical pattern\n\n${delta.create.length} file(s) added, ${delta.proposed.length} proposed as *.incubator-proposed.\n\nIncubator-Run: ${ctx.runId}\n`,
       { identity, date: ctx.clock.now().toISOString() },
     );
+    return this.prove(ctx, dir, head, sha, target);
+  }
+
+  /** Proves the commit only adds files, then journals it (with the branch it is on). */
+  private async prove(
+    ctx: AdoptContext,
+    dir: string,
+    base: string,
+    sha: string,
+    branch: string,
+  ): Promise<string> {
     const changes = await this.deps.git.diffNameStatus(dir, base, sha);
     const modified = changes.filter(([st]) => st !== 'A');
     if (modified.length)
@@ -132,7 +179,10 @@ export class Adopter {
         `adopt would modify existing files: ${modified.map(([, p]) => p).join(', ')}`,
         { code: 'adopt_modified' },
       );
-    ctx.record('step.ok', { step: 'adopt.commit', data: { sha, base, added: changes.length } });
+    ctx.record('step.ok', {
+      step: 'adopt.commit',
+      data: { sha, base, added: changes.length, branch },
+    });
     return sha;
   }
 
@@ -148,7 +198,10 @@ export class Adopter {
     const token = await this.deps.resolveToken();
     if (!token) throw new PolicyError('no GitHub token for adopt', { code: 'no_token' });
     const gh = this.deps.github(token.token);
-    const branch = adoptBranch(ctx.clock);
+    // The branch the commit actually landed on: a run resumed after midnight must not rename it.
+    const branch =
+      (ctx.steps['adopt.commit']?.data as { branch?: string } | undefined)?.branch ??
+      adoptBranch(ctx.clock);
     if (ctx.steps['adopt.push']?.status !== 'ok') {
       await this.deps.git.push(dir, gh.remoteUrl(ref), `HEAD:refs/heads/${branch}`, token.token);
       ctx.record('step.ok', { step: 'adopt.push', data: { branch } });

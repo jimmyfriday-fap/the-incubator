@@ -90,6 +90,7 @@ export function faultyGit(inner: GitOps) {
         'remoteSha',
         'clone',
         'checkoutNewBranch',
+        'currentBranch',
         'diffNameStatus',
         'remoteGetUrl',
       ] as const

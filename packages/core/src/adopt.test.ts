@@ -2,7 +2,9 @@ import { cpSync, mkdtempSync, readFileSync, readdirSync, statSync } from 'node:f
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { nodeExec, sha256Hex } from '@incubator/runtime';
+import { ToolError, nodeExec, sha256Hex } from '@incubator/runtime';
+import type { GitHubMethod } from '@incubator/git';
+import type { GitOps } from '@incubator/git';
 import { completeSpec } from '@incubator/spec';
 import { render, writeTree } from '@incubator/templates';
 import { parseGitHubRef } from './adopt.js';
@@ -176,4 +178,67 @@ describe('adopt', () => {
       reason: 'not_git',
     });
   });
+});
+
+describe('adopt resumes after a crash at any step (ADR-010, ADR-020)', () => {
+  const gitPoints = (
+    ['checkoutNewBranch', 'currentBranch', 'addAll', 'commit', 'diffNameStatus', 'push'] as const
+  ).flatMap((m) =>
+    (['before', 'after'] as const).map((when) => ({ kind: 'git' as const, m, when })),
+  );
+  const githubPoints = (['getRepo', 'openPr'] as const).flatMap((m) =>
+    (['before', 'after'] as const).map((when) => ({ kind: 'github' as const, m, when })),
+  );
+
+  it.each([...gitPoints, ...githubPoints])(
+    'one commit, one PR, additions only after a $kind failure $when $m',
+    async ({ kind, m, when }) => {
+      const h = fakePublishEngine();
+      const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+      const before = hashes(dir);
+      if (kind === 'git') h.gitFaults.failAt = { method: m as keyof GitOps, when };
+      else h.github.failAt = { method: m as GitHubMethod, when };
+      const runId = h.engine.start({
+        kind: 'adopt',
+        repo: h.github.remoteUrl(ref),
+        repoRef: ref,
+        yes: true,
+        surface: 'test',
+      });
+      let s = h.engine.state(runId);
+      for (let i = 0; i < 4 && !s.done; i++) {
+        try {
+          s =
+            i === 0
+              ? await h.engine.advance(runId, new DefaultsPrompter())
+              : await h.engine.resume(runId, new DefaultsPrompter());
+        } catch (e) {
+          if (!(e instanceof ToolError)) throw e;
+        }
+        s = h.engine.state(runId);
+      }
+      expect(s.state).toBe('DONE');
+      // Exactly one pull request, even when the crash hit right after GitHub created it.
+      expect(h.github.repos.get('octo/bare-node')!.prs).toHaveLength(1);
+      const bare = path.join(h.github.root, 'octo', 'bare-node.git');
+      const count = await git(
+        ['--git-dir', bare, 'rev-list', '--count', 'main..incubator/adopt-20260501'],
+        dir,
+      );
+      expect(count.stdout.trim()).toBe('1');
+      const diff = await git(
+        ['--git-dir', bare, 'diff', '--name-status', 'main..incubator/adopt-20260501'],
+        dir,
+      );
+      expect(
+        new Set(
+          diff.stdout
+            .trim()
+            .split('\n')
+            .map((l) => l.split('\t')[0]),
+        ),
+      ).toEqual(new Set(['A']));
+      expect(hashes(dir)).toEqual(before);
+    },
+  );
 });

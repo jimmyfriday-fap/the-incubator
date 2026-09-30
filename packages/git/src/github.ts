@@ -257,6 +257,10 @@ export class FakeGitHub implements GitHubAdapter {
   ): Promise<{ number: number; url: string }> {
     return this.call('openPr', [ref, pr], () => {
       const r = this.repo(ref);
+      // why: GitHub answers 422 for a second PR on the same head, and the real adapter then returns
+      // the open one; the fake must do the same or a resume test could never notice a duplicate.
+      const open = r.prs.find((x) => x.head === pr.head);
+      if (open) return { number: open.number, url: `${r.htmlUrl}/pull/${open.number}` };
       const number = r.prs.length + 1;
       r.prs.push({ number, ...pr });
       return { number, url: `${r.htmlUrl}/pull/${number}` };

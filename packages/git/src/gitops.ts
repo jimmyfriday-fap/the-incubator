@@ -36,6 +36,8 @@ export interface GitOps {
   ): Promise<void>;
   /** Creates and checks out a new branch at HEAD. */
   checkoutNewBranch(dir: string, branch: string): Promise<void>;
+  /** The checked-out branch, or null when HEAD is detached or unborn. */
+  currentBranch(dir: string): Promise<string | null>;
   /** `git diff --name-status base..head` as [status, path] pairs. */
   diffNameStatus(dir: string, base: string, head: string): Promise<[string, string][]>;
   /** The URL of a remote, or null. */
@@ -123,6 +125,10 @@ export function createGitOps(exec: Exec): GitOps {
     },
     async checkoutNewBranch(dir, branch) {
       await git(['checkout', '-q', '-b', branch], { cwd: dir });
+    },
+    async currentBranch(dir) {
+      const r = await git(['symbolic-ref', '--short', '-q', 'HEAD'], { cwd: dir, allowFail: true });
+      return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : null;
     },
     async diffNameStatus(dir, base, head) {
       const r = await git(['diff', '--name-status', '--no-renames', `${base}..${head}`], {

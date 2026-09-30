@@ -14,6 +14,20 @@ const ident = {
 const tmp = (p: string) => mkdtempSync(path.join(os.tmpdir(), p));
 
 describe('GitOps', () => {
+  it('reports the checked-out branch, and null when HEAD is unborn or detached', async () => {
+    const dir = tmp('gitops-branch-');
+    await git.init(dir, 'trunk');
+    expect(await git.currentBranch(dir)).toBe('trunk');
+    writeFileSync(path.join(dir, 'a.txt'), 'hello\n');
+    await git.addAll(dir);
+    const sha = await git.commit(dir, 'chore: one', ident);
+    await git.checkoutNewBranch(dir, 'incubator/adopt-20260501');
+    expect(await git.currentBranch(dir)).toBe('incubator/adopt-20260501');
+    await nodeExec.run('git', ['checkout', '-q', '--detach', sha], { cwd: dir, timeoutMs: 10_000 });
+    expect(await git.currentBranch(dir)).toBeNull();
+    expect(await git.currentBranch(tmp('gitops-notgit-'))).toBeNull();
+  });
+
   it('commits deterministically, marks executables and pushes to a bare remote', async () => {
     const gh = new FakeGitHub(nodeExec);
     const ref = { owner: 'octo', name: 'app' };
