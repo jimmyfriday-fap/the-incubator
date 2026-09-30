@@ -291,7 +291,8 @@ describe('publish, handoff, auth, gc', () => {
     const runId = /incubator handoff (\S+) --launch/.exec(err)![1]!;
     const printed = io();
     expect(await main(['handoff', runId], printed.io, factory)).toBe(0);
-    expect(printed.out.join('')).toContain('fake-agent.mjs -p --output-format stream-json');
+    // The printed command double-quotes any path with a space, so the closing quote is optional.
+    expect(printed.out.join('')).toMatch(/fake-agent\.mjs"? -p --output-format stream-json/);
     expect(printed.err.join('')).toContain('ticket      F-counter');
     process.env['FAKE_AGENT_MODE'] = 'complete';
     const launched = io();
