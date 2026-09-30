@@ -1,0 +1,27 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "a lane the enhance prompt forbids",
+  "response": {
+    "draftSpec": {
+      "intent": {
+        "coreFeatures": [
+          {
+            "id": "harden",
+            "summary": "Harden it",
+            "lane": "security"
+          }
+        ]
+      },
+      "decisions": [
+        {
+          "key": "intent.coreFeatures",
+          "question": "Scope",
+          "answer": "hardening",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [],
+    "done": true
+  }
+}

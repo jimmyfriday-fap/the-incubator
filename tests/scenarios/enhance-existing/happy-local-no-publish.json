@@ -1,0 +1,76 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "happy-local-no-publish",
+  "feature": "enhance-existing",
+  "title": "A request becomes a plan, ticket and design brief on a local branch",
+  "tags": ["happy"],
+  "seed": {
+    "fixtures": "export-orders",
+    "repo": "bare-node"
+  },
+  "context": {},
+  "mocks": {
+    "ai": ["packages/core/fixtures/enhance/export-orders"]
+  },
+  "stages": [
+    {
+      "name": "enhance",
+      "input": {
+        "request": "Kitchen staff need to export the orders list as a CSV file at the end of the day.",
+        "noPublish": true
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "DONE"
+        },
+        {
+          "path": "exitCode",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "noop",
+          "op": "eq",
+          "value": null
+        },
+        {
+          "path": "prs",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "features",
+          "op": "eq",
+          "value": ["export-orders"]
+        },
+        {
+          "path": "files",
+          "op": "contains",
+          "value": "docs/plans/001-enhance-20260501.md"
+        },
+        {
+          "path": "files",
+          "op": "contains",
+          "value": ".incubator/tickets/E-export-orders.json"
+        },
+        {
+          "path": "files",
+          "op": "contains",
+          "value": ".incubator/enhance/20260501/design-export-orders.md"
+        },
+        {
+          "path": "planLint",
+          "op": "length",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

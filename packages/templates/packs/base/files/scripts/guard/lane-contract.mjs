@@ -6,6 +6,14 @@ import path from 'node:path';
 import { isMain, readJson, readText, report, runGuard } from './lib/common.mjs';
 import { VERDICTS, parseEnrichOutput } from './lib/enrich-contract.mjs';
 
+const DESIGN_HEADINGS = [
+  '## Approach',
+  '## Files to change',
+  '## New files',
+  '## Risks',
+  '## Open questions',
+];
+
 export function checkLanes(root) {
   const { lanes } = readJson(root, '.incubator/lanes/index.json');
   const findings = [];
@@ -37,6 +45,19 @@ export function checkLanes(root) {
     const codegen = readText(root, `${dir}/codegen.md`);
     if (codegen !== null && !/Step/.test(codegen))
       findings.push(`${dir}/codegen.md: must consume the enrich steps`);
+    // Enhancement lanes run a design stage before enrichment (agent profile: design_lanes).
+    if (lane.startsWith('enhancement/')) {
+      const design = readText(root, `${dir}/design.md`);
+      if (design === null)
+        findings.push(`${dir}/design.md: missing (enhancement lanes design first)`);
+      else {
+        if (!design.includes('{{TICKET_ID}}'))
+          findings.push(`${dir}/design.md: does not take the ticket as input`);
+        for (const heading of DESIGN_HEADINGS)
+          if (!design.includes(heading))
+            findings.push(`${dir}/design.md: does not instruct the ${heading} heading`);
+      }
+    }
   }
   return findings;
 }

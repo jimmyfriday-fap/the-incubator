@@ -215,6 +215,20 @@ describe('enrich contract and lanes', () => {
     expect(out).toMatch(/VERDICT/);
     expect(out).toMatch(/enrich-example/);
   });
+  it('requires a design stage for enhancement lanes, with its headings', () => {
+    const lane = (design) =>
+      repo({
+        '.incubator/lanes/index.json': JSON.stringify({ lanes: ['enhancement/existing'] }),
+        '.incubator/lanes/enhancement/existing/enrich.md': 'VERDICT:',
+        '.incubator/lanes/enhancement/existing/codegen.md': 'Step',
+        ...(design === null ? {} : { '.incubator/lanes/enhancement/existing/design.md': design }),
+      });
+    expect(checkLanes(lane(null)).join('\n')).toMatch(/design\.md: missing/);
+    const partial = checkLanes(lane('{{TICKET_ID}}\n## Approach\n')).join('\n');
+    expect(partial).toMatch(/## Files to change/);
+    expect(partial).not.toMatch(/## Approach/);
+    expect(checkLanes(lane('no inputs here')).join('\n')).toMatch(/does not take the ticket/);
+  });
 });
 
 describe('workflow-lint', () => {

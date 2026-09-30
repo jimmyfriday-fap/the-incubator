@@ -1,0 +1,50 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-empty-request",
+  "feature": "enhance-existing",
+  "title": "Without a change request the run parks instead of guessing",
+  "tags": ["validation"],
+  "seed": {
+    "fixtures": "export-orders",
+    "repo": "bare-node"
+  },
+  "context": {},
+  "mocks": {
+    "ai": ["packages/core/fixtures/enhance/export-orders"]
+  },
+  "stages": [
+    {
+      "name": "enhance",
+      "input": {
+        "yes": false
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "PARKED"
+        },
+        {
+          "path": "exitCode",
+          "op": "eq",
+          "value": 2
+        },
+        {
+          "path": "parkedReason",
+          "op": "eq",
+          "value": "needs_request"
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "prs",
+          "op": "eq",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

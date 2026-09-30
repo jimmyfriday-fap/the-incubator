@@ -165,57 +165,74 @@ export class Adopter {
   }
 
   /** Proves the commit only adds files, then journals it (with the branch it is on). */
-  private async prove(
+  private prove(
     ctx: AdoptContext,
     dir: string,
     base: string,
     sha: string,
     branch: string,
   ): Promise<string> {
-    const changes = await this.deps.git.diffNameStatus(dir, base, sha);
-    const modified = changes.filter(([st]) => st !== 'A');
-    if (modified.length)
-      throw new PolicyError(
-        `adopt would modify existing files: ${modified.map(([, p]) => p).join(', ')}`,
-        { code: 'adopt_modified' },
-      );
-    ctx.record('step.ok', {
-      step: 'adopt.commit',
-      data: { sha, base, added: changes.length, branch },
-    });
-    return sha;
+    return proveAdditions(this.deps, ctx, { dir, base, sha, branch, step: 'adopt.commit' });
   }
 
+  /** Pushes the run's branch and opens the pull request; replay-safe at both steps. */
   async publish(
     ctx: AdoptContext,
     dir: string,
     ref: RepoRef,
     body: string,
     defaultBranch?: string,
+    opts: { prefix?: string; commitStep?: string; title?: string; fallbackBranch?: string } = {},
   ): Promise<{ number: number; url: string }> {
-    const done = ctx.steps['adopt.pr'];
+    const prefix = opts.prefix ?? 'adopt';
+    const done = ctx.steps[`${prefix}.pr`];
     if (done?.status === 'ok') return done.data as { number: number; url: string };
     const token = await this.deps.resolveToken();
-    if (!token) throw new PolicyError('no GitHub token for adopt', { code: 'no_token' });
+    if (!token) throw new PolicyError(`no GitHub token for ${prefix}`, { code: 'no_token' });
     const gh = this.deps.github(token.token);
     // The branch the commit actually landed on: a run resumed after midnight must not rename it.
     const branch =
-      (ctx.steps['adopt.commit']?.data as { branch?: string } | undefined)?.branch ??
+      (ctx.steps[opts.commitStep ?? 'adopt.commit']?.data as { branch?: string } | undefined)
+        ?.branch ??
+      opts.fallbackBranch ??
       adoptBranch(ctx.clock);
-    if (ctx.steps['adopt.push']?.status !== 'ok') {
+    if (ctx.steps[`${prefix}.push`]?.status !== 'ok') {
       await this.deps.git.push(dir, gh.remoteUrl(ref), `HEAD:refs/heads/${branch}`, token.token);
-      ctx.record('step.ok', { step: 'adopt.push', data: { branch } });
+      ctx.record('step.ok', { step: `${prefix}.push`, data: { branch } });
     }
     const base = defaultBranch ?? (await gh.getRepo(ref))?.defaultBranch ?? 'main';
     const pr = await gh.openPr(ref, {
       head: branch,
       base,
-      title: 'Adopt the Incubator canonical pattern',
+      title: opts.title ?? 'Adopt the Incubator canonical pattern',
       body,
     });
-    ctx.record('step.ok', { step: 'adopt.pr', data: pr });
+    ctx.record('step.ok', { step: `${prefix}.pr`, data: pr });
     return pr;
   }
+}
+
+/**
+ * Proves a commit only adds files (Brief §9: no existing file is ever modified), then journals it
+ * under `step` together with the branch it is on. Shared by adopt and enhance.
+ */
+export async function proveAdditions(
+  deps: Pick<PublishDeps, 'git'>,
+  ctx: AdoptContext,
+  c: { dir: string; base: string; sha: string; branch: string; step: string },
+): Promise<string> {
+  const changes = await deps.git.diffNameStatus(c.dir, c.base, c.sha);
+  const modified = changes.filter(([st]) => st !== 'A');
+  if (modified.length)
+    throw new PolicyError(
+      `${c.step.split('.')[0]} would modify existing files: ${modified.map(([, p]) => p).join(', ')}`,
+      { code: 'adopt_modified' },
+    );
+  ctx.record('step.ok', {
+    step: c.step,
+    data: { sha: c.sha, base: c.base, added: changes.length, branch: c.branch },
+  });
+  return c.sha;
 }
 
 export interface AdoptReport {

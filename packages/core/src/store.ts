@@ -14,7 +14,7 @@ import { serializeSpec } from '@incubator/spec';
 import { Journal } from './journal.js';
 
 export interface RunInput {
-  kind: 'new' | 'adopt' | 'scaffold';
+  kind: 'new' | 'adopt' | 'enhance' | 'scaffold';
   narrative?: string;
   repo?: string;
   specOnly?: boolean;
@@ -28,8 +28,12 @@ export interface RunInput {
   /** adopt: the GitHub repository to open the PR against when `repo` is not a GitHub URL. */
   repoRef?: { owner: string; name: string };
   ownerType?: 'user' | 'org';
-  /** adopt: stop after writing the branch locally (no push, no PR). */
+  /** adopt and enhance: stop after writing the branch locally (no push, no PR). */
   noPublish?: boolean;
+  /** enhance: what the owner wants to change (asked for at REQUEST when absent). */
+  request?: string;
+  /** enhance: also deliver the canonical-pattern gaps, as a separate commit. */
+  withGaps?: boolean;
 }
 
 /** `~/.incubator` layout (TDD §2.5): config.json, runs/<id>/{run.json,journal.jsonl,spec/,workspace/,logs/}, cache/. */

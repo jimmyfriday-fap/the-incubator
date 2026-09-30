@@ -28,6 +28,9 @@ export function allowedValues(): string[] {
 export interface TurnContext {
   round: number;
   narrative: string;
+  /** Heading for the narrative: "Change request" on enhance runs. */
+  narrativeHeading?: string;
+  /** A ready-made fenced digest (a string, used as is), a value to print as JSON, or nothing. */
   analysis: unknown;
   draft: Record<string, unknown>;
   decisions: readonly Decision[];
@@ -40,13 +43,15 @@ export function buildUserPrompt(ctx: TurnContext): string {
   const lines = [
     `# Discovery round ${ctx.round} of ${MAX_ROUNDS}`,
     '',
-    '## Narrative',
+    `## ${ctx.narrativeHeading ?? 'Narrative'}`,
     ctx.narrative.trim() || '(none)',
     '',
     '## Repository analysis',
     ctx.analysis === undefined || ctx.analysis === null
       ? '(none)'
-      : `\`\`\`json\n${JSON.stringify(ctx.analysis, null, 2)}\n\`\`\``,
+      : typeof ctx.analysis === 'string'
+        ? ctx.analysis
+        : `\`\`\`json\n${JSON.stringify(ctx.analysis, null, 2)}\n\`\`\``,
     '',
     '## Current draft incubator.json (without decisions)',
     `\`\`\`json\n${JSON.stringify(draft, null, 2)}\n\`\`\``,

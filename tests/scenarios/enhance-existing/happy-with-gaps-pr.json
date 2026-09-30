@@ -1,0 +1,51 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "happy-with-gaps-pr",
+  "feature": "enhance-existing",
+  "title": "Canonical gaps ride in a second, separately reviewable commit of the same pull request",
+  "tags": ["happy"],
+  "seed": {
+    "fixtures": "export-orders",
+    "repo": "bare-node"
+  },
+  "context": {},
+  "mocks": {
+    "ai": ["packages/core/fixtures/enhance/export-orders"]
+  },
+  "stages": [
+    {
+      "name": "enhance",
+      "input": {
+        "request": "Kitchen staff need to export the orders list as a CSV file at the end of the day.",
+        "withGaps": true
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "DONE"
+        },
+        {
+          "path": "prs",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 2
+        },
+        {
+          "path": "files",
+          "op": "contains",
+          "value": "CLAUDE.md"
+        },
+        {
+          "path": "files",
+          "op": "contains",
+          "value": "docs/plans/001-enhance-20260501.md"
+        }
+      ]
+    }
+  ]
+}

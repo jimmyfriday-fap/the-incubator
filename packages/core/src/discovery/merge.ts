@@ -14,7 +14,7 @@ import { coerceAnswer } from './questions.js';
 
 export type Draft = Record<string, unknown> & { decisions?: Decision[] };
 
-function withoutMeta(draft: Draft): Record<string, unknown> {
+export function withoutMeta(draft: Draft): Record<string, unknown> {
   const { decisions: _d, ...rest } = draft;
   const intent = rest['intent'] as Record<string, unknown> | undefined;
   if (intent) {

@@ -75,6 +75,13 @@
       "when": "lane in ['security', 'infra', 'support/existing']"
     },
     {
+      "src": "files/.incubator/lanes/lane/design.md.eta",
+      "dest": ".incubator/lanes/<%= it.lane %>/design.md",
+      "each": "lanes.workLanes",
+      "as": "lane",
+      "when": "lane in ['enhancement/existing', 'enhancement/new']"
+    },
+    {
       "src": "files/.incubator/tickets/ticket.json.eta",
       "dest": ".incubator/tickets/F-<%= it.feature.id %>.json",
       "each": "spec.intent.coreFeatures",

@@ -1,0 +1,50 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "fault-crash-after-pr",
+  "feature": "enhance-existing",
+  "title": "A crash right after GitHub created the pull request does not open a second one",
+  "tags": ["fault"],
+  "seed": {
+    "fixtures": "export-orders",
+    "repo": "bare-node"
+  },
+  "context": {},
+  "mocks": {
+    "ai": ["packages/core/fixtures/enhance/export-orders"]
+  },
+  "stages": [
+    {
+      "name": "enhance",
+      "input": {
+        "request": "Kitchen staff need to export the orders list as a CSV file at the end of the day.",
+        "crash": {
+          "kind": "github",
+          "method": "openPr",
+          "when": "after"
+        }
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "DONE"
+        },
+        {
+          "path": "resumes",
+          "op": "gte",
+          "value": 1
+        },
+        {
+          "path": "prs",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 1
+        }
+      ]
+    }
+  ]
+}

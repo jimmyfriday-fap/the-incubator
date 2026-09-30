@@ -1,0 +1,55 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-noop-nothing-to-change",
+  "feature": "enhance-existing",
+  "title": "A request that yields no enhancement says so and changes nothing",
+  "tags": ["validation"],
+  "seed": {
+    "fixtures": "no-features",
+    "repo": "bare-node"
+  },
+  "context": {},
+  "mocks": {
+    "ai": ["packages/core/fixtures/enhance/no-features"]
+  },
+  "stages": [
+    {
+      "name": "enhance",
+      "input": {
+        "request": "Kitchen staff need to export the orders list as a CSV file at the end of the day."
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "DONE"
+        },
+        {
+          "path": "exitCode",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "noop",
+          "op": "eq",
+          "value": "no_features"
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "prs",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "files",
+          "op": "length",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

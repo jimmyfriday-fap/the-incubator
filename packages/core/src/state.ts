@@ -5,6 +5,7 @@ import type { RunInput } from './store.js';
 export const RUN_STATES = [
   'INTAKE',
   'ANALYZE',
+  'REQUEST',
   'DRAFT_SPEC',
   'CLARIFY',
   'REVIEW',

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   InterruptedError,
@@ -39,7 +39,36 @@ import { Publisher, type PublishDeps, type PublishSummary, type StepContext } fr
 import { scaffoldSpec } from './scaffold.js';
 import { Adopter, adoptReport, isEmptyDelta, writeReport, type AdoptContext } from './adopt.js';
 import { PreviewCache, type Preview } from './preview.js';
-import { analyze, gapReport, summarizeGaps, viewFromDir } from '@incubator/analyzer';
+import {
+  analyze,
+  coverageLines,
+  deepScan,
+  gapReport,
+  planDelta,
+  renderGapReport,
+  renderScanReport,
+  scanDigest,
+  scanHash,
+  summarizeGaps,
+  viewFromDir,
+  type RepoScan,
+} from '@incubator/analyzer';
+import { render, type RenderResult } from '@incubator/templates';
+import {
+  Enhancer,
+  buildDelivery,
+  enhanceBranch,
+  enhanceDate,
+  featureIssues,
+  nextPlanNumber,
+  outsideIntentIssues,
+  partStep,
+  renderPrBody,
+  resolveTargets,
+  sanitizeRequest,
+  ticketId,
+  type EnhancePlanRecord,
+} from './enhance.js';
 import {
   AGENT_ADAPTERS,
   activeTicket,
@@ -176,6 +205,8 @@ export class Engine {
     try {
       await fn();
     } catch (e) {
+      // A ParkError is already a PolicyError; wrapping it again would replace its reason and evidence.
+      if (e instanceof ParkError) throw e;
       if (e instanceof PolicyError)
         throw new ParkError((e as PolicyError & { code?: string }).code ?? 'policy', e.message);
       throw e;
@@ -186,6 +217,12 @@ export class Engine {
   private adopter(): Adopter {
     if (!this.deps.publish) throw new ToolError('adopt needs git and GitHub dependencies');
     return (this.#adopter ??= new Adopter(this.deps.publish));
+  }
+
+  #enhancer: Enhancer | undefined;
+  private enhancer(): Enhancer {
+    if (!this.deps.publish) throw new ToolError('enhance needs git and GitHub dependencies');
+    return (this.#enhancer ??= new Enhancer(this.deps.publish));
   }
 
   private adoptContext(runId: string): AdoptContext {
@@ -202,6 +239,7 @@ export class Engine {
 
   /** ANALYZE (brownfield): acquire a copy, run the detectors, draft the spec, then REVIEW. */
   private async analyzeStep(runId: string, s: RunState): Promise<void> {
+    if (s.input.kind === 'enhance') return this.enhanceAnalyzeStep(runId, s);
     await this.effect(runId, async () => {
       const a = this.adopter();
       const got = await a.acquire(this.adoptContext(runId), s.input.repo!, s.input.repoRef);
@@ -321,8 +359,287 @@ export class Engine {
     };
   }
 
+  // --- enhance (TDD §7.4, ADR-020) ---------------------------------------------------------------
+
+  private enhanceFile(runId: string, name: string): string {
+    return path.join(this.deps.store.runDir(runId), 'enhance', name);
+  }
+
+  /** The scan the run saved at ANALYZE; later steps read it instead of re-scanning a tree they edited. */
+  private readScan(runId: string): RepoScan {
+    return JSON.parse(readFileSync(this.enhanceFile(runId, 'scan.json'), 'utf8')) as RepoScan;
+  }
+
+  /** Feature ids the repository's own incubator.json already had: not new requests. */
+  private enhanceBaseline(runId: string): string[] {
+    const e = this.entries(runId).findLast((x) => x.type === 'enhance.scan');
+    return (e?.['baseline'] as string[] | undefined) ?? [];
+  }
+
+  /** The owner's change request: a submitted one wins over the one given at start. */
+  requestText(runId: string): string {
+    const submitted = this.entries(runId).findLast((e) => e.type === 'enhance.request');
+    return sanitizeRequest(
+      typeof submitted?.['text'] === 'string'
+        ? submitted['text']
+        : (this.state(runId).input.request ?? ''),
+    );
+  }
+
+  /** The web and desktop "What do you want to change?" step; resume the run afterwards. */
+  submitRequest(runId: string, text: string): void {
+    const s = this.state(runId);
+    if (s.input.kind !== 'enhance' || (s.state !== 'REQUEST' && s.parked?.state !== 'REQUEST'))
+      throw new PolicyError(`run ${runId} is not waiting for a change request`, {
+        code: 'not_waiting',
+      });
+    const clean = sanitizeRequest(text);
+    if (!clean)
+      throw new PolicyError('describe what you want to change', { code: 'empty_request' });
+    this.record(runId, 'enhance.request', { text: clean });
+  }
+
+  /** ANALYZE (enhance): acquire a copy, scan the whole repository, draft from the detectors, then REQUEST. */
+  private async enhanceAnalyzeStep(runId: string, s: RunState): Promise<void> {
+    await this.effect(runId, async () => {
+      const a = this.adopter();
+      const got = await a.acquire(this.adoptContext(runId), s.input.repo!, s.input.repoRef);
+      const repoName =
+        got.ref?.name ?? path.basename(path.resolve(s.input.repo!)).replace(/\.git$/, '');
+      const owner = { type: s.input.ownerType ?? 'user', login: got.ref?.owner ?? '' } as const;
+      let inspected: ReturnType<Adopter['inspect']>;
+      try {
+        inspected = a.inspect(got.dir, owner, repoName);
+      } catch (e) {
+        if (e instanceof Error && e.message.startsWith('no supported stack'))
+          throw new ParkError('no_stack', e.message);
+        throw e;
+      }
+      const { spec, items } = inspected;
+      const issues = [
+        ...validateSpec(spec).issues,
+        ...(validateSpec(spec).ok ? validateSemantics(spec) : []),
+      ];
+      if (issues.length)
+        throw new ParkError(
+          'spec_invalid',
+          `the inferred spec is invalid (${issues.length} issue(s))`,
+          { issues },
+        );
+      const scan = deepScan(viewFromDir(got.dir));
+      mkdirSync(path.dirname(this.enhanceFile(runId, 'x')), { recursive: true });
+      writeFileSync(this.enhanceFile(runId, 'scan.json'), `${JSON.stringify(scan)}\n`);
+      writeFileSync(this.enhanceFile(runId, 'scan-report.md'), renderScanReport(scan));
+      this.record(runId, 'enhance.scan', {
+        hash: scanHash(scan),
+        scanned: scan.coverage.scanned,
+        total: scan.coverage.total,
+        totalIsLowerBound: scan.coverage.totalIsLowerBound,
+        baseline: spec.intent.coreFeatures.map((f) => f.id),
+        gaps: summarizeGaps(items),
+      });
+      this.writeRevision(runId, spec as unknown as Draft, {
+        inferred: true,
+        hash: specHash(spec),
+      });
+    });
+    this.enter(runId, 'REQUEST');
+  }
+
+  /** REQUEST: the owner says what to change; without it the run parks for the UI or CLI to answer. */
+  private requestStep(runId: string): void {
+    if (!this.requestText(runId))
+      throw new ParkError(
+        'needs_request',
+        'describe what you want to change (incubator enhance --prompt, or the "What do you want to change?" step)',
+      );
+    this.enter(runId, 'DRAFT_SPEC', 1);
+  }
+
+  /**
+   * SCAFFOLD (enhance): pins the plan before the first write, then commits the delivery (and, when
+   * asked for, the canonical gaps as a second commit). Nothing to deliver ends the run as a no-op.
+   */
+  private async enhanceScaffoldStep(runId: string): Promise<void> {
+    const s = this.state(runId);
+    const spec = this.approvedSpec(runId);
+    const ctx = this.adoptContext(runId);
+    const dir = path.join(ctx.workspace, 'repo');
+    const baseline = this.enhanceBaseline(runId);
+    const features = spec.intent.coreFeatures.filter((f) => !baseline.includes(f.id));
+    let noop: string | null = null;
+    await this.effect(runId, async () => {
+      const prior = ctx.steps['enhance.plan']?.data as EnhancePlanRecord | undefined;
+      if (!prior && features.length === 0) {
+        noop = 'no_features';
+        return;
+      }
+      const scan = this.readScan(runId);
+      const base = await render({ ...spec, intent: { ...spec.intent, coreFeatures: [] } });
+      const date = prior?.date ?? enhanceDate(this.deps.clock);
+      // Same day, same plan file: a re-run on a repository that already has this run's plan is a
+      // no-op rather than a second numbered plan.
+      const repoFiles = viewFromDir(dir).files;
+      const sameDay = repoFiles.find((f) =>
+        new RegExp(`^docs/plans/\\d{3}-enhance-${date}\\.md$`).test(f),
+      );
+      const planPath =
+        prior?.planPath ?? sameDay ?? `docs/plans/${nextPlanNumber(repoFiles)}-enhance-${date}.md`;
+      const targets = Object.fromEntries(features.map((f) => [f.id, resolveTargets(scan, f)]));
+      const files = buildDelivery({
+        spec,
+        specHash: specHash(spec),
+        request: this.requestText(runId),
+        scan,
+        scanReport: readFileSync(this.enhanceFile(runId, 'scan-report.md'), 'utf8'),
+        date,
+        planPath,
+        features,
+        targets,
+        base,
+      });
+      const delivery: RenderResult = { ...base, files };
+      let plan = prior;
+      if (!plan) {
+        const d = planDelta(delivery, dir);
+        let gaps: EnhancePlanRecord['gaps'] = null;
+        if (s.input.withGaps) {
+          const view = viewFromDir(dir);
+          const gd = planDelta(base, dir);
+          const mine = (p: string): boolean => !files.has(p);
+          const create = gd.create.filter(mine);
+          const proposed = gd.proposed.filter(mine);
+          const analysis = analyze(view);
+          writeFileSync(
+            this.enhanceFile(runId, 'gaps-report.md'),
+            renderGapReport(analysis, gapReport(view, spec.stack.pack), {
+              ...gd,
+              create,
+              proposed,
+            }),
+          );
+          if (create.length || proposed.length) gaps = { create, proposed };
+        }
+        // The scan report describes the repository as it is now, so it always differs from the one
+        // a previous delivery committed; it alone is never a reason to deliver again.
+        const scanReport = `.incubator/enhance/${date}/scan-report.md`;
+        const meaningful = [...d.create, ...d.proposed].filter((p) => p !== scanReport);
+        if (meaningful.length === 0 && !gaps) {
+          noop = 'already_delivered';
+          return;
+        }
+        plan = {
+          date,
+          planPath,
+          specHash: specHash(spec),
+          create: d.create,
+          proposed: d.proposed,
+          gaps,
+          features: features.map((f) => ({ id: f.id, lane: f.lane, targets: targets[f.id] ?? [] })),
+        };
+        this.record(runId, 'step.ok', { step: 'enhance.plan', data: plan });
+      }
+      const identity = (await this.deps.publish?.identity?.()) ?? {
+        name: 'Incubator',
+        email: 'incubator@users.noreply.github.com',
+      };
+      const e = this.enhancer();
+      await e.commitPart(
+        ctx,
+        dir,
+        'enhance',
+        delivery,
+        plan,
+        identity,
+        `chore: add the enhancement plan for ${features.length} request(s)\n\n${plan.create.length} file(s) added, ${plan.proposed.length} proposed as *.incubator-proposed.`,
+      );
+      if (plan.gaps)
+        await e.commitPart(
+          ctx,
+          dir,
+          'gaps',
+          base,
+          plan.gaps,
+          identity,
+          `chore: adopt the Incubator canonical pattern (optional)\n\n${plan.gaps.create.length} file(s) added, ${plan.gaps.proposed.length} proposed as *.incubator-proposed.`,
+        );
+    });
+    if (noop) {
+      this.record(runId, 'step.ok', { step: 'enhance.noop', data: { reason: noop } });
+      this.record(runId, 'run.done', { noop: true, reason: noop });
+    } else if (s.input.noPublish) this.record(runId, 'run.done', { local: dir });
+    else this.enter(runId, 'PUBLISH');
+  }
+
+  private async enhancePublishStep(runId: string): Promise<void> {
+    const ctx = this.adoptContext(runId);
+    const spec = this.approvedSpec(runId);
+    const ref = (
+      ctx.steps['adopt.acquire']?.data as
+        { ref: { owner: string; name: string } | null } | undefined
+    )?.ref;
+    await this.effect(runId, async () => {
+      if (!ref)
+        throw new PolicyError(
+          'the repository has no GitHub origin to open a pull request against',
+          { code: 'no_github_origin' },
+        );
+      const plan = ctx.steps['enhance.plan']!.data as EnhancePlanRecord;
+      const gapsFile = this.enhanceFile(runId, 'gaps-report.md');
+      const gapsSha = (ctx.steps[partStep('gaps')]?.data as { sha?: string } | undefined)?.sha;
+      const body = renderPrBody({
+        project: spec.project.name,
+        request: this.requestText(runId),
+        coverage: coverageLines(this.readScan(runId).coverage).join('\n\n'),
+        plan,
+        gapsMarkdown: plan.gaps && existsSync(gapsFile) ? readFileSync(gapsFile, 'utf8') : null,
+        gapsSha: gapsSha ?? null,
+      });
+      const pr = await this.adopter().publish(
+        ctx,
+        path.join(ctx.workspace, 'repo'),
+        ref,
+        body,
+        undefined,
+        {
+          prefix: 'enhance',
+          commitStep: partStep('enhance'),
+          title: `Enhancement plan: ${spec.project.name}`,
+          fallbackBranch: enhanceBranch(this.deps.clock),
+        },
+      );
+      this.record(runId, 'enhance.summary', {
+        pr,
+        repo: `https://github.com/${ref.owner}/${ref.name}`,
+      });
+    });
+    this.enter(runId, 'HANDOFF');
+  }
+
+  /** The enhance outcome: nothing to change, the local branch, or the pull request. */
+  enhanceSummary(runId: string): {
+    noop: string | null;
+    pr?: { number: number; url: string };
+    plan: EnhancePlanRecord | null;
+    scanReport: string | null;
+  } {
+    const entries = this.entries(runId);
+    const pr = entries.findLast((e) => e.type === 'enhance.summary')?.['pr'] as
+      { number: number; url: string } | undefined;
+    const done = entries.findLast((e) => e.type === 'run.done');
+    const plan = this.state(runId).steps['enhance.plan']?.data as EnhancePlanRecord | undefined;
+    const report = this.enhanceFile(runId, 'scan-report.md');
+    return {
+      noop: done?.['noop'] === true ? String(done['reason']) : null,
+      ...(pr ? { pr } : {}),
+      plan: plan ?? null,
+      scanReport: existsSync(report) ? readFileSync(report, 'utf8') : null,
+    };
+  }
+
   private async scaffoldStep(runId: string, s: RunState): Promise<void> {
     if (s.input.kind === 'adopt') return this.adoptScaffoldStep(runId);
+    if (s.input.kind === 'enhance') return this.enhanceScaffoldStep(runId);
     const spec = this.approvedSpec(runId);
     if (s.input.out) {
       const r = await scaffoldSpec(spec, { out: s.input.out });
@@ -372,14 +689,20 @@ export class Engine {
         throw new PolicyError(`no ${spec.tracker.type} tracker is configured`, {
           code: 'no_tracker',
         });
-      for (const f of tracker ? spec.intent.coreFeatures : []) {
-        const step = `handoff.ticket.F-${f.id}`;
+      // Enhance runs sync only their own requests (E-<id>); new projects sync every feature (F-<id>).
+      const plan = this.state(runId).steps['enhance.plan']?.data as EnhancePlanRecord | undefined;
+      const enhance = this.state(runId).input.kind === 'enhance';
+      const mine = new Set(plan?.features.map((x) => x.id) ?? []);
+      const list = spec.intent.coreFeatures.filter((f) => !enhance || mine.has(f.id));
+      for (const f of tracker ? list : []) {
+        const id = enhance ? ticketId(f) : `F-${f.id}`;
+        const step = `handoff.ticket.${id}`;
         if (this.state(runId).steps[step]?.status === 'ok') continue;
         const r = await tracker!.ensureTicket({
-          id: `F-${f.id}`,
+          id,
           title: f.summary,
           lane: f.lane,
-          description: `${f.summary}\n\nPlan: docs/plans/000-bootstrap.md (${spec.project.slug})`,
+          description: `${f.summary}\n\nPlan: ${plan?.planPath ?? 'docs/plans/000-bootstrap.md'} (${spec.project.slug})`,
         });
         this.record(runId, 'step.ok', { step, data: r });
       }
@@ -407,7 +730,15 @@ export class Engine {
       });
     if (!this.deps.handoff) throw new ToolError('handoff is not configured for this engine');
     const spec = this.approvedSpec(runId);
-    let repo = s.input.out;
+    const enhance = s.input.kind === 'enhance';
+    const delivered = enhance
+      ? (s.steps['enhance.plan']?.data as EnhancePlanRecord | undefined)
+      : undefined;
+    if (enhance && !delivered)
+      throw new PolicyError(`run ${runId} delivered nothing to hand off`, { code: 'no_plan' });
+    let repo = enhance
+      ? path.join(this.deps.store.runDir(runId), 'workspace', 'repo')
+      : s.input.out;
     if (!repo) {
       const summary = this.publishSummary(runId);
       if (!summary)
@@ -441,7 +772,9 @@ export class Engine {
       minutes: c.minutes > 0 ? c.minutes : 45,
       usd: c.usd > 0 ? c.usd : 10,
     };
-    const planPath = path.join(repo, 'docs', 'plans', '000-bootstrap.md');
+    const planPath = delivered
+      ? path.join(repo, ...delivered.planPath.split('/'))
+      : path.join(repo, 'docs', 'plans', '000-bootstrap.md');
     if (!existsSync(planPath))
       throw new PolicyError(`no executor plan at ${planPath}`, { code: 'no_plan' });
     const plan: HandoffPlan = {
@@ -456,7 +789,7 @@ export class Engine {
     return {
       plan,
       prompt: handoffPrompt(readFileSync(planPath, 'utf8')),
-      ticket: activeTicket(repo, spec),
+      ticket: activeTicket(repo, spec, delivered?.features.map(ticketId)),
     };
   }
 
@@ -510,7 +843,7 @@ export class Engine {
   /** The tree the run's complete spec renders to (with adopt delta statuses), or null before REVIEW. */
   async preview(runId: string): Promise<Preview | null> {
     const spec = this.finalSpec(runId);
-    if (!spec) return null;
+    if (!spec || this.state(runId).input.kind === 'enhance') return null;
     const adopt = this.state(runId).input.kind === 'adopt';
     return this.#previews.preview(
       spec,
@@ -545,13 +878,16 @@ export class Engine {
       'discovery',
       s.input.adapter as LlmAdapterId | undefined,
     );
-    const prompt = loadPrompt('discovery');
+    const enhance = s.input.kind === 'enhance';
+    const prompt = loadPrompt(enhance ? 'enhance' : 'discovery');
     const before = this.draft(runId);
-    const narrative = s.input.narrative ?? '';
+    const narrative = enhance ? this.requestText(runId) : (s.input.narrative ?? '');
+    const baseline = enhance ? this.enhanceBaseline(runId) : [];
     const user = buildUserPrompt({
       round: s.round,
       narrative,
-      analysis: null,
+      ...(enhance ? { narrativeHeading: 'Change request' } : {}),
+      analysis: enhance ? scanDigest(this.readScan(runId)) : null,
       draft: before,
       decisions: before.decisions ?? [],
     });
@@ -570,6 +906,9 @@ export class Engine {
         extraCheck: (turn) => [
           ...questionIssues(turn.questions),
           ...attributionIssues(before, turn),
+          ...(enhance
+            ? [...featureIssues(turn.draftSpec, baseline), ...outsideIntentIssues(before, turn)]
+            : []),
         ],
       },
     );
@@ -590,7 +929,7 @@ export class Engine {
       narrative,
       answers,
       questions,
-      untrustedSource: s.input.kind === 'adopt',
+      untrustedSource: s.input.kind === 'adopt' || enhance,
     });
     this.writeRevision(runId, merged);
     const { asked, dropped } = selectQuestions(turn.questions, merged.decisions ?? []);
@@ -696,6 +1035,9 @@ export class Engine {
           case 'ANALYZE':
             await this.analyzeStep(runId, s);
             break;
+          case 'REQUEST':
+            this.requestStep(runId);
+            break;
           case 'DRAFT_SPEC':
             await this.draftStep(runId, s);
             break;
@@ -720,6 +1062,7 @@ export class Engine {
             break;
           case 'PUBLISH':
             if (s.input.kind === 'adopt') await this.adoptPublishStep(runId);
+            else if (s.input.kind === 'enhance') await this.enhancePublishStep(runId);
             else await this.publishStep(runId);
             break;
           case 'HANDOFF':

@@ -14,7 +14,7 @@ export interface Question {
 
 export interface RunListItem {
   runId: string;
-  kind: 'new' | 'adopt' | 'scaffold';
+  kind: 'new' | 'adopt' | 'enhance' | 'scaffold';
   state: string;
   done: boolean;
   parked: string | null;
@@ -23,7 +23,7 @@ export interface RunListItem {
 
 export interface RunDetail {
   runId: string;
-  kind: 'new' | 'adopt' | 'scaffold';
+  kind: 'new' | 'adopt' | 'enhance' | 'scaffold';
   state: string;
   done: boolean;
   busy: boolean;

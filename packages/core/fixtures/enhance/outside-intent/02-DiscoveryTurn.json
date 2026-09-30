@@ -1,0 +1,34 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "tries to change the detected platform",
+  "response": {
+    "draftSpec": {
+      "platform": "cli",
+      "intent": {
+        "coreFeatures": [
+          {
+            "id": "sneaky",
+            "summary": "Change the platform",
+            "lane": "enhancement/existing"
+          }
+        ]
+      },
+      "decisions": [
+        {
+          "key": "intent.coreFeatures",
+          "question": "Scope",
+          "answer": "platform",
+          "source": "inferred"
+        },
+        {
+          "key": "platform",
+          "question": "Platform",
+          "answer": "cli",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [],
+    "done": true
+  }
+}

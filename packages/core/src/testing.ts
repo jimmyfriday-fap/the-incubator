@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,7 @@ import {
   SecretString,
   ToolError,
   nodeExec,
+  sha256Hex,
 } from '@incubator/runtime';
 import { FakeGitHub, createGitOps, type GitOps } from '@incubator/git';
 import { FakeTracker } from '@incubator/tracker';
@@ -39,6 +40,16 @@ export function fakeEngine(llm: LlmAdapter | FixtureTurn[] | { dir: string }) {
       adapter = a;
     },
   };
+}
+
+export function enhanceFixtureDir(name: string): string {
+  return path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '..',
+    'fixtures',
+    'enhance',
+    name,
+  );
 }
 
 export function discoveryFixtureDir(name: string): string {
@@ -161,4 +172,58 @@ export function fakePublishEngine(
     tracker,
     verifyCalls: () => verifyCalls,
   };
+}
+
+/** Every file under `dir` (except `.git`) as `relative path → sha256`, for before/after comparisons. */
+export function hashTree(dir: string, rel = ''): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const name of readdirSync(path.join(dir, rel)).sort()) {
+    if (name === '.git') continue;
+    const r = rel ? `${rel}/${name}` : name;
+    if (statSync(path.join(dir, r)).isDirectory()) Object.assign(out, hashTree(dir, r));
+    else out[r] = sha256Hex(readFileSync(path.join(dir, r)));
+  }
+  return out;
+}
+
+/**
+ * Puts a directory (copied from `from`, or built by it) into a git repository whose origin is a new
+ * repository on the fake GitHub, with `main` pushed: the starting point of an adopt or enhance run.
+ */
+export async function seedExistingRepo(
+  github: FakeGitHub,
+  name: string,
+  from: string | ((dir: string) => Promise<void>),
+  owner = 'octo',
+): Promise<{ ref: { owner: string; name: string }; dir: string }> {
+  const ref = { owner, name };
+  await github.createRepo({
+    ...ref,
+    ownerType: 'user',
+    visibility: 'private',
+    description: 'existing project',
+  });
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'existing-src-')), name);
+  if (typeof from === 'string')
+    cpSync(from, dir, { recursive: true, filter: (s) => !s.endsWith('expected-gap-report.json') });
+  else await from(dir);
+  const git = async (args: string[]): Promise<void> => {
+    const r = await nodeExec.run('git', args, { cwd: dir, timeoutMs: 30_000 });
+    if (r.code !== 0) throw new ToolError(`git ${args.join(' ')} failed: ${r.stderr}`);
+  };
+  await git(['init', '-q', '-b', 'main']);
+  await git(['add', '-A']);
+  await git([
+    '-c',
+    'user.name=t',
+    '-c',
+    'user.email=t@example.invalid',
+    'commit',
+    '-q',
+    '-m',
+    'existing',
+  ]);
+  await git(['remote', 'add', 'origin', github.remoteUrl(ref)]);
+  await git(['push', '-q', 'origin', 'HEAD:refs/heads/main']);
+  return { ref, dir };
 }

@@ -138,14 +138,21 @@ export interface HandoffOutcome {
   ticketState: string | null;
 }
 
-/** The active ticket for the Stop hook: the first feature ticket not yet READY_FOR_TEST. */
-export function activeTicket(repo: string, spec: IncubatorSpec): string | null {
-  for (const f of spec.intent.coreFeatures) {
-    const file = path.join(repo, '.incubator', 'tickets', `F-${f.id}.json`);
-    if (!existsSync(file)) return `F-${f.id}`;
+/**
+ * The active ticket for the Stop hook: the first feature ticket not yet READY_FOR_TEST. Enhance
+ * runs pass their own ticket ids (`E-<id>`); otherwise every feature's `F-<id>` is considered.
+ */
+export function activeTicket(
+  repo: string,
+  spec: IncubatorSpec,
+  ids: readonly string[] = spec.intent.coreFeatures.map((f) => `F-${f.id}`),
+): string | null {
+  for (const id of ids) {
+    const file = path.join(repo, '.incubator', 'tickets', `${id}.json`);
+    if (!existsSync(file)) return id;
     const t = JSON.parse(readFileSync(file, 'utf8')) as { state?: string };
     if (t.state !== 'READY_FOR_TEST' && t.state !== 'TEST_PASSED' && t.state !== 'DEPLOYED')
-      return `F-${f.id}`;
+      return id;
   }
   return null;
 }

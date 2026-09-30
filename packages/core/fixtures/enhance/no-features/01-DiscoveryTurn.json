@@ -1,0 +1,5 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "the request yields no enhancement",
+  "response": { "draftSpec": { "decisions": [] }, "questions": [], "done": true }
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-llm-schema-twice",
+  "feature": "enhance-existing",
+  "title": "A model that keeps choosing a lane the enhance prompt forbids parks the run",
+  "tags": ["validation"],
+  "seed": {
+    "fixtures": "bad-lane",
+    "repo": "bare-node"
+  },
+  "context": {},
+  "mocks": {
+    "ai": ["packages/core/fixtures/enhance/bad-lane"]
+  },
+  "stages": [
+    {
+      "name": "enhance",
+      "input": {
+        "request": "Kitchen staff need to export the orders list as a CSV file at the end of the day."
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "PARKED"
+        },
+        {
+          "path": "exitCode",
+          "op": "eq",
+          "value": 2
+        },
+        {
+          "path": "parkedReason",
+          "op": "eq",
+          "value": "llm_schema"
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

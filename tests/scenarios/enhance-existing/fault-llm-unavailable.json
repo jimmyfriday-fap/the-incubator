@@ -1,0 +1,35 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "fault-llm-unavailable",
+  "feature": "enhance-existing",
+  "title": "An LLM adapter that breaks is the tool breaking (exit 1), not a park",
+  "tags": ["fault"],
+  "seed": {
+    "fixtures": [],
+    "repo": "bare-node"
+  },
+  "context": {},
+  "mocks": {
+    "ai": ["inline: no fixtures, adapter raises"]
+  },
+  "stages": [
+    {
+      "name": "enhance",
+      "input": {
+        "request": "Kitchen staff need to export the orders list as a CSV file at the end of the day."
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "ERROR"
+        },
+        {
+          "path": "exitCode",
+          "op": "eq",
+          "value": 1
+        }
+      ]
+    }
+  ]
+}

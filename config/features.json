@@ -7,6 +7,10 @@
     {
       "id": "discovery",
       "summary": "A narrative becomes an approved incubator.json with at most 5 questions per round and 2 rounds."
+    },
+    {
+      "id": "enhance-existing",
+      "summary": "An existing repository plus a change request becomes a plan, tickets and design briefs on a branch, without modifying any existing file."
     }
   ]
 }
