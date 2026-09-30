@@ -2,13 +2,13 @@
 
 Plan: [docs/plans/007-phase-6-desktop.md](../plans/007-phase-6-desktop.md).
 
-| #   | Criterion (brief §9 and TDD §10, Phase 6)                                             | Status                                         |
-| --- | ------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| 1   | The app builds for Windows, macOS and Linux (electron-builder)                        | PASS on Linux and Windows in CI; macOS: see §6 |
-| 2   | A smoke test launches it headless and completes a fake greenfield run                 | PASS on Linux and Windows in CI; macOS: see §6 |
-| 3   | Engine in-process; renderer sandboxed, no Node, navigation locked                     | PASS                                           |
-| 4   | Fakes only in test builds; release builds refuse the test flag                        | PASS                                           |
-| 5   | Installer UX (install, first launch from the OS menu, uninstall), keychain on each OS | PENDING LOCAL VERIFICATION                     |
+| #   | Criterion (brief §9 and TDD §10, Phase 6)                                             | Status                                                                                                              |
+| --- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 1   | The app builds for Windows, macOS and Linux (electron-builder)                        | PASS on 3 OSes in CI ([run 36652835225](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36652835225)) |
+| 2   | A smoke test launches it headless and completes a fake greenfield run                 | PASS on 3 OSes in CI, against the packaged apps                                                                     |
+| 3   | Engine in-process; renderer sandboxed, no Node, navigation locked                     | PASS                                                                                                                |
+| 4   | Fakes only in test builds; release builds refuse the test flag                        | PASS                                                                                                                |
+| 5   | Installer UX (install, first launch from the OS menu, uninstall), keychain on each OS | PENDING LOCAL VERIFICATION                                                                                          |
 
 ## 1. Builds
 
@@ -178,7 +178,16 @@ With both packaged executables copied under `/tmp/…/sp ace/`, the Linux smoke 
 Tests  3 passed (3)
 ```
 
-The macOS re-run is recorded in the next commit.
+**Green on all three OSes.** At `ac095a9`, [desktop run 36652835225](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36652835225) passed. For each of
+ubuntu-latest, macos-latest and windows-latest, the job:
+
+- built the test build and the release installers;
+- passed all 3 smoke tests against the packaged executables;
+- uploaded the installers as artifacts: AppImage and deb, dmg and zip, nsis exe.
+
+[ci run 36652835168](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36652835168) and
+[security-scan run 36652835167](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36652835167)
+also passed at that commit.
 
 [ci run 36648027006](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36648027006) (check on 3 OSes, `packs`, `gate`) and
 [security-scan run 36648026979](https://github.com/jimmyfriday-fap/the-incubator/actions/runs/36648026979) passed at the same commit.
