@@ -1,0 +1,7 @@
+{
+  "schemaName": "AnalysisSummary",
+  "note": "missing required fields, twice",
+  "response": {
+    "summary": "only a summary"
+  }
+}

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   InterruptedError,
@@ -25,6 +25,12 @@ import { buildUserPrompt } from './discovery/prompt-builder.js';
 import { MAX_ROUNDS, questionIssues, selectQuestions } from './discovery/questions.js';
 import type { JournalEntry } from './journal.js';
 import { loadPrompt } from './prompts.js';
+import {
+  analysisSummarySchema,
+  renderAnalysisSummary,
+  summaryUserPrompt,
+  type AnalysisSummary,
+} from './analysis-summary.js';
 import type { Prompter } from './prompter.js';
 import {
   reduce,
@@ -431,6 +437,7 @@ export class Engine {
       mkdirSync(path.dirname(this.enhanceFile(runId, 'x')), { recursive: true });
       writeFileSync(this.enhanceFile(runId, 'scan.json'), `${JSON.stringify(scan)}\n`);
       writeFileSync(this.enhanceFile(runId, 'scan-report.md'), renderScanReport(scan));
+      await this.analysisSummary(runId, s, scan, got.dir);
       this.record(runId, 'enhance.scan', {
         hash: scanHash(scan),
         scanned: scan.coverage.scanned,
@@ -445,6 +452,62 @@ export class Engine {
       });
     });
     this.enter(runId, 'REQUEST');
+  }
+
+  /**
+   * The LLM summary of the scan (ADR-007: a tool-less, empty-directory adapter; the digest and the
+   * README's opening travel on stdin, fenced as untrusted data). Advisory: whatever goes wrong here,
+   * the run goes on with a warning, and the summary never feeds the spec.
+   */
+  private async analysisSummary(
+    runId: string,
+    s: RunState,
+    scan: RepoScan,
+    dir: string,
+  ): Promise<void> {
+    if (this.state(runId).steps['enhance.summary']?.status === 'ok') return;
+    try {
+      const adapter = await this.deps.llm.select(
+        'analysis',
+        s.input.adapter as LlmAdapterId | undefined,
+      );
+      const prompt = loadPrompt('analysis-summary');
+      const readme = ['README.md', 'README', 'readme.md', 'README.rst']
+        .map((f) => path.join(dir, f))
+        .find((f) => existsSync(f) && statSync(f).isFile());
+      // Only the opening is read, whatever the file's size.
+      const opening = readme ? readFileSync(readme).subarray(0, 4000).toString('utf8') : null;
+      const gate = await complete<AnalysisSummary>(
+        adapter,
+        {
+          schemaName: 'AnalysisSummary',
+          schema: analysisSummarySchema,
+          system: prompt.body,
+          user: summaryUserPrompt(scanDigest(scan), opening),
+          promptVersion: prompt.version,
+          timeoutMs: this.deps.llmTimeoutMs ?? 180_000,
+        },
+        { log: this.deps.log },
+      );
+      writeFileSync(
+        this.enhanceFile(runId, 'analysis-summary.md'),
+        renderAnalysisSummary(gate.value, coverageLines(scan.coverage)),
+      );
+      this.record(runId, 'llm.turn', {
+        purpose: 'analysis',
+        adapter: adapter.id,
+        model: gate.model ?? null,
+        attempts: gate.attempts,
+        costUsd: gate.costUsd,
+      });
+      this.record(runId, 'step.ok', { step: 'enhance.summary', data: { adapter: adapter.id } });
+    } catch (e) {
+      if (e instanceof InterruptedError) throw e;
+      this.record(runId, 'step.warn', {
+        step: 'enhance.summary',
+        data: { reason: (e instanceof Error ? e.message : String(e)).slice(0, 300) },
+      });
+    }
   }
 
   /** REQUEST: the owner says what to change; without it the run parks for the UI or CLI to answer. */
@@ -484,6 +547,9 @@ export class Engine {
       request: this.requestText(runId),
       scan,
       scanReport: readFileSync(this.enhanceFile(runId, 'scan-report.md'), 'utf8'),
+      analysisSummary: existsSync(this.enhanceFile(runId, 'analysis-summary.md'))
+        ? readFileSync(this.enhanceFile(runId, 'analysis-summary.md'), 'utf8')
+        : null,
       date,
       planPath,
       features,
@@ -612,6 +678,9 @@ export class Engine {
         plan,
         gapsMarkdown: plan.gaps && existsSync(gapsFile) ? readFileSync(gapsFile, 'utf8') : null,
         gapsSha: gapsSha ?? null,
+        analysisSummary: existsSync(this.enhanceFile(runId, 'analysis-summary.md'))
+          ? readFileSync(this.enhanceFile(runId, 'analysis-summary.md'), 'utf8')
+          : null,
       });
       const pr = await this.adopter().publish(
         ctx,

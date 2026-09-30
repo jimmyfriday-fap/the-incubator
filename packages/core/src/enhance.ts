@@ -164,6 +164,8 @@ export interface DeliveryInput {
   request: string;
   scan: RepoScan;
   scanReport: string;
+  /** The model's summary of the scan, when one was produced. */
+  analysisSummary: string | null;
   date: string;
   planPath: string;
   features: Feature[];
@@ -270,6 +272,7 @@ export function buildDelivery(d: DeliveryInput): Map<string, RenderedFile> {
   const dir = `.incubator/enhance/${d.date}`;
   put(file(d.planPath, renderPlan(d)));
   put(file(`${dir}/scan-report.md`, d.scanReport));
+  if (d.analysisSummary) put(file(`${dir}/analysis-summary.md`, d.analysisSummary));
   put(
     file(
       `${dir}/request.md`,
@@ -343,6 +346,7 @@ export function renderPrBody(b: {
   plan: EnhancePlanRecord;
   gapsMarkdown: string | null;
   gapsSha: string | null;
+  analysisSummary: string | null;
 }): string {
   const p = b.plan;
   const rows = p.features.map(
@@ -371,6 +375,17 @@ export function renderPrBody(b: {
     '## Scan coverage',
     '',
     b.coverage,
+    ...(b.analysisSummary
+      ? [
+          '',
+          '<details>',
+          '<summary>Analysis summary (machine-generated, not verified)</summary>',
+          '',
+          b.analysisSummary,
+          '',
+          '</details>',
+        ]
+      : []),
     ...(b.gapsMarkdown
       ? [
           '',

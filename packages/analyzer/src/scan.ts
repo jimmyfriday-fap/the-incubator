@@ -111,7 +111,11 @@ export function clean(value: string, max: number = SCAN_CAPS.text): string {
     /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g,
     ' ',
   );
-  const t = s.replace(/\s+/g, ' ').trim();
+  // The digest is fenced with <<< … >>> markers; repository text must not be able to forge one.
+  const t = s
+    .replace(/<<<|>>>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 

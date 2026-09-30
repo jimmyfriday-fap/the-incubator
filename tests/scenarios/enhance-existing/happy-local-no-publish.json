@@ -69,6 +69,11 @@
           "path": "planLint",
           "op": "length",
           "value": 0
+        },
+        {
+          "path": "files",
+          "op": "contains",
+          "value": ".incubator/enhance/20260501/analysis-summary.md"
         }
       ]
     }

@@ -704,7 +704,8 @@ initial commit message and the journal.
 The text from brief §5 ships verbatim as `packages/core/prompts/discovery.md` with a YAML front
 matter `version: 1.0.0`. A snapshot test pins its bytes. Changing it requires bumping the version,
 and fixture keys include the prompt version, so stale recordings fail loudly. Companion prompts:
-`analysis-summary.md` (brownfield) and `handoff.md`.
+`analysis-summary.md` (the enhance run's model summary of the scan, §7.4), `enhance.md` (the
+enhance run's discovery prompt) and `handoff.md`.
 
 ---
 
@@ -993,6 +994,14 @@ flowchart LR
   followed), files over the byte cap, files over the file cap, and a walk that stopped at its cap
   (`M+`). Ignored dependency and build directories are named on the next line. Every derived list has
   its own cap with a note when it was cut short.
+- **LLM summary** (`analysis-summary.md`). After the scan, an adapter that is eligible for analysis
+  (tools disabled, empty working directory, all content on stdin: ADR-007) gets the scan digest and the
+  first 1,500 characters of the README, both fenced as untrusted data, and returns a summary,
+  strengths, risks and open questions (`AnalysisSummary`, validated by the schema gate; the schema is a
+  code constant, not a pinned contract). The file is labelled machine-generated and unverified, is
+  delivered with the plan, and appears in the PR body. It is advisory: no adapter, an invalid reply
+  twice, or any error is a warning (`step.warn enhance.summary`), and it never feeds the spec.
+  Repository strings are cleaned so they cannot forge the fence markers.
 - **REQUEST.** The request comes from `--prompt`/`--prompt-file`, from a terminal question, or from the
   UI's "What do you want to change?" step. It is cleaned (control and bidi characters removed, length
   capped) and journaled as `enhance.request`.
@@ -1010,6 +1019,7 @@ flowchart LR
   - `docs/plans/NNN-enhance-yyyymmdd.md`: an executor plan in the §3.2 format (`plan-lint` passes),
     one `**Step N:**` per request;
   - `.incubator/tickets/E-<id>.json`: one ticket per request on its lane, `TAGGED_TO_RELEASE`;
+  - `.incubator/enhance/<date>/analysis-summary.md` when a summary was produced;
   - `.incubator/enhance/<date>/design-<id>.md`: the lane's `design.md` template filled for the ticket
     (the runner's `design` stage, which until now existed only on paper), plus `request.md` and
     `scan-report.md`;
