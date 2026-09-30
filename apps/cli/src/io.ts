@@ -5,6 +5,8 @@ export interface Io {
   isTTY?: boolean;
   /** Reads a secret: piped stdin, or a hidden prompt on a terminal. */
   readSecret?: (message: string) => Promise<string>;
+  /** Asks for one line of free text on a terminal. */
+  readLine?: (message: string) => Promise<string>;
 }
 
 async function readStdin(): Promise<string> {
@@ -24,6 +26,10 @@ export function liveIo(): Io {
       if (!isTTY) return readStdin();
       const { password } = await import('@inquirer/prompts');
       return password({ message, mask: '*' }, { output: process.stderr });
+    },
+    readLine: async (message) => {
+      const { input } = await import('@inquirer/prompts');
+      return input({ message }, { output: process.stderr });
     },
   };
 }

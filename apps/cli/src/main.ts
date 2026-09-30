@@ -10,6 +10,7 @@ import { runHandoff } from './commands/handoff.js';
 import { runAuthDelete, runAuthSet, runAuthStatus } from './commands/auth.js';
 import { runGc } from './commands/gc.js';
 import { runAdopt, type AdoptOptions } from './commands/adopt.js';
+import { runEnhance, type EnhanceOptions } from './commands/enhance.js';
 import { runUi } from './commands/ui.js';
 import { liveDeps, type CliDeps, type DepsFactory } from './deps.js';
 import type { Io } from './io.js';
@@ -64,9 +65,22 @@ export async function main(
     .option('-y, --yes', 'accept every recommended default without prompting')
     .option('-o, --out <file>', 'write the approved spec here')
     .option('--adapter <id>', 'switch the LLM adapter for the rest of the run')
-    .action(async (runId: string, opts: { yes?: boolean; adapter?: string; out?: string }) => {
-      code = await runResume(getDeps(), io, runId, opts);
-    });
+    .option('--prompt <text>', 'answer a parked "what do you want to change?" (enhance runs)')
+    .option('--prompt-file <path>', 'read that answer from a file')
+    .action(
+      async (
+        runId: string,
+        opts: {
+          yes?: boolean;
+          adapter?: string;
+          out?: string;
+          prompt?: string;
+          promptFile?: string;
+        },
+      ) => {
+        code = await runResume(getDeps(), io, runId, opts);
+      },
+    );
 
   program
     .command('scaffold <spec>')
@@ -93,6 +107,26 @@ export async function main(
     .option('-y, --yes', 'approve the inferred spec without prompting')
     .action(async (source: string, opts: AdoptOptions) => {
       code = await runAdopt(getDeps(), io, source, opts);
+    });
+
+  program
+    .command('enhance <source>')
+    .description(
+      'change an existing repository (URL or local path): scan it, say what to change, get a plan on a branch',
+    )
+    .option('--prompt <text>', 'what you want to change (asked for on a terminal when omitted)')
+    .option('--prompt-file <path>', 'read what you want to change from a file')
+    .option('--with-gaps', 'also deliver the canonical-pattern gaps, as a separate commit')
+    .option(
+      '--repo <owner/name>',
+      'GitHub repository for the PR when the source is not a GitHub URL',
+    )
+    .option('--org', 'the owner is an organization')
+    .option('--no-publish', 'write the enhance branch in the run workspace only (no push, no PR)')
+    .option('--adapter <id>', 'claude-cli | copilot-cli | cursor-cli | anthropic-api')
+    .option('-y, --yes', 'accept every recommended default without prompting')
+    .action(async (source: string, opts: EnhanceOptions) => {
+      code = await runEnhance(getDeps(), io, source, opts);
     });
 
   program

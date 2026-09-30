@@ -37,10 +37,14 @@ export function reportRun(deps: CliDeps, io: Io, state: RunState, out?: string):
       `⏸ run ${state.runId} parked at ${state.parked?.state ?? '?'}: ${state.parked?.message ?? ''}\n`,
     );
     io.stderr(
-      `  resume with: incubator resume ${state.runId}${state.parked?.reason === 'needs_input' || state.parked?.reason === 'needs_review' ? ' (interactively, or add --yes)' : ''}\n`,
+      state.parked?.reason === 'needs_request'
+        ? `  answer with: incubator resume ${state.runId} --prompt "what you want to change"\n`
+        : `  resume with: incubator resume ${state.runId}${state.parked?.reason === 'needs_input' || state.parked?.reason === 'needs_review' ? ' (interactively, or add --yes)' : ''}\n`,
     );
     return ExitCode.Policy;
   }
+  if (state.state === 'DONE' && state.input.kind === 'enhance')
+    return reportEnhance(deps, io, state.runId);
   const spec = deps.engine.draft(state.runId) as unknown as IncubatorSpec;
   if (state.state === 'DONE' && !state.input.specOnly) return reportDone(deps, io, state, spec);
   const text = serializeSpec(spec);
@@ -57,6 +61,36 @@ export function reportRun(deps: CliDeps, io: Io, state: RunState, out?: string):
     return ExitCode.Ok;
   }
   io.stderr(`run ${state.runId} stopped at ${state.state}\n`);
+  return ExitCode.Ok;
+}
+
+const NOOP_TEXT: Record<string, string> = {
+  no_features:
+    'the request produced no enhancement; to add only the canonical-pattern gaps use `incubator adopt`',
+  already_delivered: 'this plan is already in the repository',
+};
+
+/** The end of an enhance run: nothing to change, the local branch, or the pull request. */
+export function reportEnhance(deps: CliDeps, io: Io, runId: string): number {
+  const s = deps.engine.enhanceSummary(runId);
+  if (s.noop) {
+    io.stderr(`✔ nothing to change (${NOOP_TEXT[s.noop] ?? s.noop}); no branch, no pull request\n`);
+    return ExitCode.Ok;
+  }
+  const dir = path.join(deps.store.runDir(runId), 'workspace', 'repo');
+  const plan = s.plan;
+  const lines = [
+    s.pr ? `✔ opened ${s.pr.url}` : `✔ enhance branch written locally in ${dir}`,
+    ...(plan
+      ? [
+          `  plan       ${plan.planPath} (${plan.features.length} request(s); ${plan.create.length} file(s) added, ${plan.proposed.length} proposed)`,
+          ...(plan.gaps ? ['  gaps       canonical pattern gaps in a separate commit'] : []),
+        ]
+      : []),
+    `  scan       ${path.join(deps.store.runDir(runId), 'enhance', 'scan-report.md')}`,
+    `  next       incubator handoff ${runId} --launch`,
+  ];
+  io.stderr(`${lines.join('\n')}\n`);
   return ExitCode.Ok;
 }
 

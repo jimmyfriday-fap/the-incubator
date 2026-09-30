@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Engine, RunStore } from '@incubator/core';
 import { completeSpec } from '@incubator/spec';
-import { FAKE_GITHUB_TOKEN, discoveryFixtureDir, fakePublishEngine } from '@incubator/core/testing';
+import {
+  FAKE_GITHUB_TOKEN,
+  discoveryFixtureDir,
+  enhanceFixtureDir,
+  fakePublishEngine,
+  seedExistingRepo,
+} from '@incubator/core/testing';
 import { FakeLlmAdapter, createLlmRegistry } from '@incubator/llm';
 import { FakeGitHub } from '@incubator/git';
 import { FixedClock, Logger, MemoryKeychain, MemorySink, nodeExec } from '@incubator/runtime';
@@ -236,7 +242,13 @@ describe('publish, handoff, auth, gc', () => {
     import.meta.dirname,
     '../../../packages/core/fixtures/handoff/fake-agent.mjs',
   );
-  function publishDeps() {
+  function publishDeps(
+    llm?: Parameters<typeof fakePublishEngine>[0] extends infer O
+      ? O extends { llm?: infer L }
+        ? L
+        : never
+      : never,
+  ) {
     const agentCaps = {
       installed: true,
       path: process.execPath,
@@ -248,6 +260,7 @@ describe('publish, handoff, auth, gc', () => {
     };
     const h = fakePublishEngine({
       handoff: { exec: nodeExec, probe: () => Promise.resolve(agentCaps) },
+      ...(llm ? { llm } : {}),
     });
     const keychain = new MemoryKeychain();
     const deps: CliDeps = {
@@ -370,6 +383,129 @@ describe('publish, handoff, auth, gc', () => {
     ).toBe(0);
     expect(local.err.join('')).toContain('adopt branch written locally');
     expect(await main(['adopt', src, '--repo', 'not a repo'], io().io, factory)).toBe(2);
+  });
+
+  describe('incubator enhance', () => {
+    const bareNode = path.resolve(
+      import.meta.dirname,
+      '../../../packages/analyzer/fixtures/bare-node',
+    );
+    const REQUEST = 'Kitchen staff need to export the orders list as a CSV file.';
+    const setup = async (fixture = 'export-orders') => {
+      const d = publishDeps({ dir: enhanceFixtureDir(fixture) });
+      const { ref, dir } = await seedExistingRepo(d.h.github, 'order-desk', bareNode);
+      return { ...d, ref, dir };
+    };
+
+    it('writes the enhance branch locally, or opens a pull request with the gaps separate', async () => {
+      const { h, factory, dir } = await setup();
+      const local = io();
+      expect(
+        await main(
+          [
+            'enhance',
+            dir,
+            '--repo',
+            'octo/order-desk',
+            '--prompt',
+            REQUEST,
+            '--no-publish',
+            '--yes',
+          ],
+          local.io,
+          factory,
+        ),
+      ).toBe(0);
+      const err = local.err.join('');
+      expect(err).toContain('✔ enhance branch written locally');
+      expect(err).toContain('docs/plans/001-enhance-20260501.md (1 request(s);');
+      expect(err).toMatch(/incubator handoff \S+ --launch/);
+      expect(h.github.calls.some((c) => c.method === 'openPr')).toBe(false);
+
+      const { h: h2, factory: factory2, ref: ref2 } = await setup();
+      const pr = io();
+      expect(
+        await main(
+          [
+            'enhance',
+            h2.github.remoteUrl(ref2),
+            '--repo',
+            'octo/order-desk',
+            '--prompt',
+            REQUEST,
+            '--with-gaps',
+            '--yes',
+          ],
+          pr.io,
+          factory2,
+        ),
+      ).toBe(0);
+      expect(pr.err.join('')).toContain('✔ opened https://github.com/octo/order-desk/pull/1');
+      expect(pr.err.join('')).toContain('canonical pattern gaps in a separate commit');
+    });
+
+    it('parks for the request off a terminal, and resume --prompt answers it', async () => {
+      const { factory, dir } = await setup();
+      const parked = io();
+      expect(
+        await main(
+          ['enhance', dir, '--repo', 'octo/order-desk', '--no-publish', '--yes'],
+          parked.io,
+          factory,
+        ),
+      ).toBe(2);
+      const hint = /incubator resume (\S+) --prompt/.exec(parked.err.join(''));
+      expect(hint).not.toBeNull();
+      const done = io();
+      expect(
+        await main(['resume', hint![1]!, '--prompt', REQUEST, '--yes'], done.io, factory),
+      ).toBe(0);
+      expect(done.err.join('')).toContain('✔ enhance branch written locally');
+    });
+
+    it('asks for the request on a terminal', async () => {
+      const { factory, dir } = await setup();
+      const asked: string[] = [];
+      const t = io(true);
+      const withLine = {
+        ...t.io,
+        readLine: (m: string) => {
+          asked.push(m);
+          return Promise.resolve(REQUEST);
+        },
+      };
+      expect(
+        await main(
+          ['enhance', dir, '--repo', 'octo/order-desk', '--no-publish', '--yes'],
+          withLine,
+          factory,
+        ),
+      ).toBe(0);
+      expect(asked).toEqual(['What do you want to change?']);
+    });
+
+    it('says when there is nothing to change, and rejects bad usage', async () => {
+      const { factory, dir } = await setup('no-features');
+      const t = io();
+      expect(
+        await main(
+          ['enhance', dir, '--repo', 'octo/order-desk', '--prompt', REQUEST, '--yes'],
+          t.io,
+          factory,
+        ),
+      ).toBe(0);
+      expect(t.err.join('')).toContain('✔ nothing to change');
+      expect(t.err.join('')).toContain('no branch, no pull request');
+      for (const extra of [
+        ['--prompt-file', 'x.md'],
+        ['--adapter', 'nope'],
+        ['--repo', 'not a repo'],
+      ])
+        expect(
+          await main(['enhance', dir, '--prompt', REQUEST, ...extra], io().io, factory),
+          extra.join(' '),
+        ).toBe(2);
+    });
   });
 
   it('stores credentials in the keychain only and reports their sources', async () => {

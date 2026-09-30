@@ -11,6 +11,16 @@ export interface AdoptOptions {
   publish?: boolean;
 }
 
+/** `owner/name` from a `--repo` option; anything else is a usage error. */
+export function parseRepoOption(
+  repo: string | undefined,
+): { owner: string; name: string } | undefined {
+  if (!repo) return undefined;
+  const m = /^([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)$/.exec(repo);
+  if (!m) throw new PolicyError('--repo must be owner/name', { code: 'usage' });
+  return { owner: m[1]!, name: m[2]! };
+}
+
 /** `incubator adopt <url|path> [--repo owner/name] [--org] [--no-publish] [--yes]` (TDD §7.3). */
 export async function runAdopt(
   deps: CliDeps,
@@ -18,12 +28,7 @@ export async function runAdopt(
   source: string,
   opts: AdoptOptions,
 ): Promise<number> {
-  let repoRef: { owner: string; name: string } | undefined;
-  if (opts.repo) {
-    const m = /^([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)$/.exec(opts.repo);
-    if (!m) throw new PolicyError('--repo must be owner/name', { code: 'usage' });
-    repoRef = { owner: m[1]!, name: m[2]! };
-  }
+  const repoRef = parseRepoOption(opts.repo);
   const runId = deps.engine.start({
     kind: 'adopt',
     repo: /^[a-z]+:\/\//i.test(source) || source.startsWith('git@') ? source : path.resolve(source),
