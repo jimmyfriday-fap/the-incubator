@@ -148,7 +148,18 @@ export function createGitOps(exec: Exec): GitOps {
     },
     async clone(remote, dir, opts = {}) {
       await git(
-        ['clone', '-q', ...(opts.depth ? ['--depth', String(opts.depth)] : []), remote, dir],
+        [
+          'clone',
+          '-q',
+          '-c',
+          'core.autocrlf=false',
+          // `text=auto` in the repo's own .gitattributes still checks out CRLF on Windows unless eol is pinned.
+          '-c',
+          'core.eol=lf',
+          ...(opts.depth ? ['--depth', String(opts.depth)] : []),
+          remote,
+          dir,
+        ],
         {
           env: tokenEnv(opts.token),
         },

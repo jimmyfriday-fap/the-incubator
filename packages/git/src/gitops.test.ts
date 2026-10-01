@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -60,6 +60,25 @@ describe('GitOps', () => {
     await git.clone(gh.remoteUrl(ref), clone, { depth: 1 });
     expect(await git.headSha(clone)).toBe(a.sha);
     expect(await git.headSha(tmp('empty-'))).toBeNull();
+  });
+
+  it('clones with core.autocrlf=false so a user setting cannot rewrite line endings', async () => {
+    const src = tmp('gitops-eol-src-');
+    writeFileSync(path.join(src, 'a.txt'), 'one\ntwo\n');
+    // A repository that marks its files as text: on Windows `core.eol` (native) would still give CRLF.
+    writeFileSync(path.join(src, '.gitattributes'), '* text=auto\n');
+    await git.init(src);
+    await git.addAll(src);
+    await git.commit(src, 'chore: eol', ident);
+    const dst = path.join(tmp('gitops-eol-dst-'), 'clone');
+    await git.clone(src, dst);
+    const local = async (key: string) =>
+      (
+        await nodeExec.run('git', ['config', '--local', key], { cwd: dst, timeoutMs: 10_000 })
+      ).stdout.trim();
+    expect(await local('core.autocrlf')).toBe('false');
+    expect(await local('core.eol')).toBe('lf');
+    expect(readFileSync(path.join(dst, 'a.txt'), 'utf8')).toBe('one\ntwo\n');
   });
 
   it('puts the token in the environment, never in argv, and fails with a ToolError', async () => {
