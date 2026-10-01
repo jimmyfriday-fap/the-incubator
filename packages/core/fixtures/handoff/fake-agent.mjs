@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // A stand-in agent CLI for handoff tests: reads the prompt on stdin and emits Claude-style
 // stream-json. FAKE_AGENT_MODE=complete moves the active ticket to READY_FOR_TEST (like the Stop
-// hook); runaway keeps calling tools until it is killed; spend reports a large cost.
-import { readFileSync, writeFileSync } from 'node:fs';
+// hook); edit does the same and also writes src/agent-work.txt and a result text, like a real coding
+// run; runaway keeps calling tools until it is killed; spend reports a large cost.
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const mode = process.env.FAKE_AGENT_MODE ?? 'complete';
@@ -21,11 +22,20 @@ if (mode === 'runaway') {
 } else {
   assistant(1);
   assistant(0);
-  if (mode === 'complete') {
+  if (mode === 'edit') {
+    mkdirSync('src', { recursive: true });
+    writeFileSync(path.join('src', 'agent-work.txt'), 'written by the fake agent\n');
+  }
+  if (mode === 'complete' || mode === 'edit') {
     const id = readFileSync(path.join('.incubator', 'state', 'active-ticket'), 'utf8').trim();
     const file = path.join('.incubator', 'tickets', `${id}.json`);
     const t = JSON.parse(readFileSync(file, 'utf8'));
     writeFileSync(file, `${JSON.stringify({ ...t, state: 'READY_FOR_TEST' }, null, 2)}\n`);
   }
-  emit({ type: 'result', subtype: 'success', total_cost_usd: mode === 'spend' ? 99 : 0.42 });
+  emit({
+    type: 'result',
+    subtype: 'success',
+    total_cost_usd: mode === 'spend' ? 99 : 0.42,
+    ...(mode === 'edit' ? { result: 'Added src/agent-work.txt and ran the quick checks; all green.' } : {}),
+  });
 }

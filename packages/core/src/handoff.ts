@@ -33,7 +33,8 @@ export interface HandoffPlan {
 
 /**
  * What a headless agent may run without asking: file edits plus the repository's own gates and
- * local git. Pushing, promoting and anything else stays unavailable (agent profile, ADR-017).
+ * read-only git. Committing, pushing and promoting stay with the owner (ADR-017, ADR-023): the run asks
+ * for the commit once the agent has stopped.
  */
 export const HANDOFF_ALLOWED_TOOLS = [
   'Read',
@@ -46,9 +47,6 @@ export const HANDOFF_ALLOWED_TOOLS = [
   'Bash(node scripts/scaffold.mjs:*)',
   'Bash(git status:*)',
   'Bash(git diff:*)',
-  'Bash(git add:*)',
-  'Bash(git commit:*)',
-  'Bash(git checkout -b:*)',
 ];
 
 /** Headless argv from probed capabilities: print mode, streaming JSON, and max turns when offered. */
@@ -83,6 +81,10 @@ export class CeilingMonitor {
   toolCalls = 0;
   costUsd: number | null = null;
   tripped: string | null = null;
+  /** The last assistant text block seen (a fallback when the stream has no `result` text). */
+  lastText: string | null = null;
+  /** The final `result` text of the stream, when the agent sent one. */
+  resultText: string | null = null;
   #buf = '';
 
   constructor(
@@ -104,7 +106,8 @@ export class CeilingMonitor {
   private event(line: string): void {
     let e: {
       type?: string;
-      message?: { content?: { type?: string }[] };
+      message?: { content?: { type?: string; text?: unknown }[] };
+      result?: unknown;
       total_cost_usd?: number;
       cost_usd?: number;
     };
@@ -115,8 +118,15 @@ export class CeilingMonitor {
     }
     if (e.type === 'assistant') {
       this.turns++;
-      this.toolCalls += (e.message?.content ?? []).filter((c) => c.type === 'tool_use').length;
+      const blocks = e.message?.content ?? [];
+      this.toolCalls += blocks.filter((c) => c.type === 'tool_use').length;
+      const text = blocks.find(
+        (c) => c.type === 'text' && typeof c.text === 'string' && c.text.trim(),
+      );
+      if (text) this.lastText = String(text.text);
     }
+    if (e.type === 'result' && typeof e.result === 'string' && e.result.trim())
+      this.resultText = e.result;
     const cost = e.total_cost_usd ?? e.cost_usd;
     if (typeof cost === 'number') this.costUsd = cost;
     if (this.tripped) return;
@@ -136,6 +146,32 @@ export interface HandoffOutcome {
   costUsd: number | null;
   tripped: string | null;
   ticketState: string | null;
+  /** What the agent said at the end: its result text, else its last message. Cleaned and capped. */
+  summary: string | null;
+}
+
+/** Agent text is data: control and bidi characters removed, lines kept, length capped. */
+export function cleanAgentText(text: string | null, max = 4000): string | null {
+  if (!text) return null;
+  const t = text
+    .replace(/\r\n?/g, '\n')
+    .replace(AGENT_TEXT_CONTROL, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
+  if (!t) return null;
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+/* eslint-disable no-control-regex -- why: control characters are exactly what is stripped. */
+const AGENT_TEXT_CONTROL =
+  /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g;
+/* eslint-enable no-control-regex */
+
+/** A live progress report from a running agent: counters and a short cleaned snippet of its latest text. */
+export interface HandoffProgress {
+  turns: number;
+  toolCalls: number;
+  costUsd: number | null;
+  snippet: string | null;
 }
 
 /**
@@ -172,7 +208,13 @@ export async function launchHandoff(
   exec: Exec,
   plan: HandoffPlan,
   prompt: string,
-  opts: { logFile: string; ticket: string | null; onEvent?: (line: string) => void },
+  opts: {
+    logFile: string;
+    ticket: string | null;
+    onEvent?: (line: string) => void;
+    /** Called when the counters or the latest text change (at most once per assistant turn). */
+    onProgress?: (p: HandoffProgress) => void;
+  },
 ): Promise<HandoffOutcome> {
   mkdirSync(path.dirname(opts.logFile), { recursive: true });
   if (opts.ticket) {
@@ -184,6 +226,7 @@ export async function launchHandoff(
     plan.argv.includes(String(plan.ceilings.turns)),
   );
   const abort = new AbortController();
+  let reported = -1;
   const r = await exec.run(plan.bin, plan.argv, {
     cwd: plan.cwd,
     stdin: prompt,
@@ -193,6 +236,15 @@ export async function launchHandoff(
       appendFileSync(opts.logFile, globalRedactor.redact(chunk));
       opts.onEvent?.(chunk);
       if (monitor.feed(chunk) && !abort.signal.aborted) abort.abort();
+      if (opts.onProgress && monitor.turns > 0 && monitor.turns !== reported) {
+        reported = monitor.turns;
+        opts.onProgress({
+          turns: monitor.turns,
+          toolCalls: monitor.toolCalls,
+          costUsd: monitor.costUsd,
+          snippet: cleanAgentText(monitor.lastText, 300),
+        });
+      }
     },
     onStderr: (chunk) => appendFileSync(opts.logFile, globalRedactor.redact(chunk)),
   });
@@ -204,5 +256,6 @@ export async function launchHandoff(
     costUsd: monitor.costUsd,
     tripped,
     ticketState: opts.ticket ? ticketState(plan.cwd, opts.ticket) : null,
+    summary: cleanAgentText(monitor.resultText ?? monitor.lastText),
   };
 }

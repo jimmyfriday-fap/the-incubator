@@ -6,7 +6,8 @@ export interface GitIdentity {
 }
 
 export interface CommitOptions {
-  identity: GitIdentity;
+  /** Absent means the repository's own configured identity (the owner's, for folder runs). */
+  identity?: GitIdentity;
   /** ISO timestamp for author and committer (deterministic scaffold commits). */
   date?: string;
 }
@@ -42,6 +43,27 @@ export interface GitOps {
   diffNameStatus(dir: string, base: string, head: string): Promise<[string, string][]>;
   /** The URL of a remote, or null. */
   remoteGetUrl(dir: string, name?: string): Promise<string | null>;
+  /** `git status --porcelain=v1 -z`: every changed or untracked path, ignored files excluded. */
+  status(dir: string): Promise<StatusEntry[]>;
+  /** Fetches one ref from another repository (local path or URL) into a local ref. */
+  fetch(
+    dir: string,
+    remote: string,
+    refspec: string,
+    opts?: { token?: SecretString },
+  ): Promise<void>;
+  /** Checks out an existing local branch. */
+  checkout(dir: string, branch: string): Promise<void>;
+  /** Adds a remote; a no-op when it already points at `url`, an error when it points elsewhere. */
+  remoteAdd(dir: string, name: string, url: string): Promise<void>;
+  /** The configured `user.name` and `user.email`, or null when either is unset. */
+  identity(dir: string): Promise<GitIdentity | null>;
+}
+
+/** One path from `git status`: the two-letter porcelain code and the path (POSIX separators). */
+export interface StatusEntry {
+  code: string;
+  path: string;
 }
 
 const TIMEOUT = 5 * 60_000;
@@ -90,10 +112,14 @@ export function createGitOps(exec: Exec): GitOps {
     },
     async commit(dir, message, { identity, date }) {
       const env: Record<string, string> = {
-        GIT_AUTHOR_NAME: identity.name,
-        GIT_AUTHOR_EMAIL: identity.email,
-        GIT_COMMITTER_NAME: identity.name,
-        GIT_COMMITTER_EMAIL: identity.email,
+        ...(identity
+          ? {
+              GIT_AUTHOR_NAME: identity.name,
+              GIT_AUTHOR_EMAIL: identity.email,
+              GIT_COMMITTER_NAME: identity.name,
+              GIT_COMMITTER_EMAIL: identity.email,
+            }
+          : {}),
         ...(date ? { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } : {}),
       };
       // why: the message goes on stdin, so no part of it is ever parsed as an argument.
@@ -142,6 +168,47 @@ export function createGitOps(exec: Exec): GitOps {
           return [st!, rest.join('\t')] as [string, string];
         });
     },
+    async status(dir) {
+      const r = await git(['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
+        cwd: dir,
+      });
+      const out: StatusEntry[] = [];
+      const parts = r.stdout.split('\0');
+      for (let i = 0; i < parts.length; i++) {
+        const entry = parts[i]!;
+        if (entry.length < 4) continue;
+        const code = entry.slice(0, 2);
+        out.push({ code, path: entry.slice(3).replaceAll('\\', '/') });
+        // a rename or copy carries its source path as the next NUL-separated field
+        if (code[0] === 'R' || code[0] === 'C') i++;
+      }
+      return out;
+    },
+    async fetch(dir, remote, refspec, opts = {}) {
+      await git(['fetch', '-q', '--no-tags', '--', remote, refspec], {
+        cwd: dir,
+        env: tokenEnv(opts.token),
+      });
+    },
+    async checkout(dir, branch) {
+      await git(['checkout', '-q', branch, '--'], { cwd: dir });
+    },
+    async remoteAdd(dir, name, url) {
+      const have = await git(['remote', 'get-url', name], { cwd: dir, allowFail: true });
+      if (have.code === 0) {
+        if (have.stdout.trim() === url) return;
+        throw new ToolError(`remote ${name} already points at ${have.stdout.trim()}`, {
+          code: 'remote_exists',
+        });
+      }
+      await git(['remote', 'add', name, '--', url], { cwd: dir });
+    },
+    async identity(dir) {
+      const get = async (key: string): Promise<string> =>
+        (await git(['config', '--get', key], { cwd: dir, allowFail: true })).stdout.trim();
+      const [name, email] = [await get('user.name'), await get('user.email')];
+      return name && email ? { name, email } : null;
+    },
     async remoteGetUrl(dir, name = 'origin') {
       const r = await git(['remote', 'get-url', name], { cwd: dir, allowFail: true });
       return r.code === 0 ? r.stdout.trim() : null;
@@ -157,6 +224,8 @@ export function createGitOps(exec: Exec): GitOps {
           '-c',
           'core.eol=lf',
           ...(opts.depth ? ['--depth', String(opts.depth)] : []),
+          // why: `--` so a path or URL that starts with a dash can never be read as an option.
+          '--',
           remote,
           dir,
         ],

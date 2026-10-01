@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -14,6 +14,119 @@ const ident = {
 const tmp = (p: string) => mkdtempSync(path.join(os.tmpdir(), p));
 
 describe('GitOps', () => {
+  async function repo(files: Record<string, string> = { 'a.txt': 'one\n' }) {
+    const dir = tmp('gitops-repo-');
+    await git.init(dir, 'main');
+    for (const [rel, body] of Object.entries(files)) {
+      mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+      writeFileSync(path.join(dir, rel), body);
+    }
+    await git.addAll(dir);
+    await git.commit(dir, 'chore: one', ident);
+    return dir;
+  }
+
+  it('lists changes: modified, untracked (spaces included), renamed; ignored files stay out', async () => {
+    const dir = await repo({
+      'a.txt': 'one\n',
+      'old name.txt': 'x\n',
+      '.gitignore': 'secret.env\n',
+    });
+    expect(await git.status(dir)).toEqual([]);
+    writeFileSync(path.join(dir, 'a.txt'), 'two\n');
+    writeFileSync(path.join(dir, 'new file.txt'), 'n\n');
+    mkdirSync(path.join(dir, 'sub dir'));
+    writeFileSync(path.join(dir, 'sub dir', 'b.txt'), 'b\n');
+    writeFileSync(path.join(dir, 'secret.env'), 'TOKEN=1\n');
+    renameSync(path.join(dir, 'old name.txt'), path.join(dir, 'renamed.txt'));
+    await nodeExec.run('git', ['add', '-A', 'renamed.txt', 'old name.txt'], {
+      cwd: dir,
+      timeoutMs: 10_000,
+    });
+    const got = new Map((await git.status(dir)).map((e) => [e.path, e.code]));
+    expect(got.get('a.txt')).toBe(' M');
+    expect(got.get('new file.txt')).toBe('??');
+    expect(got.get('sub dir/b.txt')).toBe('??');
+    expect(got.get('renamed.txt')).toBe('R ');
+    expect(got.has('old name.txt')).toBe(false);
+    expect(got.has('secret.env')).toBe(false);
+  });
+
+  it('fetches a branch from another local repository, checks it out, and leaves the current branch alone', async () => {
+    const owner = await repo();
+    const clone = tmp('gitops-clone-');
+    await git.clone(owner, path.join(clone, 'c'));
+    const c = path.join(clone, 'c');
+    await git.checkoutNewBranch(c, 'incubator/enhance-1');
+    writeFileSync(path.join(c, 'plan.md'), 'plan\n');
+    await git.addAll(c);
+    const sha = await git.commit(c, 'feat: plan', ident);
+    const before = await git.headSha(owner);
+    await git.fetch(owner, c, 'refs/heads/incubator/enhance-1:refs/heads/incubator/enhance-1');
+    expect(await git.currentBranch(owner)).toBe('main');
+    expect(await git.headSha(owner)).toBe(before);
+    await git.checkout(owner, 'incubator/enhance-1');
+    expect(await git.currentBranch(owner)).toBe('incubator/enhance-1');
+    expect(await git.headSha(owner)).toBe(sha);
+    await expect(git.checkout(owner, 'no-such-branch')).rejects.toThrow('git checkout failed');
+  });
+
+  it('adds a remote once, accepts the same URL again, and refuses a different one', async () => {
+    const dir = await repo();
+    expect(await git.remoteGetUrl(dir)).toBeNull();
+    await git.remoteAdd(dir, 'origin', 'https://github.com/octo/app.git');
+    await git.remoteAdd(dir, 'origin', 'https://github.com/octo/app.git');
+    expect(await git.remoteGetUrl(dir)).toBe('https://github.com/octo/app.git');
+    await expect(git.remoteAdd(dir, 'origin', 'https://github.com/octo/other.git')).rejects.toThrow(
+      'already points at',
+    );
+  });
+
+  it('reads the configured identity, and commits as it when none is passed', async () => {
+    const dir = await repo();
+    const set = (k: string, v: string) =>
+      nodeExec.run('git', ['config', k, v], { cwd: dir, timeoutMs: 10_000 });
+    await nodeExec.run('git', ['config', '--unset-all', 'user.name'], {
+      cwd: dir,
+      timeoutMs: 10_000,
+    });
+    const none = await git.identity(dir);
+    // A machine-wide identity may exist; the repository-level one is what this asserts below.
+    await set('user.name', 'Owner Person');
+    await set('user.email', 'owner@example.invalid');
+    expect(await git.identity(dir)).toEqual({
+      name: 'Owner Person',
+      email: 'owner@example.invalid',
+    });
+    void none;
+    writeFileSync(path.join(dir, 'b.txt'), 'b\n');
+    await git.addAll(dir);
+    await git.commit(dir, 'feat: mine\n\nIncubator-Run: r9\n', {});
+    const who = await nodeExec.run('git', ['log', '-1', '--format=%an <%ae>'], {
+      cwd: dir,
+      timeoutMs: 10_000,
+    });
+    expect(who.stdout.trim()).toBe('Owner Person <owner@example.invalid>');
+  });
+
+  it('never reads a source that starts with a dash as an option', async () => {
+    const root = tmp('gitops-dash-');
+    const src = path.join(root, '-weird');
+    await git.init(src, 'main').catch(() => undefined);
+    mkdirSync(src, { recursive: true });
+    await git.init(src, 'main');
+    writeFileSync(path.join(src, 'a.txt'), 'x\n');
+    await git.addAll(src);
+    await git.commit(src, 'chore: x', ident);
+    // Run git from `root`, so the relative source "-weird" is exactly what a hostile path looks like.
+    const inRoot = createGitOps({
+      which: (n) => nodeExec.which(n),
+      run: (b, a, o) => nodeExec.run(b, a, { ...o, cwd: root }),
+    });
+    await inRoot.clone('-weird', 'dest');
+    expect(await git.headSha(path.join(root, 'dest'))).toBeTruthy();
+  });
+
   it('reports the checked-out branch, and null when HEAD is unborn or detached', async () => {
     const dir = tmp('gitops-branch-');
     await git.init(dir, 'trunk');

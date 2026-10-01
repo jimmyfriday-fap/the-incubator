@@ -4,7 +4,13 @@ import { describe, expect, it } from 'vitest';
 import { completeSpec } from '@incubator/spec';
 import { nodeExec } from '@incubator/runtime';
 import type { Capabilities } from '@incubator/llm';
-import { CeilingMonitor, buildHandoffArgv, HANDOFF_ALLOWED_TOOLS } from './handoff.js';
+import {
+  CeilingMonitor,
+  buildHandoffArgv,
+  cleanAgentText,
+  HANDOFF_ALLOWED_TOOLS,
+  type HandoffProgress,
+} from './handoff.js';
 import { fakePublishEngine } from './testing.js';
 
 const fakeAgent = path.resolve(import.meta.dirname, '../fixtures/handoff/fake-agent.mjs');
@@ -70,6 +76,13 @@ describe('handoff', () => {
       HANDOFF_ALLOWED_TOOLS.join(','),
     ]);
     expect(HANDOFF_ALLOWED_TOOLS.some((t) => /push|promote|rm /.test(t))).toBe(false);
+    // The owner decides on commits (ADR-023): nothing that changes history or the index.
+    expect(
+      HANDOFF_ALLOWED_TOOLS.some((t) => /git (commit|add|checkout|reset|rebase|merge)/.test(t)),
+    ).toBe(false);
+    expect(HANDOFF_ALLOWED_TOOLS).toEqual(
+      expect.arrayContaining(['Bash(git status:*)', 'Bash(git diff:*)']),
+    );
     expect(() => buildHandoffArgv(caps({ printMode: ['-p'] }), ceilings)).toThrow(
       'no headless streaming mode',
     );
@@ -87,6 +100,27 @@ describe('handoff', () => {
     expect(cost.feed(`${JSON.stringify({ type: 'result', total_cost_usd: 2.5 })}\n`)).toBe(
       'cost $2.5 > $1',
     );
+  });
+
+  it('keeps what the agent said: the result text, else its last message, cleaned and capped', () => {
+    const line = (e: unknown) => `${JSON.stringify(e)}\n`;
+    const text = (t: string) => ({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: t }] },
+    });
+    const m = new CeilingMonitor({ turns: 9, toolCalls: 9, minutes: 1, usd: 9 }, false);
+    m.feed(
+      line(text('first')) +
+        line(text('second')) +
+        line({ type: 'assistant', message: { content: [{ type: 'tool_use' }] } }),
+    );
+    expect([m.lastText, m.resultText]).toEqual(['second', null]);
+    m.feed(line({ type: 'result', result: 'All done.' }));
+    expect(m.resultText).toBe('All done.');
+    expect(cleanAgentText('a\u0000b\u202e\r\nc  \n')).toBe('a b\nc');
+    expect(cleanAgentText('   ')).toBeNull();
+    expect(cleanAgentText(null)).toBeNull();
+    expect(cleanAgentText('x'.repeat(50), 10)).toHaveLength(10);
   });
 
   it('launches the agent on the cloned repository and ends at READY_FOR_TEST', async () => {
@@ -109,6 +143,31 @@ describe('handoff', () => {
     expect(h.engine.entries(runId).map((e) => e.type)).toEqual(
       expect.arrayContaining(['handoff.launch', 'handoff.result']),
     );
+  });
+
+  it('reports progress as the agent works and returns its summary', async () => {
+    const { h, runId } = await publishedRun('edit');
+    const seen: HandoffProgress[] = [];
+    const out = await h.engine.launchHandoff(runId, { onProgress: (p) => seen.push(p) });
+    expect(out.summary).toBe('Added src/agent-work.txt and ran the quick checks; all green.');
+    // Chunks may batch turns, so assert the shape rather than the exact number of reports.
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.map((p) => p.turns)).toEqual([...seen.map((p) => p.turns)].sort((a, b) => a - b));
+    expect(seen.every((p) => p.turns > 0)).toBe(true);
+    expect(seen.at(-1)?.turns).toBe(2);
+    expect(seen.at(-1)).toMatchObject({ toolCalls: 1, snippet: 'working' });
+    const prep = await h.engine.prepareHandoff(runId);
+    // The agent's edit is in the working tree, uncommitted: the owner has not been asked yet.
+    const status = await nodeExec.run('git', ['status', '--porcelain'], {
+      cwd: prep.plan.cwd,
+      timeoutMs: 10_000,
+    });
+    expect(status.stdout).toContain('src/agent-work.txt');
+    const log = await nodeExec.run('git', ['log', '--format=%s'], {
+      cwd: prep.plan.cwd,
+      timeoutMs: 10_000,
+    });
+    expect(log.stdout).not.toContain('agent');
   });
 
   it('kills a runaway agent at the tool-call ceiling and refuses unfinished runs', async () => {

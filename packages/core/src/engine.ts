@@ -85,6 +85,7 @@ import {
   launchHandoff,
   type HandoffAgent,
   type HandoffOutcome,
+  type HandoffProgress,
   type HandoffPlan,
 } from './handoff.js';
 
@@ -909,7 +910,11 @@ export class Engine {
   /** `incubator handoff --launch`: runs the agent headless, bounded by the ceilings, logged per run. */
   async launchHandoff(
     runId: string,
-    opts: { agent?: HandoffAgent; onEvent?: (chunk: string) => void } = {},
+    opts: {
+      agent?: HandoffAgent;
+      onEvent?: (chunk: string) => void;
+      onProgress?: (p: HandoffProgress) => void;
+    } = {},
   ): Promise<HandoffOutcome> {
     const { plan, prompt, ticket } = await this.prepareHandoff(runId, opts);
     this.record(runId, 'handoff.launch', {
@@ -922,6 +927,7 @@ export class Engine {
       logFile: path.join(this.deps.store.runDir(runId), 'logs', 'handoff.log'),
       ticket,
       ...(opts.onEvent ? { onEvent: opts.onEvent } : {}),
+      ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
     });
     this.record(runId, 'handoff.result', { ...outcome });
     return outcome;
