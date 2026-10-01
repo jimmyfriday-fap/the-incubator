@@ -1,0 +1,39 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-commit-needs-git-identity",
+  "feature": "local-folder",
+  "title": "The commit waits until git knows who the owner is; it is never made as someone else",
+  "tags": ["validation"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": []
+  },
+  "stages": [
+    {
+      "name": "folder",
+      "input": {
+        "mode": "new",
+        "identity": false,
+        "commit": "commit"
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "PARKED"
+        },
+        {
+          "path": "parkedReason",
+          "op": "eq",
+          "value": "no_git_identity"
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

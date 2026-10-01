@@ -1,0 +1,43 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-new-folder-not-empty",
+  "feature": "local-folder",
+  "title": "A new solution refuses a folder that has files, before GitHub is touched, and keeps them",
+  "tags": ["validation"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": []
+  },
+  "stages": [
+    {
+      "name": "folder",
+      "input": {
+        "mode": "new",
+        "preexisting": true
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "PARKED"
+        },
+        {
+          "path": "parkedReason",
+          "op": "eq",
+          "value": "out_not_empty"
+        },
+        {
+          "path": "githubRepoCreated",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

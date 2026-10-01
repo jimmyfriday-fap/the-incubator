@@ -1,0 +1,59 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "happy-new-solution-commit-push",
+  "feature": "local-folder",
+  "title": "A new solution is built in the chosen folder; the owner approves the commit, then the push opens one pull request",
+  "tags": ["happy"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": []
+  },
+  "stages": [
+    {
+      "name": "folder",
+      "input": {
+        "mode": "new",
+        "commit": "commit",
+        "push": "push"
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "DONE"
+        },
+        {
+          "path": "exitCode",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "prs",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "committedAs",
+          "op": "eq",
+          "value": "Owner Person <owner@example.invalid>"
+        },
+        {
+          "path": "branch",
+          "op": "eq",
+          "value": "incubator/build-20260501"
+        },
+        {
+          "path": "githubRepoCreated",
+          "op": "eq",
+          "value": true
+        }
+      ]
+    }
+  ]
+}

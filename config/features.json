@@ -11,6 +11,10 @@
     {
       "id": "enhance-existing",
       "summary": "An existing repository plus a change request becomes a plan, tickets and design briefs on a branch, without modifying any existing file."
+    },
+    {
+      "id": "local-folder",
+      "summary": "A new solution or an update is built in a folder the owner chose; the owner approves the commit and the push at the end of the coding iteration."
     }
   ]
 }

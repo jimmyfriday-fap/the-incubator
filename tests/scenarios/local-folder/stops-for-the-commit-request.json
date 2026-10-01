@@ -1,0 +1,52 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "stops-for-the-commit-request",
+  "feature": "local-folder",
+  "title": "Without an answer the run stops at the commit request, showing the agent's changes, and commits nothing",
+  "tags": ["happy"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": []
+  },
+  "stages": [
+    {
+      "name": "folder",
+      "input": {
+        "mode": "new"
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "PARKED"
+        },
+        {
+          "path": "parkedReason",
+          "op": "eq",
+          "value": "needs_commit"
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "changedFiles",
+          "op": "contains",
+          "value": "src/agent-work.txt"
+        },
+        {
+          "path": "agentSummary",
+          "op": "contains",
+          "value": "Added src/agent-work.txt"
+        },
+        {
+          "path": "prs",
+          "op": "eq",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

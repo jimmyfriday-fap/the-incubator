@@ -1,0 +1,39 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "skip-push-keeps-the-commit-local",
+  "feature": "local-folder",
+  "title": "Skipping the push ends the run with the commit kept in the folder and no pull request",
+  "tags": ["happy"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": []
+  },
+  "stages": [
+    {
+      "name": "folder",
+      "input": {
+        "mode": "update",
+        "commit": "commit",
+        "push": "skip"
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "DONE"
+        },
+        {
+          "path": "prs",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 2
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-update-uncommitted-work",
+  "feature": "local-folder",
+  "title": "An update refuses a folder with uncommitted work and leaves it exactly as it was",
+  "tags": ["validation"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": []
+  },
+  "stages": [
+    {
+      "name": "folder",
+      "input": {
+        "mode": "update",
+        "preexisting": true
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "PARKED"
+        },
+        {
+          "path": "parkedReason",
+          "op": "eq",
+          "value": "dirty_tree"
+        },
+        {
+          "path": "branch",
+          "op": "eq",
+          "value": "main"
+        },
+        {
+          "path": "prs",
+          "op": "eq",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

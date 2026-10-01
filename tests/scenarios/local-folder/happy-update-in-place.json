@@ -1,0 +1,44 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "happy-update-in-place",
+  "feature": "local-folder",
+  "title": "An update is delivered on a new branch in the owner's folder; commit and push are approved by the owner",
+  "tags": ["happy"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": []
+  },
+  "stages": [
+    {
+      "name": "folder",
+      "input": {
+        "mode": "update",
+        "commit": "commit",
+        "push": "push"
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "DONE"
+        },
+        {
+          "path": "prs",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 2
+        },
+        {
+          "path": "branch",
+          "op": "eq",
+          "value": "incubator/enhance-20260501"
+        }
+      ]
+    }
+  ]
+}

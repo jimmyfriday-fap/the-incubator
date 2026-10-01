@@ -1,0 +1,49 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "fault-crash-after-pull-request",
+  "feature": "local-folder",
+  "title": "A crash right after the pull request opens resumes without a second one",
+  "tags": ["fault"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": []
+  },
+  "stages": [
+    {
+      "name": "folder",
+      "input": {
+        "mode": "new",
+        "commit": "commit",
+        "push": "push",
+        "crash": {
+          "at": "push",
+          "method": "openPr",
+          "when": "after"
+        }
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "DONE"
+        },
+        {
+          "path": "prs",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "resumes",
+          "op": "gte",
+          "value": 3
+        }
+      ]
+    }
+  ]
+}
