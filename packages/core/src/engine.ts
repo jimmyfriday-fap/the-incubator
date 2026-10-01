@@ -12,6 +12,7 @@ import {
 import type { Capabilities, LlmAdapter, LlmAdapterId } from '@incubator/llm';
 import { complete } from '@incubator/llm';
 import {
+  ENHANCEMENT_SPEC_VERSION,
   completeSpec,
   discoveryTurnWireSchema,
   specHash,
@@ -86,6 +87,16 @@ import {
   type HandoffOutcome,
   type HandoffPlan,
 } from './handoff.js';
+
+/**
+ * The identity of what the owner asked for. `existingRepo` (the base commit and the scan) is left
+ * out on purpose: the same request against the repository after its own delivery was merged must
+ * produce the same `request.md`, or a re-run could never be recognised as already delivered.
+ */
+function requestHash(spec: IncubatorSpec): string {
+  const { existingRepo: _repoState, ...rest } = spec;
+  return specHash(rest);
+}
 
 export interface LlmSelector {
   select(
@@ -422,7 +433,21 @@ export class Engine {
           throw new ParkError('no_stack', e.message);
         throw e;
       }
-      const { spec, items } = inspected;
+      const { items } = inspected;
+      const scan = deepScan(viewFromDir(got.dir));
+      const git = this.deps.publish?.git;
+      // Spec 1.1: an enhancement run says which repository, at which commit, and what was scanned.
+      const spec: IncubatorSpec = {
+        ...inspected.spec,
+        incubatorVersion: ENHANCEMENT_SPEC_VERSION,
+        mode: 'enhancement',
+        existingRepo: {
+          ref: got.ref ? `${got.ref.owner}/${got.ref.name}` : repoName,
+          defaultBranch: (await git?.currentBranch(got.dir)) ?? 'main',
+          baseSha: (await git?.headSha(got.dir)) ?? '0'.repeat(40),
+          scanHash: scanHash(scan),
+        },
+      };
       const issues = [
         ...validateSpec(spec).issues,
         ...(validateSpec(spec).ok ? validateSemantics(spec) : []),
@@ -433,7 +458,6 @@ export class Engine {
           `the inferred spec is invalid (${issues.length} issue(s))`,
           { issues },
         );
-      const scan = deepScan(viewFromDir(got.dir));
       mkdirSync(path.dirname(this.enhanceFile(runId, 'x')), { recursive: true });
       writeFileSync(this.enhanceFile(runId, 'scan.json'), `${JSON.stringify(scan)}\n`);
       writeFileSync(this.enhanceFile(runId, 'scan-report.md'), renderScanReport(scan));
@@ -540,10 +564,12 @@ export class Engine {
     );
     const planPath =
       prior?.planPath ?? sameDay ?? `docs/plans/${nextPlanNumber(repoFiles)}-enhance-${date}.md`;
-    const targets = Object.fromEntries(features.map((f) => [f.id, resolveTargets(scan, f)]));
+    const targets = Object.fromEntries(
+      features.map((f) => [f.id, f.targets ?? resolveTargets(scan, f)]),
+    );
     const files = buildDelivery({
       spec,
-      specHash: specHash(spec),
+      specHash: requestHash(spec),
       request: this.requestText(runId),
       scan,
       scanReport: readFileSync(this.enhanceFile(runId, 'scan-report.md'), 'utf8'),
@@ -615,7 +641,7 @@ export class Engine {
         plan = {
           date,
           planPath,
-          specHash: specHash(spec),
+          specHash: requestHash(spec),
           create: d.create,
           proposed: d.proposed,
           gaps,
@@ -1115,7 +1141,23 @@ export class Engine {
 
   /** Fills defaults (`source: "default"`), validates schema + semantics, then REVIEW. */
   private finalize(runId: string): void {
-    const { spec, added } = completeSpec(this.draft(runId));
+    const completed = completeSpec(this.draft(runId));
+    const { added } = completed;
+    let spec = completed.spec;
+    if (this.state(runId).input.kind === 'enhance') {
+      // Targets come from the scan, never from the model; the owner can edit them at REVIEW.
+      const scan = this.readScan(runId);
+      const baseline = this.enhanceBaseline(runId);
+      spec = {
+        ...spec,
+        intent: {
+          ...spec.intent,
+          coreFeatures: spec.intent.coreFeatures.map((f) =>
+            baseline.includes(f.id) || f.targets ? f : { ...f, targets: resolveTargets(scan, f) },
+          ),
+        },
+      };
+    }
     const issues = [...validateSpec(spec).issues, ...validateSemantics(spec)];
     if (issues.length)
       throw new ParkError(

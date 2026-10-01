@@ -7,8 +7,8 @@ export * from './defaults.js';
 export * from './semantics.js';
 export * from './serialize.js';
 
-import { INCUBATOR_SPEC_VERSION } from './constants.js';
+import { ENHANCEMENT_SPEC_VERSION, INCUBATOR_SPEC_VERSION } from './constants.js';
 
 export function isSupportedSpecVersion(version: unknown): boolean {
-  return version === INCUBATOR_SPEC_VERSION;
+  return version === INCUBATOR_SPEC_VERSION || version === ENHANCEMENT_SPEC_VERSION;
 }

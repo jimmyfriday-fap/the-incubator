@@ -301,6 +301,37 @@ describe('enhance', () => {
     ).toBe(false);
   });
 
+  it('produces a version 1.1 enhancement spec: repository block, and targets resolved from the scan', async () => {
+    const h = engineFor('export-orders');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const head = (await git(['rev-parse', 'HEAD'], dir)).stdout.trim();
+    const runId = start(h, h.github.remoteUrl(ref), ref);
+    const s = await h.engine.advance(runId, new NonInteractivePrompter());
+    expect(s.parked).toMatchObject({ state: 'REVIEW' });
+    const spec = h.engine.finalSpec(runId)!;
+    expect(spec).toMatchObject({ incubatorVersion: '1.1', mode: 'enhancement' });
+    expect(spec.existingRepo).toEqual({
+      ref: 'octo/bare-node',
+      defaultBranch: 'main',
+      baseSha: head,
+      scanHash: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
+    });
+    const scanned = h.engine.entries(runId).find((e) => e.type === 'enhance.scan')!;
+    expect(spec.existingRepo!.scanHash).toBe(scanned['hash']);
+    expect(spec.intent.coreFeatures[0]!.targets).toEqual(['src/server.js']);
+    // The owner's edits to the targets survive into the delivery.
+    const edited = structuredClone(spec);
+    edited.intent.coreFeatures[0]!.targets = ['src/'];
+    h.engine.approve(runId, edited);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    const plan = readFileSync(
+      path.join(workspace(h, runId), 'docs/plans/001-enhance-20260501.md'),
+      'utf8',
+    );
+    expect(plan).toContain('- Target: src/\n');
+    expect(plan).not.toContain('- Target: src/server.js');
+  });
+
   it('says so when there is nothing to change', async () => {
     const h = engineFor('no-features');
     const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
@@ -437,6 +468,13 @@ describe('enhance helpers', () => {
     expect(featureIssues(turn('enhancement/new', 'old'), ['old']).map((i) => i.code)).toEqual([
       'feature.duplicate',
     ]);
+    // Targets come from the scan; a model that sets them is rejected.
+    const withTargets = {
+      intent: {
+        coreFeatures: [{ id: 'x', summary: 's', lane: 'enhancement/new', targets: ['a'] }],
+      },
+    };
+    expect(featureIssues(withTargets, []).map((i) => i.code)).toEqual(['feature.targets']);
   });
 
   it('numbers plans after the highest existing one', () => {

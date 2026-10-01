@@ -682,7 +682,7 @@ can't drift. Ajv 2020 in strict mode, with `ajv-formats`, is the validator. The 
 
 | Field                                                      | Why                                                                       |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `$schema`, `incubatorVersion` const `"1.0"`                | editor support; migration hook                                            |
+| `$schema`, `incubatorVersion` `"1.0"` or `"1.1"`           | editor support; migration hook (1.1 = enhancement runs, §7.4)             |
 | `project.slug` pattern `^[a-z0-9][a-z0-9-]{0,98}[a-z0-9]$` | a GitHub-safe name, and the base for DB, image and service names          |
 | `testing.completenessThreshold` (default `70`)             | the brief requires a threshold but gives it no home (ADR-018)             |
 | `testing.pairedRepo.name` (default `<slug>-tests`)         | an explicit name so resume and adopt can find it                          |
@@ -1040,13 +1040,15 @@ flowchart LR
   delivery and handoff differ. Web and desktop: "Analyze and enhance" on the Adopt card, the
   ChangeRequest step, a REVIEW tree that previews the delivery, and an "Enhance" action on finished
   adopt and enhance runs.
-- **Spec 1.1, delivered as a patch** (ADR-020). Spec 1.1 adds `mode: "enhancement"`, an
-  `existingRepo` block (`ref`, `defaultBranch`, `baseSha`, `scanHash`) and per-feature `targets`; every
-  1.0 spec stays valid. It edits a pinned contract, which only the owner may re-pin, and the
-  `pre-push` hook refuses a commit that fails `contracts-pin`, so it ships as
-  `docs/phases/phase-7-spec-1.1.patch` (ticket `R-phase-7-contracts-pin`). Until it is applied,
-  enhance runs use spec 1.0 (`mode: "brownfield"`) and the resolved targets live in the journaled plan
-  record.
+- **Spec 1.1** (ADR-020). An enhance run's spec carries `incubatorVersion: "1.1"`, `mode:
+"enhancement"`, an `existingRepo` block (`ref`, `defaultBranch`, `baseSha`, `scanHash`: which
+  repository, at which commit, and which scan) and per-feature `targets` (repository-relative files
+  or directories). Every 1.0 spec stays valid, and greenfield and adopt runs still write 1.0. The
+  scan fills the targets at REVIEW, where the owner can edit them; the model may not set them, or
+  `existingRepo`, or anything outside `intent`. Targets are checked to stay inside the repository (no
+  `..`, absolute path, drive letter or control character). The request's hash leaves out
+  `existingRepo`, so the same request against the repository after its own delivery was merged gives
+  the same `request.md` and is recognised as already delivered.
 
 ---
 

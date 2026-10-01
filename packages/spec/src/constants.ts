@@ -1,6 +1,9 @@
 import type { IncubatorSpec, WorkLane } from './types.gen.js';
 
+/** New and adopted projects. */
 export const INCUBATOR_SPEC_VERSION = '1.0';
+/** Enhancement runs add `mode: "enhancement"`, `existingRepo` and per-feature `targets`. */
+export const ENHANCEMENT_SPEC_VERSION = '1.1';
 
 export const WORK_LANES: readonly WorkLane[] = [
   'workspace',
@@ -26,6 +29,7 @@ export const FIXED_BY_PACKS: readonly string[] = [
   'gapReport',
   'mode',
   'source',
+  'existingRepo',
 ];
 
 /**

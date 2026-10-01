@@ -25,8 +25,24 @@
   ],
   "properties": {
     "$schema": { "type": "string" },
-    "incubatorVersion": { "const": "1.0" },
-    "mode": { "enum": ["greenfield", "brownfield"] },
+    "incubatorVersion": {
+      "anyOf": [{ "const": "1.0" }, { "const": "1.1" }],
+      "description": "1.0 for new and adopted projects; 1.1 adds enhancement runs (mode, existingRepo, feature targets)."
+    },
+    "mode": { "enum": ["greenfield", "brownfield", "enhancement"] },
+    "existingRepo": {
+      "title": "ExistingRepo",
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The repository an enhancement run changes: what was scanned, and at which commit.",
+      "required": ["ref", "defaultBranch", "baseSha", "scanHash"],
+      "properties": {
+        "ref": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "defaultBranch": { "$ref": "#/$defs/branchName" },
+        "baseSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "scanHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
     "project": {
       "title": "Project",
       "type": "object",
@@ -72,7 +88,13 @@
             "properties": {
               "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,48}$" },
               "summary": { "type": "string", "minLength": 1, "maxLength": 300 },
-              "lane": { "$ref": "#/$defs/workLane" }
+              "lane": { "$ref": "#/$defs/workLane" },
+              "targets": {
+                "type": "array",
+                "maxItems": 20,
+                "description": "Repository-relative files or directories the change touches, resolved from the scan (enhancement runs).",
+                "items": { "type": "string", "minLength": 1, "maxLength": 300 }
+              }
             }
           }
         }

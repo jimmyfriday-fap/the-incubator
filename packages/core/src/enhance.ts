@@ -41,8 +41,10 @@ export function featureIssues(
   existing: readonly string[],
 ): Issue[] {
   const features =
-    (draftSpec['intent'] as { coreFeatures?: { id?: unknown; lane?: unknown }[] } | undefined)
-      ?.coreFeatures ?? [];
+    (
+      draftSpec['intent'] as
+        { coreFeatures?: { id?: unknown; lane?: unknown; targets?: unknown }[] } | undefined
+    )?.coreFeatures ?? [];
   const issues: Issue[] = [];
   features.forEach((f, i) => {
     if (!ENHANCEMENT_LANES.includes(String(f.lane)))
@@ -50,6 +52,12 @@ export function featureIssues(
         code: 'lane.enhancement',
         path: `/draftSpec/intent/coreFeatures/${i}/lane`,
         message: `an enhancement request must use lane enhancement/existing or enhancement/new, not ${String(f.lane)}`,
+      });
+    if (f.targets !== undefined)
+      issues.push({
+        code: 'feature.targets',
+        path: `/draftSpec/intent/coreFeatures/${i}/targets`,
+        message: 'targets are resolved from the scan; do not set them',
       });
     if (existing.includes(String(f.id)))
       issues.push({

@@ -110,10 +110,37 @@ export function validateSemantics(spec: IncubatorSpec): Issue[] {
       '/intent/coreFeatures',
       'feature id "health" is reserved for the built-in health feature',
     );
+  // Enhancement runs (spec 1.1): the mode, the version and the repository block go together.
+  if (spec.mode === 'enhancement') {
+    if (spec.incubatorVersion !== '1.1')
+      add('enhancement_version', '/incubatorVersion', 'an enhancement spec is version 1.1');
+    if (!spec.existingRepo)
+      add('enhancement_repo', '/existingRepo', 'mode enhancement needs existingRepo');
+  } else if (spec.existingRepo) {
+    add('existing_repo_mode', '/existingRepo', 'existingRepo is only for mode enhancement');
+  }
+  spec.intent.coreFeatures.forEach((f, i) => {
+    for (const t of f.targets ?? []) {
+      if (!isRepoRelative(t))
+        add(
+          'target_path',
+          `/intent/coreFeatures/${i}/targets`,
+          `target "${t}" must be a repository-relative path without ".." or drive letters`,
+        );
+    }
+  });
   const keys = spec.decisions.map((d) => d.key);
   const dupDecision = keys.find((k, i) => keys.indexOf(k) !== i);
   if (dupDecision) add('decision_keys', '/decisions', `decision ${dupDecision} is recorded twice`);
   return issues;
+}
+
+/** A path that stays inside the repository: relative, forward slashes, no `..`, no control characters. */
+export function isRepoRelative(p: string): boolean {
+  if (p.startsWith('/') || p.includes('\\') || /^[A-Za-z]:/.test(p)) return false;
+  // eslint-disable-next-line no-control-regex -- why: control characters are exactly what is rejected.
+  if (/[\u0000-\u001f\u007f]/.test(p)) return false;
+  return !p.split('/').some((seg) => seg === '..');
 }
 
 const words = (id: string): string[] => id.split(/[^A-Za-z0-9]+/).filter(Boolean);

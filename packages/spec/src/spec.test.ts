@@ -221,8 +221,9 @@ describe('path helpers', () => {
 });
 
 describe('version and generated types', () => {
-  it('accepts only the current version', () => {
+  it('accepts the two released versions and nothing else', () => {
     expect(isSupportedSpecVersion('1.0')).toBe(true);
+    expect(isSupportedSpecVersion('1.1')).toBe(true);
     expect(isSupportedSpecVersion('0.9')).toBe(false);
   });
 
@@ -245,5 +246,87 @@ describe('feature identifiers', () => {
     expect(identifierClash('python-service', 'fan-out')).toBeNull();
     expect(identifierClash('wordpress', 'list')).toContain('"List"');
     expect(identifierClash('wordpress', 'guest-list')).toBeNull();
+  });
+});
+
+describe('enhancement specs (version 1.1)', () => {
+  const base = () =>
+    completeSpec({ stack: { pack: 'node-web' }, project: { name: 'Order Desk' } }).spec;
+  const existingRepo = {
+    ref: 'octo/order-desk',
+    defaultBranch: 'main',
+    baseSha: 'a'.repeat(40),
+    scanHash: 'b'.repeat(64),
+  };
+  const enhancement = (): IncubatorSpec => ({
+    ...base(),
+    incubatorVersion: '1.1',
+    mode: 'enhancement',
+    existingRepo,
+    intent: {
+      ...base().intent,
+      coreFeatures: [
+        {
+          id: 'export-orders',
+          summary: 'Export orders as CSV',
+          lane: 'enhancement/existing',
+          targets: ['src/server.js', 'src/routes/'],
+        },
+      ],
+    },
+  });
+
+  it('keeps every 1.0 spec valid and adds the enhancement shape', () => {
+    expect(validateSpec(base()).issues).toEqual([]);
+    expect(base().incubatorVersion).toBe('1.0');
+    expect(validateSpec(enhancement()).issues).toEqual([]);
+    expect(validateSemantics(enhancement())).toEqual([]);
+  });
+
+  it('rejects malformed repository blocks and unknown versions', () => {
+    const bad = (mutate: (s: Record<string, unknown>) => void) => {
+      const s = structuredClone(enhancement()) as unknown as Record<string, unknown>;
+      mutate(s);
+      return validateSpec(s).ok;
+    };
+    expect(bad((s) => (s['incubatorVersion'] = '2.0'))).toBe(false);
+    expect(bad((s) => ((s['existingRepo'] as { baseSha: string }).baseSha = 'not-a-sha'))).toBe(
+      false,
+    );
+    expect(bad((s) => delete (s['existingRepo'] as Record<string, unknown>)['scanHash'])).toBe(
+      false,
+    );
+    expect(bad((s) => ((s['existingRepo'] as Record<string, unknown>)['extra'] = 1))).toBe(false);
+  });
+
+  it('keeps mode, version and repository block together', () => {
+    const { existingRepo: _dropped, ...rest } = enhancement();
+    const noRepo: IncubatorSpec = rest;
+    expect(validateSemantics(noRepo).map((i) => i.code)).toContain('enhancement_repo');
+    const wrongVersion = { ...enhancement(), incubatorVersion: '1.0' } as IncubatorSpec;
+    expect(validateSemantics(wrongVersion).map((i) => i.code)).toContain('enhancement_version');
+    const stray = { ...base(), existingRepo } as IncubatorSpec;
+    expect(validateSemantics(stray).map((i) => i.code)).toContain('existing_repo_mode');
+  });
+
+  it('confines targets to the repository', () => {
+    for (const t of [
+      '../secrets',
+      '/etc/passwd',
+      'C:\\Windows',
+      'a\\b',
+      'src/../../x',
+      'a\u0000b',
+    ]) {
+      const s = enhancement();
+      s.intent.coreFeatures[0]!.targets = [t];
+      expect(
+        validateSemantics(s).map((i) => i.code),
+        t,
+      ).toContain('target_path');
+    }
+    const ok = enhancement();
+    ok.intent.coreFeatures[0]!.targets = ['src/a.js', 'docs/', 'a..b/c'];
+    expect(validateSemantics(ok)).toEqual([]);
   });
 });
