@@ -2,7 +2,8 @@
 // A stand-in agent CLI for handoff tests: reads the prompt on stdin and emits Claude-style
 // stream-json. FAKE_AGENT_MODE=complete moves the active ticket to READY_FOR_TEST (like the Stop
 // hook); edit does the same and also writes src/agent-work.txt and a result text, like a real coding
-// run; runaway keeps calling tools until it is killed; spend reports a large cost.
+// run; idle stops without touching a file; runaway keeps calling tools until it is killed; spend
+// reports a large cost.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 

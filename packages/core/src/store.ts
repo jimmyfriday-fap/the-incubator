@@ -34,6 +34,12 @@ export interface RunInput {
   request?: string;
   /** enhance: also deliver the canonical-pattern gaps, as a separate commit. */
   withGaps?: boolean;
+  /**
+   * A local folder chosen by the owner (ADR-023). `new`: the folder itself becomes the repository
+   * (empty or missing). `enhance`: the existing repository the agent works in, on a new branch. After the
+   * agent stops, the run asks for the commit and the push.
+   */
+  dir?: string;
 }
 
 /** `~/.incubator` layout (TDD §2.5): config.json, runs/<id>/{run.json,journal.jsonl,spec/,workspace/,logs/}, cache/. */

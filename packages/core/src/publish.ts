@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import {
   PolicyError,
@@ -51,6 +51,11 @@ export interface StepContext {
   clock: Clock;
   log: Logger;
   keep?: boolean;
+  /**
+   * A folder the owner chose (ADR-023). The repository is rendered into it, and the Publisher never wipes
+   * it, never cleans it up and never writes into one that already holds files of its own.
+   */
+  localDir?: string;
 }
 
 export interface PublishSummary {
@@ -115,6 +120,36 @@ export function workspaceDirs(
         paired: path.join(workspace, spec.testing.pairedRepo?.name ?? `${spec.project.slug}-tests`),
       }
     : { app };
+}
+
+/**
+ * Where a run's repositories live: the owner's folder (and, for a paired tests repo, a sibling named
+ * after it) in folder mode, the run workspace otherwise.
+ */
+export function stepDirs(ctx: StepContext): { app: string; paired?: string } {
+  if (!ctx.localDir) return workspaceDirs(ctx.workspace, ctx.spec);
+  const app = path.resolve(ctx.localDir);
+  return ctx.spec.testing.home === 'paired-repo'
+    ? {
+        app,
+        paired: path.join(
+          path.dirname(app),
+          ctx.spec.testing.pairedRepo?.name ?? `${ctx.spec.project.slug}-tests`,
+        ),
+      }
+    : { app };
+}
+
+/** Every file under `dir` except `.git`, as POSIX paths relative to it. */
+function filesUnder(dir: string, rel = ''): string[] {
+  const out: string[] = [];
+  for (const e of readdirSync(path.join(dir, rel), { withFileTypes: true })) {
+    if (!rel && e.name === '.git') continue;
+    const r = rel ? `${rel}/${e.name}` : e.name;
+    if (e.isDirectory()) out.push(...filesUnder(dir, r));
+    else out.push(r);
+  }
+  return out;
 }
 
 /**
@@ -207,7 +242,7 @@ export class Publisher {
 
   /** SCAFFOLD: render into the run's workspace (re-rendered unless the lock hash matches). */
   async render(ctx: StepContext): Promise<RenderResult> {
-    const dirs = workspaceDirs(ctx.workspace, ctx.spec);
+    const dirs = stepDirs(ctx);
     const key = JSON.stringify(ctx.spec);
     if (this.#rendered?.key !== key)
       this.#rendered = {
@@ -222,7 +257,10 @@ export class Publisher {
       (done.data as { lock?: string } | undefined)?.lock === want.lock &&
       existsSync(path.join(dirs.app, LOCK_PATH)) &&
       sha256Hex(readFileSync(path.join(dirs.app, LOCK_PATH))) === want.lock;
-    if (!intact) {
+    if (!intact && ctx.localDir) {
+      this.renderIntoFolder(ctx, dirs, out.result);
+      ctx.record('step.ok', { step: 'render', data: want });
+    } else if (!intact) {
       rmSync(ctx.workspace, { recursive: true, force: true });
       mkdirSync(ctx.workspace, { recursive: true });
       writeTree(out.result, dirs.app, {
@@ -235,6 +273,41 @@ export class Publisher {
     return out.result;
   }
 
+  /**
+   * Folder mode: nothing is wiped. A folder is used only when it is empty or missing, or when it holds
+   * nothing but files this very render would write (a crash between `render.begin` and `render`); anything
+   * else is refused with `out_not_empty`, so the owner's files can never be overwritten.
+   */
+  private renderIntoFolder(
+    ctx: StepContext,
+    dirs: { app: string; paired?: string },
+    result: RenderResult,
+  ): void {
+    const ours = new Map<string, Set<string>>([[dirs.app, new Set()]]);
+    if (dirs.paired) ours.set(dirs.paired, new Set());
+    for (const p of result.files.keys())
+      if (p.startsWith('@paired/')) ours.get(dirs.paired ?? '')?.add(p.slice('@paired/'.length));
+      else ours.get(dirs.app)!.add(p);
+    const resuming = ctx.steps['render.begin']?.status === 'ok';
+    for (const [dir, expected] of ours) {
+      if (!existsSync(dir)) continue;
+      const have = filesUnder(dir);
+      const foreign = resuming ? have.filter((f) => !expected.has(f)) : have;
+      if (foreign.length)
+        throw new PolicyError(
+          `${dir} is not empty (${foreign.slice(0, 3).join(', ')}${foreign.length > 3 ? ', …' : ''}); choose an empty folder`,
+          { code: 'out_not_empty' },
+        );
+    }
+    ctx.record('step.ok', { step: 'render.begin', data: { dir: dirs.app } });
+    mkdirSync(dirs.app, { recursive: true });
+    writeTree(result, dirs.app, {
+      mode: 'fresh',
+      force: true,
+      ...(dirs.paired ? { pairedName: path.basename(dirs.paired) } : {}),
+    });
+  }
+
   /** VERIFY: the rendered repositories must pass their own quick gate (exit 2 otherwise). */
   async verify(ctx: StepContext): Promise<void> {
     const key = JSON.stringify(ctx.steps['render']?.data ?? null);
@@ -243,7 +316,7 @@ export class Publisher {
       (ctx.steps['verify'].data as { render?: string })?.render === key
     )
       return;
-    const r = await this.deps.verify(workspaceDirs(ctx.workspace, ctx.spec));
+    const r = await this.deps.verify(stepDirs(ctx));
     if (!r.ok)
       throw new PolicyError(`the generated repository failed its own check: ${r.summary}`, {
         code: 'verify_failed',
@@ -255,7 +328,7 @@ export class Publisher {
   async publish(ctx: StepContext, rendered: RenderResult): Promise<PublishSummary> {
     const { gh, token } = await this.github();
     const spec = ctx.spec;
-    const dirs = workspaceDirs(ctx.workspace, spec);
+    const dirs = stepDirs(ctx);
     const login =
       (ctx.steps['token.resolve']?.data as { login?: string } | undefined)?.login ??
       spec.project.owner.login;
@@ -336,6 +409,12 @@ export class Publisher {
         await this.deps.git.push(r.dir, remote, `HEAD:refs/heads/${staging}`, token.token);
         return { sha: local };
       });
+      // Folder mode keeps the repository, so it keeps the way back to GitHub too.
+      if (ctx.localDir)
+        await this.step(ctx, `${r.key}git.remote`, async () => {
+          await this.deps.git.remoteAdd(r.dir, 'origin', remote);
+          return { remote };
+        });
       if (!r.paired) {
         await this.step(ctx, 'branch.production', async () => {
           if ((await gh.getBranchSha(r.ref, prod)) === commit) return { sha: commit };
@@ -388,7 +467,7 @@ export class Publisher {
           { fatal: false },
         )
       )?.created ?? [];
-    if (!ctx.keep)
+    if (!ctx.keep && !ctx.localDir)
       await this.step(
         ctx,
         'cleanup',

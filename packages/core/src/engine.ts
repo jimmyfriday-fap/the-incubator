@@ -11,6 +11,7 @@ import {
 } from '@incubator/runtime';
 import type { Capabilities, LlmAdapter, LlmAdapterId } from '@incubator/llm';
 import { complete } from '@incubator/llm';
+import type { RepoRef } from '@incubator/git';
 import {
   ENHANCEMENT_SPEC_VERSION,
   completeSpec,
@@ -26,6 +27,17 @@ import { buildUserPrompt } from './discovery/prompt-builder.js';
 import { MAX_ROUNDS, questionIssues, selectQuestions } from './discovery/questions.js';
 import type { JournalEntry } from './journal.js';
 import { loadPrompt } from './prompts.js';
+import { inspectFolder } from './folders.js';
+import {
+  agentReport,
+  draftMessage,
+  ensureLocalExclude,
+  finalMessage,
+  finishBody,
+  finishTrailer,
+  type AgentReport,
+  type FinishDetail,
+} from './finish.js';
 import {
   analysisSummarySchema,
   renderAnalysisSummary,
@@ -86,6 +98,7 @@ import {
   type HandoffAgent,
   type HandoffOutcome,
   type HandoffProgress,
+  cleanAgentText,
   type HandoffPlan,
 } from './handoff.js';
 
@@ -202,6 +215,7 @@ export class Engine {
       clock: this.deps.clock,
       log: this.deps.log,
       ...(s.input.keep ? { keep: true } : {}),
+      ...(s.input.dir && s.input.kind === 'new' ? { localDir: path.resolve(s.input.dir) } : {}),
     };
   }
 
@@ -421,6 +435,7 @@ export class Engine {
   /** ANALYZE (enhance): acquire a copy, scan the whole repository, draft from the detectors, then REQUEST. */
   private async enhanceAnalyzeStep(runId: string, s: RunState): Promise<void> {
     await this.effect(runId, async () => {
+      if (s.input.dir) await this.checkOwnerFolder(runId, s);
       const a = this.adopter();
       const got = await a.acquire(this.adoptContext(runId), s.input.repo!, s.input.repoRef);
       const repoName =
@@ -678,6 +693,10 @@ export class Engine {
     if (noop) {
       this.record(runId, 'step.ok', { step: 'enhance.noop', data: { reason: noop } });
       this.record(runId, 'run.done', { noop: true, reason: noop });
+    } else if (s.input.dir) {
+      // In place: the plan moves into the owner's folder, tickets sync, then the agent codes there.
+      await this.effect(runId, () => this.deliverInPlace(runId, this.state(runId)));
+      this.enter(runId, 'HANDOFF');
     } else if (s.input.noPublish) this.record(runId, 'run.done', { local: dir });
     else this.enter(runId, 'PUBLISH');
   }
@@ -825,7 +844,318 @@ export class Engine {
       step: 'handoff.tickets',
       data: { tracker: spec.tracker.type },
     });
+    // A folder run goes on to the coding iteration; the others are done.
+    if (this.state(runId).input.dir) this.enter(runId, 'CODE');
+    else this.record(runId, 'run.done', {});
+  }
+
+  // --- folder runs: coding, then the owner's commit and push (ADR-023) ---------------------------
+
+  /** In-place enhance and new-solution runs both name a folder; everything below works on it. */
+  private runDir(s: RunState): string {
+    return path.resolve(s.input.dir!);
+  }
+
+  /**
+   * In-place enhance: the folder must be a clean git repository (parks `dirty_tree`, `not_git` and so on
+   * otherwise), and its starting point is recorded so delivery can prove nothing moved underneath.
+   */
+  private async checkOwnerFolder(runId: string, s: RunState): Promise<void> {
+    if (s.steps['folder.base']?.status === 'ok') return;
+    const git = this.deps.publish?.git;
+    if (!git) throw new ToolError('enhance needs git and GitHub dependencies');
+    const v = await inspectFolder(git, this.runDir(s), 'existing');
+    if (!v.ok)
+      throw new ParkError(
+        v.git && !v.git.clean ? 'dirty_tree' : 'folder_invalid',
+        v.problems.join(' '),
+        { path: v.path, changed: v.git?.changed ?? [] },
+      );
+    this.record(runId, 'step.ok', {
+      step: 'folder.base',
+      data: { head: v.git!.head, branch: v.git!.branch, origin: v.git!.origin },
+    });
+  }
+
+  /**
+   * In-place enhance: the plan was committed on a branch in the run's clone; bring that branch into the
+   * owner's folder and check it out. The owner's own branch is not written to, and nothing moves if the
+   * folder changed since the scan.
+   */
+  private async deliverInPlace(runId: string, s: RunState): Promise<void> {
+    if (s.steps['deliver']?.status === 'ok') return;
+    const git = this.deps.publish!.git;
+    const dir = this.runDir(s);
+    const base = s.steps['folder.base']!.data as { head: string; branch: string };
+    const branch = (s.steps[partStep('enhance')]?.data as { branch?: string } | undefined)?.branch;
+    if (!branch) throw new ToolError('the enhance branch was not recorded');
+    const now = await git.currentBranch(dir);
+    if (now !== branch) {
+      const status = await git.status(dir);
+      if (status.length || now !== base.branch || (await git.headSha(dir)) !== base.head)
+        throw new ParkError(
+          'folder_changed',
+          'the folder changed while the plan was being prepared; commit or stash your changes, go back to the branch you started on, and resume',
+          { expected: base, now, changed: status.slice(0, 8).map((e) => e.path) },
+        );
+      await git.fetch(
+        dir,
+        path.join(this.deps.store.runDir(runId), 'workspace', 'repo'),
+        `refs/heads/${branch}:refs/heads/${branch}`,
+      );
+      await git.checkout(dir, branch);
+    }
+    ensureLocalExclude(dir);
+    this.record(runId, 'step.ok', { step: 'deliver', data: { branch, from: base.branch } });
+  }
+
+  private async codeStep(runId: string, s: RunState): Promise<void> {
+    if (s.steps['code.done']?.status === 'ok') return this.enter(runId, 'COMMIT');
+    const dir = this.runDir(s);
+    const git = this.deps.publish!.git;
+    await this.effect(runId, async () => {
+      if (s.steps['code.start']?.status !== 'ok') {
+        let branch = await git.currentBranch(dir);
+        // A new solution is coded on its own branch: the staging branch deploys.
+        if (s.input.kind === 'new') {
+          const target = `incubator/build-${enhanceDate(this.deps.clock)}`;
+          if (branch !== target) await git.checkoutNewBranch(dir, target);
+          branch = target;
+        }
+        this.record(runId, 'step.ok', {
+          step: 'code.start',
+          data: { branch, base: await git.headSha(dir) },
+        });
+      }
+      ensureLocalExclude(dir);
+      let last = 0;
+      const out = await this.launchHandoff(runId, {
+        onProgress: (p) => {
+          // why: a long run reports every turn; the journal keeps the first and then one a second.
+          if (last && Date.now() - last < 1000) return;
+          last = Date.now();
+          this.record(runId, 'handoff.progress', { ...p });
+        },
+      });
+      this.record(runId, 'step.ok', { step: 'code.done', data: agentReport(out) });
+    });
+    this.enter(runId, 'COMMIT');
+  }
+
+  /** The review the owner needs at the commit request, computed from the folder as it is now. */
+  async finishDetail(runId: string): Promise<FinishDetail | null> {
+    const s = this.state(runId);
+    if (!s.input.dir || !this.deps.publish) return null;
+    const dir = this.runDir(s);
+    const git = this.deps.publish.git;
+    const stage: FinishDetail['stage'] = s.done
+      ? 'done'
+      : s.state === 'CODE' || (s.state === 'PARKED' && s.parked?.state === 'CODE')
+        ? 'coding'
+        : s.state === 'PUSH' || (s.state === 'PARKED' && s.parked?.state === 'PUSH')
+          ? 'push'
+          : 'commit';
+    const start = s.steps['code.start']?.data as { branch?: string | null } | undefined;
+    const committed = s.steps['finish.commit']?.data as FinishDetail['commit'];
+    const agent = (s.steps['code.done']?.data as AgentReport | undefined) ?? null;
+    const files = stage === 'commit' && existsSync(dir) ? await git.status(dir) : [];
+    const target = this.pushTarget(runId, s);
+    const approved = this.entries(runId).findLast((e) => e.type === 'finish.approve');
+    const progress = this.entries(runId).findLast((e) => e.type === 'handoff.progress');
+    const pr = this.entries(runId).findLast((e) => e.type === 'finish.summary')?.['pr'] as
+      { number: number; url: string } | undefined;
+    return {
+      stage,
+      dir,
+      branch: committed?.branch ?? start?.branch ?? null,
+      agent,
+      files,
+      message:
+        typeof approved?.['message'] === 'string'
+          ? approved['message']
+          : draftMessage({ title: this.finishTitle(runId, s), summary: agent?.summary ?? null }),
+      identity: existsSync(dir) ? await git.identity(dir) : null,
+      commit: committed ?? null,
+      target,
+      pr: pr ?? null,
+      progress:
+        stage === 'coding' && progress
+          ? {
+              turns: Number(progress['turns'] ?? 0),
+              toolCalls: Number(progress['toolCalls'] ?? 0),
+              costUsd: typeof progress['costUsd'] === 'number' ? progress['costUsd'] : null,
+              snippet: typeof progress['snippet'] === 'string' ? progress['snippet'] : null,
+            }
+          : null,
+    };
+  }
+
+  /** The subject of the drafted commit: the one request, the count of requests, or the new project. */
+  private finishTitle(runId: string, s: RunState): string {
+    if (s.input.kind === 'enhance') {
+      const plan = s.steps['enhance.plan']?.data as EnhancePlanRecord | undefined;
+      const features = plan?.features ?? [];
+      if (features.length === 1) {
+        const f = this.approvedSpec(runId).intent.coreFeatures.find(
+          (x) => x.id === features[0]!.id,
+        );
+        return f?.summary ?? features[0]!.id;
+      }
+      return `${features.length} enhancement requests`;
+    }
+    return `build ${this.approvedSpec(runId).project.name}`;
+  }
+
+  /** Where Push would send the branch: the GitHub repository of the folder, or the reason there is none. */
+  private pushTarget(runId: string, s: RunState): FinishDetail['target'] {
+    if (s.input.kind === 'new') {
+      const spec = this.approvedSpec(runId);
+      return { repo: { owner: spec.project.owner.login, name: spec.project.slug }, reason: null };
+    }
+    const base = s.steps['folder.base']?.data as { origin?: RepoRef | null } | undefined;
+    // An explicit repository (owner/name) wins, as for `adopt`: the origin may not be GitHub's URL form.
+    const repo = s.input.repoRef ?? base?.origin ?? null;
+    return repo
+      ? { repo, reason: null }
+      : {
+          repo: null,
+          reason:
+            'The folder has no GitHub origin, so there is nowhere to push or open a pull request.',
+        };
+  }
+
+  /** COMMIT: park with the review until the owner approves (or leaves the changes uncommitted). */
+  private async commitStep(runId: string, s: RunState): Promise<void> {
+    if (s.steps['finish.commit']?.status === 'ok') return this.enter(runId, 'PUSH');
+    const dir = this.runDir(s);
+    const git = this.deps.publish!.git;
+    const start = s.steps['code.start']!.data as { branch: string; base: string | null };
+    await this.effect(runId, async () => {
+      const done = (data: FinishDetail['commit']): void => {
+        this.record(runId, 'step.ok', { step: 'finish.commit', data });
+      };
+      const head = await git.headSha(dir);
+      // A crash after the commit but before the journal entry: take the commit as it is.
+      if ((await git.headMessage(dir))?.includes(finishTrailer(runId))) {
+        done({ sha: head, branch: start.branch });
+        return this.enter(runId, 'PUSH');
+      }
+      const changes = await git.status(dir);
+      if (changes.length === 0) {
+        if (head === start.base) {
+          done({ sha: null, branch: start.branch, none: true });
+          this.record(runId, 'run.done', { nothingToCommit: true });
+          return;
+        }
+        done({ sha: head, branch: start.branch });
+        return this.enter(runId, 'PUSH');
+      }
+      const approval = this.entries(runId).findLast((e) => e.type === 'finish.approve');
+      if (!approval)
+        throw new ParkError(
+          'needs_commit',
+          `${changes.length} changed file${changes.length === 1 ? '' : 's'} are waiting for your decision to commit`,
+          { files: changes.length },
+        );
+      if (approval['action'] === 'leave') {
+        done({ sha: null, branch: start.branch, left: true });
+        this.record(runId, 'run.done', { uncommitted: true });
+        return;
+      }
+      if (!(await git.identity(dir)))
+        throw new ParkError(
+          'no_git_identity',
+          'git does not know who you are: run `git config --global user.name "Your Name"` and `git config --global user.email you@example.com`, then resume',
+        );
+      const fallback = draftMessage({
+        title: this.finishTitle(runId, s),
+        summary: (s.steps['code.done']?.data as AgentReport | undefined)?.summary ?? null,
+      });
+      await git.addAll(dir);
+      const sha = await git.commit(
+        dir,
+        finalMessage(
+          typeof approval['message'] === 'string' ? approval['message'] : '',
+          fallback,
+          runId,
+        ),
+        {},
+      );
+      done({ sha, branch: start.branch });
+      this.enter(runId, 'PUSH');
+    });
+  }
+
+  /** PUSH: the owner decides whether the branch goes to GitHub as a pull request. */
+  private async pushStep(runId: string, s: RunState): Promise<void> {
+    const committed = s.steps['finish.commit']!.data as { sha: string | null; branch: string };
+    const target = this.pushTarget(runId, s);
+    if (!target.repo) {
+      this.record(runId, 'run.done', { committedLocally: true, reason: target.reason });
+      return;
+    }
+    const decision = this.entries(runId).findLast((e) => e.type === 'finish.push');
+    if (!decision)
+      throw new ParkError(
+        'needs_push',
+        `push ${committed.branch} to ${target.repo.owner}/${target.repo.name}?`,
+      );
+    if (decision['action'] === 'skip') {
+      this.record(runId, 'run.done', { committedLocally: true });
+      return;
+    }
+    const ctx = this.adoptContext(runId);
+    await this.effect(runId, async () => {
+      const spec = this.approvedSpec(runId);
+      const agent = s.steps['code.done']?.data as AgentReport | undefined;
+      const files = (
+        await this.deps.publish!.git.diffNameStatus(
+          this.runDir(s),
+          (s.steps['code.start']!.data as { base: string }).base,
+          committed.sha!,
+        )
+      ).map(([, p]) => p);
+      const body = finishBody({
+        title: this.finishTitle(runId, s),
+        summary: agent?.summary ?? null,
+        verdict: agent?.verdict ?? 'ready',
+        files,
+      });
+      const pr = await this.adopter().publish(ctx, this.runDir(s), target.repo!, body, undefined, {
+        prefix: 'finish',
+        commitStep: 'finish.commit',
+        title: `${spec.project.name}: ${this.finishTitle(runId, s)}`.slice(0, 120),
+        fallbackBranch: committed.branch,
+      });
+      this.record(runId, 'finish.summary', {
+        pr,
+        repo: `https://github.com/${target.repo!.owner}/${target.repo!.name}`,
+      });
+    });
     this.record(runId, 'run.done', {});
+  }
+
+  /** The owner's answer to "commit these changes?" (`leave` keeps them uncommitted); resume afterwards. */
+  submitCommit(runId: string, a: { action: 'commit' | 'leave'; message?: string }): void {
+    const s = this.state(runId);
+    if (s.state !== 'PARKED' || s.parked?.state !== 'COMMIT' || s.parked.reason !== 'needs_commit')
+      throw new PolicyError(`run ${runId} is not waiting for a commit decision`, {
+        code: 'not_waiting',
+      });
+    this.record(runId, 'finish.approve', {
+      action: a.action,
+      ...(a.action === 'commit' ? { message: cleanAgentText(a.message ?? '', 4000) ?? '' } : {}),
+    });
+  }
+
+  /** The owner's answer to "push this branch?"; resume afterwards. */
+  submitPush(runId: string, action: 'push' | 'skip'): void {
+    const s = this.state(runId);
+    if (s.state !== 'PARKED' || s.parked?.state !== 'PUSH' || s.parked.reason !== 'needs_push')
+      throw new PolicyError(`run ${runId} is not waiting for a push decision`, {
+        code: 'not_waiting',
+      });
+    this.record(runId, 'finish.push', { action });
   }
 
   /**
@@ -838,7 +1168,9 @@ export class Engine {
     opts: { agent?: HandoffAgent } = {},
   ): Promise<{ plan: HandoffPlan; prompt: string; ticket: string | null }> {
     const s = this.state(runId);
-    if (!s.done)
+    // A folder run codes before it is finished; every other run is handed off once it is done.
+    const coding = Boolean(s.input.dir) && (s.state === 'CODE' || s.done);
+    if (!s.done && !coding)
       throw new PolicyError(`run ${runId} is not finished (${s.state}); publish it first`, {
         code: 'not_done',
       });
@@ -850,9 +1182,11 @@ export class Engine {
       : undefined;
     if (enhance && !delivered)
       throw new PolicyError(`run ${runId} delivered nothing to hand off`, { code: 'no_plan' });
-    let repo = enhance
-      ? path.join(this.deps.store.runDir(runId), 'workspace', 'repo')
-      : s.input.out;
+    let repo = s.input.dir
+      ? this.runDir(s)
+      : enhance
+        ? path.join(this.deps.store.runDir(runId), 'workspace', 'repo')
+        : s.input.out;
     if (!repo) {
       const summary = this.publishSummary(runId);
       if (!summary)
@@ -1260,6 +1594,15 @@ export class Engine {
             break;
           case 'HANDOFF':
             await this.handoffStep(runId);
+            break;
+          case 'CODE':
+            await this.codeStep(runId, s);
+            break;
+          case 'COMMIT':
+            await this.commitStep(runId, s);
+            break;
+          case 'PUSH':
+            await this.pushStep(runId, s);
             break;
           case 'DONE':
           case 'PARKED':

@@ -14,6 +14,9 @@ export const RUN_STATES = [
   'VERIFY',
   'PUBLISH',
   'HANDOFF',
+  'CODE',
+  'COMMIT',
+  'PUSH',
   'DONE',
   'PARKED',
 ] as const;
