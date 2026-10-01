@@ -1320,3 +1320,5 @@ flowchart LR
 | [019](adr/019-toolchain-fetch-and-ci.md)               | Hash-pinned tool fetching and the CI layout                                  |
 | [020](adr/020-enhance-command-and-staged-contract.md)  | `enhance` command, additive delivery model, staged contract change           |
 | [021](adr/021-deep-scan-caps-and-skip-accounting.md)   | Deep scan: deterministic, capped, honest about skipped files                 |
+| [022](adr/022-host-capabilities-over-http.md)          | Native capabilities (folder dialog) reach the UI as HTTP routes              |
+| [023](adr/023-local-folder-workflow.md)                | Folder workflows; the owner approves every commit and push                   |
