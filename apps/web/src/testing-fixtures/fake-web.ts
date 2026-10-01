@@ -2,10 +2,11 @@ import path from 'node:path';
 import {
   discoveryFixtureDir,
   enhanceFixtureDir,
+  fakeAgentHandoff,
   fakePublishEngine,
   seedExistingRepo,
 } from '@incubator/core/testing';
-import { startServer, type RunningServer } from '../server/server.js';
+import { startServer, type HostCapabilities, type RunningServer } from '../server/server.js';
 
 export const ANALYZER_FIXTURES = path.resolve(
   import.meta.dirname,
@@ -20,10 +21,17 @@ export type FakeHarness = ReturnType<typeof fakePublishEngine>;
  * verifier and a fake tracker.
  */
 export async function startFakeServer(
-  opts: { discovery?: string; enhance?: string; uiDir?: string; heartbeatMs?: number } = {},
+  opts: {
+    discovery?: string;
+    enhance?: string;
+    uiDir?: string;
+    heartbeatMs?: number;
+    host?: HostCapabilities;
+  } = {},
 ): Promise<{ server: RunningServer; h: FakeHarness }> {
   // One fake model per server: recorded turns for a new project, or for an enhancement request.
   const h = fakePublishEngine({
+    handoff: fakeAgentHandoff(),
     llm: {
       dir: opts.enhance
         ? enhanceFixtureDir(opts.enhance)
@@ -33,6 +41,7 @@ export async function startFakeServer(
   const server = await startServer({
     engine: h.engine,
     store: h.store,
+    ...(opts.host ? { host: opts.host } : {}),
     ...(opts.uiDir ? { uiDir: opts.uiDir } : {}),
     ...(opts.heartbeatMs ? { heartbeatMs: opts.heartbeatMs } : {}),
   });

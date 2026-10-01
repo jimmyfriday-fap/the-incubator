@@ -27,7 +27,7 @@ import { buildUserPrompt } from './discovery/prompt-builder.js';
 import { MAX_ROUNDS, questionIssues, selectQuestions } from './discovery/questions.js';
 import type { JournalEntry } from './journal.js';
 import { loadPrompt } from './prompts.js';
-import { inspectFolder } from './folders.js';
+import { inspectFolder, type FolderPurpose, type FolderVerdict } from './folders.js';
 import {
   agentReport,
   draftMessage,
@@ -851,6 +851,12 @@ export class Engine {
 
   // --- folder runs: coding, then the owner's commit and push (ADR-023) ---------------------------
 
+  /** Explains a folder the owner chose before a run starts (the wizard, the CLI). Changes nothing. */
+  async inspectFolder(folder: string, purpose: FolderPurpose): Promise<FolderVerdict> {
+    if (!this.deps.publish) throw new ToolError('folders need git dependencies');
+    return inspectFolder(this.deps.publish.git, folder, purpose);
+  }
+
   /** In-place enhance and new-solution runs both name a folder; everything below works on it. */
   private runDir(s: RunState): string {
     return path.resolve(s.input.dir!);
@@ -946,6 +952,12 @@ export class Engine {
   async finishDetail(runId: string): Promise<FinishDetail | null> {
     const s = this.state(runId);
     if (!s.input.dir || !this.deps.publish) return null;
+    // Nothing to review (and the spec may still be a draft) until the run reaches the coding stage.
+    const reached =
+      s.steps['code.start'] !== undefined ||
+      s.state === 'CODE' ||
+      (s.state === 'PARKED' && s.parked?.state === 'CODE');
+    if (!reached) return null;
     const dir = this.runDir(s);
     const git = this.deps.publish.git;
     const stage: FinishDetail['stage'] = s.done

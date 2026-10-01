@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LogEntry, RunDetail } from '../../api-types.js';
 import { get, post } from '../api.js';
 import { ChangeRequest } from './ChangeRequest.js';
+import { Coding } from './Coding.js';
+import { CommitRequest, PushRequest } from './FinishChanges.js';
 import { Questions } from './Questions.js';
 import { Review } from './Review.js';
 import { RunLog } from './RunLog.js';
@@ -52,14 +54,30 @@ export function RunView({ runId }: { runId: string }) {
   const reviewing = run.state === 'PARKED' && run.parked?.state === 'REVIEW' && !run.busy;
   const asking = run.state === 'PARKED' && run.parked?.reason === 'needs_input' && !run.busy;
   const requesting = run.state === 'PARKED' && run.parked?.reason === 'needs_request' && !run.busy;
-  const stuck = run.state === 'PARKED' && !reviewing && !asking && !requesting && !run.busy;
+  const committing = run.state === 'PARKED' && run.parked?.reason === 'needs_commit' && !run.busy;
+  const pushing = run.state === 'PARKED' && run.parked?.reason === 'needs_push' && !run.busy;
+  const coding = run.state === 'CODE' || (run.busy && run.finish?.stage === 'coding');
+  const stuck =
+    run.state === 'PARKED' &&
+    !reviewing &&
+    !asking &&
+    !requesting &&
+    !committing &&
+    !pushing &&
+    !run.busy;
   const act = (p: Promise<unknown>) => p.then(refresh).catch((e: Error) => setError(e.message));
 
   return (
     <div className="run">
       <section className="card wide">
         <h2>
-          {run.kind === 'adopt' ? 'Adopt ' : run.kind === 'enhance' ? 'Enhance ' : 'New project '}
+          {run.kind === 'adopt'
+            ? 'Adopt '
+            : run.kind === 'enhance'
+              ? 'Update '
+              : run.input.dir
+                ? 'New solution '
+                : 'New project '}
           <code>{runId}</code>{' '}
           <span data-testid="run-state" className={`badge state-${run.state.toLowerCase()}`}>
             {run.state}
@@ -71,7 +89,8 @@ export function RunView({ runId }: { runId: string }) {
           )}
         </h2>
         <p className="muted">
-          {run.kind === 'adopt' || run.kind === 'enhance' ? run.input.repo : run.input.narrative}
+          {run.input.dir ??
+            (run.kind === 'adopt' || run.kind === 'enhance' ? run.input.repo : run.input.narrative)}
         </p>
         {run.error && (
           <p className="error" role="alert" data-testid="run-error">
@@ -99,6 +118,23 @@ export function RunView({ runId }: { runId: string }) {
         )}
       </section>
 
+      {coding && <Coding run={run} />}
+      {committing && run.finish && (
+        <CommitRequest
+          finish={run.finish}
+          onCommit={(message) =>
+            act(post(`/api/runs/${runId}/commit`, { action: 'commit', message }))
+          }
+          onLeave={() => act(post(`/api/runs/${runId}/commit`, { action: 'leave' }))}
+        />
+      )}
+      {pushing && run.finish && (
+        <PushRequest
+          finish={run.finish}
+          onPush={() => act(post(`/api/runs/${runId}/push`, { action: 'push' }))}
+          onSkip={() => act(post(`/api/runs/${runId}/push`, { action: 'skip' }))}
+        />
+      )}
       {requesting && (
         <ChangeRequest
           run={run}

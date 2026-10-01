@@ -52,6 +52,37 @@ export function enhanceFixtureDir(name: string): string {
   );
 }
 
+/** The stand-in agent CLI (packages/core/fixtures/handoff/fake-agent.mjs); FAKE_AGENT_MODE picks its behaviour. */
+export function fakeAgentPath(): string {
+  return path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '..',
+    'fixtures',
+    'handoff',
+    'fake-agent.mjs',
+  );
+}
+
+/** A handoff dependency that runs the fake agent through the real process runner. */
+export function fakeAgentHandoff(): NonNullable<EngineDeps['handoff']> {
+  return {
+    exec: nodeExec,
+    probe: () =>
+      Promise.resolve({
+        installed: true,
+        path: process.execPath,
+        version: 'fake',
+        flags: {
+          printMode: [fakeAgentPath(), '-p'],
+          streamJson: ['--output-format', 'stream-json'],
+        },
+        stdinPrompt: true,
+        eligible: { discovery: true, analysis: true, handoff: true },
+        reasons: [],
+      }),
+  };
+}
+
 export function discoveryFixtureDir(name: string): string {
   // why: fileURLToPath decodes %20 and drive letters; a raw URL pathname breaks under
   // "The Incubator.app" (macOS) or any directory with a space.

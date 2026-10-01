@@ -57,6 +57,47 @@ export function Summary({ run }: { run: RunDetail }) {
           )}
         </>
       )}
+      {run.finish && (
+        <>
+          {run.finish.commit?.none && (
+            <p data-testid="nothing-changed">
+              The agent changed nothing, so there is nothing to commit.
+            </p>
+          )}
+          {run.finish.commit?.left && (
+            <p data-testid="left-uncommitted">
+              The changes are left uncommitted in <code>{run.finish.dir}</code>
+              {run.finish.branch ? (
+                <>
+                  {' '}
+                  on branch <code>{run.finish.branch}</code>
+                </>
+              ) : null}
+              .
+            </p>
+          )}
+          {run.finish.commit?.sha && (
+            <p data-testid="committed">
+              Committed <code>{run.finish.commit.sha.slice(0, 10)}</code> on{' '}
+              <code>{run.finish.commit.branch}</code> in <code>{run.finish.dir}</code>
+              {run.finish.pr ? '' : ' (kept local, not pushed)'}.
+            </p>
+          )}
+          {run.finish.pr && (
+            <p>
+              Pushed, and opened pull request{' '}
+              <a
+                data-testid="finish-pr-link"
+                href={run.finish.pr.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                #{run.finish.pr.number}
+              </a>
+            </p>
+          )}
+        </>
+      )}
       {run.enhance && (
         <>
           {run.enhance.noop && (

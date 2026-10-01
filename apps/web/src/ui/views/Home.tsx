@@ -2,15 +2,10 @@ import { useEffect, useState } from 'react';
 import type { RunListItem, StartRunBody } from '../../api-types.js';
 import { get, post } from '../api.js';
 import { navigate } from '../nav.js';
+import { Wizard } from './Wizard.js';
 
-/** Intake: a narrative for a new project, or a repository to adopt; plus recent runs. */
+/** The first screen: the wizard, then recent runs. */
 export function Home() {
-  const [narrative, setNarrative] = useState('');
-  const [repo, setRepo] = useState('');
-  const [repoRef, setRepoRef] = useState('');
-  const [org, setOrg] = useState(false);
-  const [local, setLocal] = useState(false);
-  const [gaps, setGaps] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunListItem[]>([]);
 
@@ -32,100 +27,7 @@ export function Home() {
 
   return (
     <div className="home">
-      <section className="card">
-        <h2>New project</h2>
-        <p className="muted">
-          Describe the idea in plain English. You will answer a few questions next.
-        </p>
-        <textarea
-          data-testid="narrative"
-          rows={6}
-          value={narrative}
-          onChange={(e) => setNarrative(e.target.value)}
-          placeholder="Stockroom: a web app for independent cafés to track stock…"
-        />
-        <button
-          data-testid="start-new"
-          disabled={!narrative.trim()}
-          onClick={() => void start({ kind: 'new', narrative })}
-        >
-          Start discovery
-        </button>
-      </section>
-
-      <section className="card">
-        <h2>Adopt a repository</h2>
-        <p className="muted">
-          A GitHub URL or a local path. Nothing in it is modified: new files arrive as a pull
-          request. Analyze it against the canonical pattern, or scan it and say what you want to
-          change.
-        </p>
-        <label>
-          Repository
-          <input data-testid="adopt-repo" value={repo} onChange={(e) => setRepo(e.target.value)} />
-        </label>
-        <label>
-          GitHub repository for the pull request (owner/name, when the source is not a GitHub URL)
-          <input
-            data-testid="adopt-ref"
-            value={repoRef}
-            onChange={(e) => setRepoRef(e.target.value)}
-          />
-        </label>
-        <label className="inline">
-          <input type="checkbox" checked={org} onChange={(e) => setOrg(e.target.checked)} /> the
-          owner is an organization
-        </label>
-        <label className="inline">
-          <input
-            data-testid="adopt-local"
-            type="checkbox"
-            checked={local}
-            onChange={(e) => setLocal(e.target.checked)}
-          />{' '}
-          only write the branch locally (no push, no pull request)
-        </label>
-        <button
-          data-testid="start-adopt"
-          disabled={!repo.trim()}
-          onClick={() =>
-            void start({
-              kind: 'adopt',
-              repo,
-              ...(repoRef.trim() ? { repoRef: repoRef.trim() } : {}),
-              ...(org ? { org } : {}),
-              ...(local ? { noPublish: true } : {}),
-            })
-          }
-        >
-          Analyze repository
-        </button>{' '}
-        <button
-          data-testid="start-enhance"
-          disabled={!repo.trim()}
-          onClick={() =>
-            void start({
-              kind: 'enhance',
-              repo,
-              ...(repoRef.trim() ? { repoRef: repoRef.trim() } : {}),
-              ...(org ? { org } : {}),
-              ...(local ? { noPublish: true } : {}),
-              ...(gaps ? { withGaps: true } : {}),
-            })
-          }
-        >
-          Analyze and enhance
-        </button>
-        <label className="inline">
-          <input
-            data-testid="enhance-gaps"
-            type="checkbox"
-            checked={gaps}
-            onChange={(e) => setGaps(e.target.checked)}
-          />{' '}
-          when enhancing, also add the missing canonical-pattern files (as a separate commit)
-        </label>
-      </section>
+      <Wizard start={start} />
 
       {error && (
         <p className="error" role="alert">
@@ -163,12 +65,13 @@ export function Home() {
                       onClick={() =>
                         void start({
                           kind: 'enhance',
-                          repo: r.repo!,
+                          // A folder run is updated in place again; any other source keeps its old form.
+                          ...(r.dir ? { dir: r.dir } : { repo: r.repo! }),
                           ...(r.repoRef ? { repoRef: r.repoRef } : {}),
                         })
                       }
                     >
-                      Enhance
+                      Update again
                     </button>
                   </>
                 )}

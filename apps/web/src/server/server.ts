@@ -7,7 +7,13 @@ import {
   ToolError,
   formatError,
 } from '@incubator/runtime';
-import { INCUBATOR_VERSION, type Engine, type JournalEntry, type RunStore } from '@incubator/core';
+import {
+  INCUBATOR_VERSION,
+  type Engine,
+  type FolderPurpose,
+  type JournalEntry,
+  type RunStore,
+} from '@incubator/core';
 import type { IncubatorSpec } from '@incubator/spec';
 import type { RunDetail, RunListItem, StartRunBody } from '../api-types.js';
 import { ConflictError, RunDriver } from './driver.js';
@@ -16,10 +22,20 @@ import { CSRF_HEADER, Guard, SECURITY_HEADERS } from './security.js';
 import { specDiff } from './spec-diff.js';
 import { defaultUiDir, readAsset } from './static.js';
 
+/**
+ * Things only the embedding host can do for the page (ADR-022). The renderer never reaches the
+ * operating system itself: it asks over HTTP, behind the same token, Origin and CSRF checks as the rest.
+ */
+export interface HostCapabilities {
+  /** Opens the operating system's folder dialog; null when the owner cancels. */
+  pickFolder?: (purpose: FolderPurpose) => Promise<string | null>;
+}
+
 export interface ServerOptions {
   engine: Engine;
   store: RunStore;
   log?: Logger;
+  host?: HostCapabilities;
   /** The built UI; defaults to this package's dist/ui. */
   uiDir?: string;
   /** Fixed launch token (tests); a random 32-byte token otherwise. */
@@ -93,7 +109,61 @@ export function createApp(opts: ServerOptions): WebApp {
   app.get('/api/session', (req) => ({
     csrf: guard.csrfFor((req as unknown as { session: string }).session),
     version: INCUBATOR_VERSION,
+    capabilities: { pickFolder: Boolean(opts.host?.pickFolder) },
   }));
+
+  // One dialog at a time: a second click while a dialog is open must not stack another.
+  let picking = false;
+  app.post<{ Body: { purpose: FolderPurpose } }>(
+    '/api/folders/pick',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['purpose'],
+          properties: { purpose: { enum: ['new', 'existing'] } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const pick = opts.host?.pickFolder;
+      if (!pick) return reply.code(501).send({ error: 'this host cannot open a folder dialog' });
+      if (picking) return reply.code(409).send({ error: 'a folder dialog is already open' });
+      picking = true;
+      try {
+        return { path: await pick(req.body.purpose) };
+      } catch (err) {
+        return sendError(reply, err);
+      } finally {
+        picking = false;
+      }
+    },
+  );
+
+  app.post<{ Body: { path: string; purpose: FolderPurpose } }>(
+    '/api/folders/inspect',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['path', 'purpose'],
+          properties: {
+            path: { type: 'string', maxLength: 2000 },
+            purpose: { enum: ['new', 'existing'] },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        return await engine.inspectFolder(req.body.path, req.body.purpose);
+      } catch (err) {
+        return sendError(reply, err);
+      }
+    },
+  );
 
   app.get('/api/runs', (): RunListItem[] =>
     store
@@ -113,6 +183,7 @@ export function createApp(opts: ServerOptions): WebApp {
               title: title(engine, runId),
               repo: s.input.repo ?? null,
               repoRef: s.input.repoRef ? `${s.input.repoRef.owner}/${s.input.repoRef.name}` : null,
+              dir: s.input.dir ?? null,
             },
           ];
         } catch {
@@ -134,6 +205,7 @@ export function createApp(opts: ServerOptions): WebApp {
             narrative: { type: 'string', maxLength: 20000 },
             request: { type: 'string', maxLength: 20000 },
             withGaps: { type: 'boolean' },
+            dir: { type: 'string', minLength: 1, maxLength: 2000 },
             repo: { type: 'string', minLength: 1, maxLength: 2000 },
             repoRef: { type: 'string', maxLength: 200 },
             org: { type: 'boolean' },
@@ -142,16 +214,32 @@ export function createApp(opts: ServerOptions): WebApp {
         },
       },
     },
-    (req, reply) => {
+    async (req, reply) => {
       const b = req.body;
       if (b.kind === 'new') {
         if (!b.narrative?.trim())
           return reply.code(400).send({ error: 'describe the project first' });
+        if (b.dir !== undefined) {
+          const v = await engine.inspectFolder(b.dir, 'new');
+          if (!v.ok) return reply.code(422).send({ error: v.problems.join(' '), evidence: v });
+          return reply
+            .code(202)
+            .send({ runId: driver.start({ kind: 'new', narrative: b.narrative, dir: v.path }) });
+        }
         return reply
           .code(202)
           .send({ runId: driver.start({ kind: 'new', narrative: b.narrative }) });
       }
-      if (!b.repo?.trim())
+      // An update names its folder in `dir`; the older adopt and URL forms name `repo`.
+      let repo = b.repo;
+      let dir: string | undefined;
+      if (b.kind === 'enhance' && b.dir !== undefined) {
+        const v = await engine.inspectFolder(b.dir, 'existing');
+        if (!v.ok) return reply.code(422).send({ error: v.problems.join(' '), evidence: v });
+        dir = v.path;
+        repo = v.path;
+      }
+      if (!repo?.trim())
         return reply.code(400).send({ error: 'a repository URL or path is needed' });
       let repoRef: { owner: string; name: string } | undefined;
       if (b.repoRef) {
@@ -161,7 +249,8 @@ export function createApp(opts: ServerOptions): WebApp {
       }
       const runId = driver.start({
         kind: b.kind,
-        repo: b.repo.trim(),
+        repo: repo.trim(),
+        ...(dir ? { dir } : {}),
         ...(repoRef ? { repoRef } : {}),
         ...(b.org ? { ownerType: 'org' as const } : {}),
         ...(b.noPublish ? { noPublish: true } : {}),
@@ -185,7 +274,7 @@ export function createApp(opts: ServerOptions): WebApp {
 
   app.get(
     '/api/runs/:id',
-    withRun((runId): RunDetail => {
+    withRun(async (runId): Promise<RunDetail> => {
       const s = engine.state(runId);
       const st = driver.status(runId);
       return {
@@ -199,6 +288,7 @@ export function createApp(opts: ServerOptions): WebApp {
           ...(s.input.narrative !== undefined ? { narrative: s.input.narrative } : {}),
           ...(s.input.repo !== undefined ? { repo: s.input.repo } : {}),
           ...(s.input.repoRef ? { repoRef: s.input.repoRef } : {}),
+          ...(s.input.dir !== undefined ? { dir: s.input.dir } : {}),
         },
         parked: s.parked,
         questions:
@@ -212,6 +302,7 @@ export function createApp(opts: ServerOptions): WebApp {
           s.input.kind === 'enhance'
             ? { ...engine.enhanceSummary(runId), request: engine.requestText(runId) }
             : null,
+        finish: await engine.finishDetail(runId),
       };
     }),
   );
@@ -322,6 +413,45 @@ export function createApp(opts: ServerOptions): WebApp {
     },
     withRun((runId, req: { body: { narrative: string } }) => {
       driver.request(runId, req.body.narrative);
+      return { accepted: true };
+    }),
+  );
+
+  app.post<{ Body: { action: 'commit' | 'leave'; message?: string } }>(
+    '/api/runs/:id/commit',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['action'],
+          properties: {
+            action: { enum: ['commit', 'leave'] },
+            message: { type: 'string', maxLength: 8000 },
+          },
+        },
+      },
+    },
+    withRun((runId, req: { body: { action: 'commit' | 'leave'; message?: string } }) => {
+      driver.commit(runId, req.body);
+      return { accepted: true };
+    }),
+  );
+
+  app.post<{ Body: { action: 'push' | 'skip' } }>(
+    '/api/runs/:id/push',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['action'],
+          properties: { action: { enum: ['push', 'skip'] } },
+        },
+      },
+    },
+    withRun((runId, req: { body: { action: 'push' | 'skip' } }) => {
+      driver.push(runId, req.body.action);
       return { accepted: true };
     }),
   );

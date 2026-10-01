@@ -1,9 +1,11 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FAKE_GITHUB_TOKEN } from '@incubator/core/testing';
+import { nodeExec } from '@incubator/runtime';
 import type {
+  FolderCheck,
   LogEntry,
   Question,
   RunDetail,
@@ -33,12 +35,20 @@ async function until(
   runId: string,
   pred: (d: RunDetail) => boolean,
 ): Promise<RunDetail> {
+  let last: RunDetail | null = null;
   for (let i = 0; i < 400; i++) {
-    const d = (await api.get<RunDetail>(`/api/runs/${runId}`)).body;
-    if (pred(d)) return d;
+    last = (await api.get<RunDetail>(`/api/runs/${runId}`)).body;
+    if (pred(last)) return last;
     await new Promise((r) => setTimeout(r, 25));
   }
-  throw new Error(`run ${runId} never reached the expected state`);
+  throw new Error(
+    `run ${runId} never reached the expected state; last seen: ${JSON.stringify({
+      state: last?.state,
+      busy: last?.busy,
+      parked: last?.parked,
+      error: last?.error,
+    })}`,
+  );
 }
 
 describe('request security', () => {
@@ -304,6 +314,187 @@ describe('enhance over the API', () => {
     expect(d.enhance?.plan?.gaps?.create).toContain('CLAUDE.md');
     const list = (await api.get<RunListItem[]>('/api/runs')).body;
     expect(list[0]).toMatchObject({ runId, kind: 'enhance', repo: dir, repoRef: 'octo/bare-node' });
+  });
+});
+
+describe('folders, coding, and the commit and push requests over the API', () => {
+  const tmpDir = (name: string) =>
+    path.join(mkdtempSync(path.join(os.tmpdir(), `${name} `)), 'proj');
+  const git = (args: string[], cwd: string) =>
+    nodeExec.run('git', args, { cwd, timeoutMs: 30_000 });
+
+  beforeEach(() => {
+    const cfg = path.join(mkdtempSync(path.join(os.tmpdir(), 'webcfg ')), 'gitconfig');
+    writeFileSync(cfg, '');
+    vi.stubEnv('GIT_CONFIG_GLOBAL', cfg);
+    vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1');
+    vi.stubEnv('FAKE_AGENT_MODE', 'edit');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('offers the folder dialog only when the host has one, one dialog at a time', async () => {
+    const none = await boot();
+    expect(
+      (await none.api.get<{ capabilities: { pickFolder: boolean } }>('/api/session')).body
+        .capabilities,
+    ).toEqual({
+      pickFolder: false,
+    });
+    expect((await none.api.post('/api/folders/pick', { purpose: 'new' })).status).toBe(501);
+
+    let release: (p: string | null) => void = () => undefined;
+    const asked: string[] = [];
+    const { api } = await boot({
+      host: {
+        pickFolder: (purpose) => {
+          asked.push(purpose);
+          return new Promise((r) => (release = r));
+        },
+      },
+    });
+    expect(
+      (await api.get<{ capabilities: { pickFolder: boolean } }>('/api/session')).body.capabilities
+        .pickFolder,
+    ).toBe(true);
+    expect((await api.post('/api/folders/pick', { purpose: 'nope' })).status).toBe(400);
+    const first = api.post<{ path: string | null }>('/api/folders/pick', { purpose: 'existing' });
+    await vi.waitFor(() => expect(asked).toEqual(['existing']));
+    expect((await api.post('/api/folders/pick', { purpose: 'new' })).status).toBe(409);
+    release('/chosen/folder');
+    expect((await first).body.path).toBe('/chosen/folder');
+    const cancelled = api.post<{ path: string | null }>('/api/folders/pick', { purpose: 'new' });
+    await vi.waitFor(() => expect(asked).toHaveLength(2));
+    release(null);
+    expect((await cancelled).body.path).toBeNull();
+  });
+
+  it('explains a folder before a run starts', async () => {
+    const { api } = await boot();
+    const check = async (p: string, purpose: 'new' | 'existing') =>
+      (await api.post<FolderCheck>('/api/folders/inspect', { path: p, purpose })).body;
+    const fresh = tmpDir('inspect');
+    expect(await check(fresh, 'new')).toMatchObject({ ok: true, exists: false });
+    expect((await check('relative/path', 'new')).ok).toBe(false);
+    expect((await check(path.dirname(fresh), 'existing')).problems.join(' ')).toContain(
+      'not a git repository',
+    );
+    expect((await api.post('/api/folders/inspect', { path: fresh })).status).toBe(400);
+  });
+
+  it('a new solution in a chosen folder: discovery, review, publish, coding, then the owner commits and pushes', async () => {
+    const { api, h } = await boot();
+    const dir = tmpDir('web new');
+    mkdirSync(path.dirname(dir), { recursive: true });
+    writeFileSync(path.join(path.dirname(dir), 'x.txt'), '');
+    // A folder that already has files is refused up front, with the reason.
+    const busy = await api.post<{ error: string }>('/api/runs', {
+      kind: 'new',
+      narrative: 'Stockroom: stock tracking for cafés.',
+      dir: path.dirname(dir),
+    });
+    expect(busy.status).toBe(422);
+    expect(busy.body.error).toContain('not empty');
+
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'new',
+        narrative: 'Stockroom: stock tracking for cafés.',
+        dir,
+      })
+    ).body;
+    const first = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    const answer = (q: Question) => ({
+      key: q.key,
+      value: q.options.find((o) => o.recommended)!.value,
+    });
+    await api.post(`/api/runs/${runId}/answers`, { answers: first.questions!.map(answer) });
+    await until(
+      api,
+      runId,
+      (x) => !x.busy && x.state === 'PARKED' && x.parked?.state !== 'CLARIFY',
+    );
+    const spec = (
+      await api.get<{ spec: { project: { owner: unknown } } }>(`/api/runs/${runId}/spec-diff`)
+    ).body.spec;
+    spec.project.owner = { type: 'user', login: 'octo' };
+    await api.post(`/api/runs/${runId}/approve`, { spec });
+    // The agent codes, then the run waits for the owner.
+    let d = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    expect(d.error).toBeNull();
+    expect(d.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(d.input.dir).toBe(dir);
+    expect(d.finish).toMatchObject({
+      stage: 'commit',
+      branch: expect.stringContaining('incubator/build-') as string,
+    });
+    expect(d.finish!.files.map((f) => f.path)).toContain('src/agent-work.txt');
+    expect(d.finish!.agent?.summary).toContain('Added src/agent-work.txt');
+    expect(d.finish!.message.split('\n')[0]).toBe('feat: build Stockroom');
+    // Answers are checked: nothing is waiting for a push yet.
+    expect((await api.post(`/api/runs/${runId}/push`, { action: 'push' })).status).toBe(409);
+    expect((await api.post(`/api/runs/${runId}/commit`, { action: 'sell' })).status).toBe(400);
+    // Git must know who the owner is.
+    await api.post(`/api/runs/${runId}/commit`, {
+      action: 'commit',
+      message: 'feat: stock tracking\n\nMine.',
+    });
+    d = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    expect(d.parked?.reason).toBe('no_git_identity');
+    await git(['config', 'user.name', 'Owner Person'], dir);
+    await git(['config', 'user.email', 'owner@example.invalid'], dir);
+    await api.post(`/api/runs/${runId}/resume`);
+    d = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    expect(d.parked).toMatchObject({ state: 'PUSH', reason: 'needs_push' });
+    expect(d.finish).toMatchObject({
+      stage: 'push',
+      commit: { branch: expect.any(String) as string },
+    });
+    expect(d.finish!.files).toEqual([]);
+    expect(d.finish!.target.repo).toEqual({ owner: 'octo', name: 'stockroom' });
+    await api.post(`/api/runs/${runId}/push`, { action: 'push' });
+    d = await until(api, runId, (x) => !x.busy && (x.done || x.state === 'PARKED'));
+    expect(d.state).toBe('DONE');
+    expect(d.finish?.pr?.url).toBe('https://github.com/octo/stockroom/pull/1');
+    expect(h.github.repos.get('octo/stockroom')!.prs).toHaveLength(1);
+    expect(existsSync(path.join(dir, '.git'))).toBe(true);
+  });
+
+  it("an update in the owner's folder is refused while it has uncommitted work", async () => {
+    const { api, h } = await boot({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    writeFileSync(path.join(dir, 'half-done.txt'), 'wip\n');
+    const refused = await api.post<{ error: string }>('/api/runs', {
+      kind: 'enhance',
+      dir,
+      request: 'x',
+    });
+    expect(refused.status).toBe(422);
+    expect(refused.body.error).toContain('uncommitted change');
+    await import('node:fs').then((fs) => fs.rmSync(path.join(dir, 'half-done.txt')));
+    await git(['config', 'user.name', 'Owner Person'], dir);
+    await git(['config', 'user.email', 'owner@example.invalid'], dir);
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        dir,
+        repoRef: 'octo/bare-node',
+        request: 'Kitchen staff need to export the orders list as a CSV file.',
+      })
+    ).body;
+    let d = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    expect(d.parked?.state).toBe('REVIEW');
+    await api.post(`/api/runs/${runId}/approve`);
+    d = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    expect(d.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(d.finish!.branch).toBe('incubator/enhance-20260501');
+    expect(d.finish!.target.repo).toEqual({ owner: 'octo', name: 'bare-node' });
+    await api.post(`/api/runs/${runId}/commit`, { action: 'leave' });
+    d = await until(api, runId, (x) => !x.busy && (x.done || x.state === 'PARKED'));
+    expect(d.state).toBe('DONE');
+    expect(d.finish?.commit).toMatchObject({ left: true });
+    expect((await git(['status', '--porcelain'], dir)).stdout).toContain('src/agent-work.txt');
   });
 });
 

@@ -304,3 +304,40 @@ button:disabled {
 .log .level-error {
   color: var(--bad);
 }
+
+/* the wizard */
+.wizard-intent select {
+  max-width: 24rem;
+  font-size: 16px;
+}
+
+.folder-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.folder-row input {
+  flex: 1;
+}
+
+.folder-field p {
+  margin: 6px 0;
+}
+
+/* coding, commit and push requests */
+blockquote {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--line);
+  white-space: pre-wrap;
+}
+
+.changes {
+  list-style: none;
+  padding: 0;
+  max-height: 16rem;
+  overflow: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}

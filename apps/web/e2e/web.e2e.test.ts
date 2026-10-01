@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import http from 'node:http';
 import path from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
@@ -14,6 +15,15 @@ const shot = (page: Page, name: string) =>
 const servers: RunningServer[] = [];
 let browser: Browser;
 
+beforeAll(() => {
+  // The commit step uses the owner's git identity; the machine's own configuration is not consulted.
+  const cfg = path.join(mkdtempSync(path.join(os.tmpdir(), 'e2e gitcfg ')), 'gitconfig');
+  writeFileSync(cfg, '[user]\n\tname = Owner Person\n\temail = owner@example.invalid\n');
+  process.env['GIT_CONFIG_GLOBAL'] = cfg;
+  process.env['GIT_CONFIG_NOSYSTEM'] = '1';
+  process.env['FAKE_AGENT_MODE'] = 'edit';
+});
+
 beforeAll(async () => {
   if (!existsSync(path.join(UI_DIR, 'index.html')))
     throw new Error('the UI is not built: pnpm --filter @incubator/web build:ui');
@@ -24,13 +34,21 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await browser?.close();
+  for (const k of ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'FAKE_AGENT_MODE'])
+    delete process.env[k];
 });
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => s.close()));
 });
 
-async function open(opts: { enhance?: string } = {}) {
-  const { server, h } = await startFakeServer({ uiDir: UI_DIR, ...opts });
+async function open(opts: { enhance?: string; pick?: string[] } = {}) {
+  const picks = [...(opts.pick ?? [])];
+  const { server, h } = await startFakeServer({
+    uiDir: UI_DIR,
+    ...(opts.enhance ? { enhance: opts.enhance } : {}),
+    // The native folder dialog cannot be driven from a test; the host hands back the queued choices.
+    host: { pickFolder: () => Promise.resolve(picks.shift() ?? null) },
+  });
   servers.push(server);
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -47,12 +65,69 @@ const state = (page: Page) => page.getByTestId('run-state');
 // why: the first tree preview renders the whole spec on the server (1-2 s of CPU on its one thread),
 // so a UI poll can wait behind it; vitest's default expect.poll timeout (1 s) is too short.
 const UI = { timeout: 15_000 };
+const intent = (page: Page) => page.getByLabel('What would you like to do');
+const newFolder = () => path.join(mkdtempSync(path.join(os.tmpdir(), 'e2e new ')), 'my solution');
 
 describe('web UI (Playwright, fakes)', () => {
-  it('greenfield: narrative → questions → review with diff and owner → published DONE', async () => {
-    const { server, h, page, errors } = await open();
+  it('the wizard offers two paths, shows nothing until one is chosen, and explains a folder before it starts', async () => {
+    const { page, h, errors } = await open();
+    expect(await intent(page).inputValue()).toBe('');
+    expect(await page.getByTestId('narrative').count()).toBe(0);
+    expect(
+      (await intent(page).locator('option').allTextContents()).filter((t) => t !== 'Choose…'),
+    ).toEqual(['New solution', 'Update an existing solution']);
+
+    // Update: a folder that is not a repository, then one with uncommitted work, then a good one.
+    await intent(page).selectOption({ label: 'Update an existing solution' });
+    expect(await page.getByTestId('path-update').textContent()).toContain(
+      'Browse to a folder that has a local repository in it',
+    );
+    const plain = mkdtempSync(path.join(os.tmpdir(), 'e2e plain '));
+    await page.getByTestId('folder-path').fill(plain);
+    await expect
+      .poll(() => page.getByTestId('folder-verdict').textContent(), UI)
+      .toContain('not a git repository');
+    expect(await page.getByTestId('start-enhance').isDisabled()).toBe(true);
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    writeFileSync(path.join(dir, 'half-done.txt'), 'wip\n');
+    await page.getByTestId('folder-path').fill(dir);
+    await expect
+      .poll(() => page.getByTestId('folder-verdict').textContent(), UI)
+      .toContain('1 uncommitted change');
+    expect(await page.getByTestId('start-enhance').isDisabled()).toBe(true);
+    rmSync(path.join(dir, 'half-done.txt'));
+    await page.getByTestId('folder-recheck').click();
+    await expect
+      .poll(() => page.getByTestId('folder-ok').textContent(), UI)
+      .toContain('working tree clean');
+    await expect.poll(() => page.getByTestId('start-enhance').isDisabled(), UI).toBe(false);
+
+    // Switching path clears the folder: an update's repository never suits a new solution.
+    await intent(page).selectOption({ label: 'New solution' });
+    expect(await page.getByTestId('folder-path').inputValue()).toBe('');
+    expect(await page.getByTestId('path-new').textContent()).toContain(
+      'Choose the folder where you want to initialize the new repository',
+    );
+    await page.getByTestId('folder-path').fill(dir);
+    await expect
+      .poll(() => page.getByTestId('folder-verdict').textContent(), UI)
+      .toContain('not empty');
+    await page.getByTestId('narrative').fill('Anything');
+    expect(await page.getByTestId('start-new').isDisabled()).toBe(true);
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  it('new solution: folder → describe → questions → review → publish → coding → commit → push → DONE', async () => {
+    const folder = newFolder();
+    const { server, h, page, errors } = await open({ pick: [folder] });
     // The launch token was exchanged for a cookie and is gone from the address bar.
     expect(page.url()).toBe(`${server.origin}/`);
+    await intent(page).selectOption({ label: 'New solution' });
+    await page.getByTestId('pick-folder').click();
+    await expect.poll(() => page.getByTestId('folder-path').inputValue(), UI).toBe(folder);
+    await expect
+      .poll(() => page.getByTestId('folder-ok').textContent(), UI)
+      .toContain('will be created and become the repository');
     await page
       .getByTestId('narrative')
       .fill(
@@ -92,12 +167,35 @@ describe('web UI (Playwright, fakes)', () => {
     expect(await page.getByTestId('spec-editor').inputValue()).toContain('"login": "octo"');
     await page.getByTestId('approve').click();
 
-    await expect.poll(() => state(page).textContent(), { timeout: 60_000 }).toBe('DONE');
-    const link = page.getByTestId('repo-link');
-    expect(await link.getAttribute('href')).toBe('https://github.com/octo/stockroom');
+    // The repository is created and pushed, the agent codes in the folder, and then the run asks.
+    const commit = page.getByTestId('commit-request');
+    await commit.waitFor({ timeout: 90_000 });
     expect(h.github.repos.has('octo/stockroom')).toBe(true);
+    expect(await page.getByTestId('changed-files').textContent()).toContain('src/agent-work.txt');
+    expect(await page.getByTestId('agent-summary').textContent()).toContain(
+      'Added src/agent-work.txt',
+    );
+    expect(await page.getByTestId('commit-message').inputValue()).toMatch(/^feat: build Stockroom/);
+    expect(await page.getByTestId('commit-identity').textContent()).toContain('Owner Person');
+    expect(await page.getByTestId('run-state').textContent()).toBe('PARKED');
+    await shot(page, 'greenfield-3-commit');
+    await page.getByTestId('commit-message').fill('feat: stock tracking\n\nWritten by me.');
+    await page.getByTestId('commit').click();
+
+    await page.getByTestId('push-request').waitFor({ timeout: 60_000 });
+    expect(h.github.repos.get('octo/stockroom')!.prs).toEqual([]);
+    await shot(page, 'greenfield-4-push');
+    await page.getByTestId('push').click();
+    await expect.poll(() => state(page).textContent(), { timeout: 60_000 }).toBe('DONE');
+    expect(await page.getByTestId('finish-pr-link').getAttribute('href')).toBe(
+      'https://github.com/octo/stockroom/pull/1',
+    );
+    expect(await page.getByTestId('repo-link').getAttribute('href')).toBe(
+      'https://github.com/octo/stockroom',
+    );
+    expect(await page.getByTestId('committed').textContent()).toContain(folder);
     await expect.poll(() => page.getByTestId('run-log').textContent(), UI).toContain('run.done');
-    await shot(page, 'greenfield-3-done');
+    await shot(page, 'greenfield-5-done');
     await page.getByTestId('log-filter').selectOption('warn');
     const warned = await page.getByTestId('run-log').locator('li').allTextContents();
     expect(warned.length).toBeGreaterThan(0);
@@ -109,11 +207,14 @@ describe('web UI (Playwright, fakes)', () => {
     expect(errors, errors.join('\n')).toEqual([]);
   });
 
-  it('brownfield: repository → review with delta statuses → pull request DONE', async () => {
+  it('update: folder → only add the canonical files → review with delta statuses → pull request DONE', async () => {
     const { h, page, errors } = await open();
     const { dir } = await seedAdoptRepo(h, 'bare-node');
-    await page.getByTestId('adopt-repo').fill(dir);
-    await page.getByTestId('adopt-ref').fill('octo/bare-node');
+    await intent(page).selectOption({ label: 'Update an existing solution' });
+    await page.getByTestId('folder-path').fill(dir);
+    // The folder's origin is not a GitHub URL, so the wizard asks which repository the PR is for.
+    await page.getByTestId('repo-ref').fill('octo/bare-node');
+    await expect.poll(() => page.getByTestId('start-adopt').isDisabled(), UI).toBe(false);
     await page.getByTestId('start-adopt').click();
     await page.waitForURL(/\/runs\/[\w-]+$/);
     await page.getByTestId('review').waitFor({ timeout: 30_000 });
@@ -133,11 +234,14 @@ describe('web UI (Playwright, fakes)', () => {
     expect(errors, errors.join('\n')).toEqual([]);
   });
 
-  it('enhance: repository → scan → what to change → review the delivery → pull request DONE', async () => {
-    const { h, page, errors } = await open({ enhance: 'export-orders' });
+  it('update: browse to the repository → scan → what to change → review → the agent codes in the folder → commit → push → DONE', async () => {
+    const { h, page, errors } = await open({ enhance: 'export-orders', pick: [] });
     const { dir } = await seedAdoptRepo(h, 'bare-node');
-    await page.getByTestId('adopt-repo').fill(dir);
-    await page.getByTestId('adopt-ref').fill('octo/bare-node');
+    const mainBefore = (await h.github.getBranchSha({ owner: 'octo', name: 'bare-node' }, 'main'))!;
+    await intent(page).selectOption({ label: 'Update an existing solution' });
+    await page.getByTestId('folder-path').fill(dir);
+    await page.getByTestId('repo-ref').fill('octo/bare-node');
+    await expect.poll(() => page.getByTestId('start-enhance').isDisabled(), UI).toBe(false);
     await page.getByTestId('start-enhance').click();
     await page.waitForURL(/\/runs\/[\w-]+$/);
 
@@ -165,22 +269,47 @@ describe('web UI (Playwright, fakes)', () => {
     await shot(page, 'enhance-2-review');
     await page.getByTestId('approve').click();
 
+    // The agent works in the owner's folder; the run then asks for the commit.
+    await page.getByTestId('commit-request').waitFor({ timeout: 90_000 });
+    expect(await page.getByTestId('changed-files').textContent()).toContain('src/agent-work.txt');
+    expect(await page.getByTestId('commit-message').inputValue()).toMatch(
+      /^feat: Export the day's orders as CSV/,
+    );
+    expect(await page.getByTestId('commit-identity').textContent()).toContain(
+      'incubator/enhance-20260501',
+    );
+    await shot(page, 'enhance-3-commit');
+    await page.getByTestId('commit').click();
+    await page.getByTestId('push-request').waitFor({ timeout: 60_000 });
+    expect(await page.getByTestId('push-request').textContent()).toContain('octo/bare-node');
+    await shot(page, 'enhance-4-push');
+    await page.getByTestId('push').click();
+
     await expect.poll(() => state(page).textContent(), { timeout: 60_000 }).toBe('DONE');
-    expect(await page.getByTestId('pr-link').getAttribute('href')).toBe(
+    expect(await page.getByTestId('finish-pr-link').getAttribute('href')).toBe(
       'https://github.com/octo/bare-node/pull/1',
     );
     expect(await page.getByTestId('requests').textContent()).toContain('export-orders');
     expect(await page.getByTestId('plan-path').textContent()).toBe(
       'docs/plans/001-enhance-20260501.md',
     );
-    await shot(page, 'enhance-3-done');
+    await shot(page, 'enhance-5-done');
+    // GitHub's main is untouched; the owner's folder is on the update branch.
+    expect(await h.github.getBranchSha({ owner: 'octo', name: 'bare-node' }, 'main')).toBe(
+      mainBefore,
+    );
     expect(h.github.repos.get('octo/bare-node')!.prs).toHaveLength(1);
 
-    // Recent runs offers "Enhance" on the finished run; it starts again at the request step.
+    // Recent runs offers "Update again"; it starts again at the scan, in the same folder.
     await page.getByRole('link', { name: 'The Incubator' }).click();
     await page.locator('[data-testid^="enhance-2"]').first().click();
     await page.waitForURL(/\/runs\/[\w-]+$/);
-    await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
+    await expect
+      .poll(
+        () => page.locator('[data-testid="change-request"], [data-testid="parked"]').count(),
+        UI,
+      )
+      .toBeGreaterThan(0);
     expect(errors, errors.join('\n')).toEqual([]);
   });
 

@@ -135,6 +135,20 @@ export class RunDriver {
     this.spawn(runId, () => this.engine.resume(runId, new WebPrompter()));
   }
 
+  /** The owner's answer to the commit request; the run then commits (or finishes) in the background. */
+  commit(runId: string, a: { action: 'commit' | 'leave'; message?: string }): void {
+    this.parkedAt(runId, 'COMMIT', 'needs_commit');
+    this.engine.submitCommit(runId, a);
+    this.spawn(runId, () => this.engine.resume(runId, new WebPrompter()));
+  }
+
+  /** The owner's answer to the push request; the run then pushes and opens the pull request, or finishes. */
+  push(runId: string, action: 'push' | 'skip'): void {
+    this.parkedAt(runId, 'PUSH', 'needs_push');
+    this.engine.submitPush(runId, action);
+    this.spawn(runId, () => this.engine.resume(runId, new WebPrompter()));
+  }
+
   /** REVIEW → APPROVED (optionally with an edited spec), then continues in the background. */
   approve(runId: string, spec?: IncubatorSpec): void {
     this.parkedAt(runId, 'REVIEW');
