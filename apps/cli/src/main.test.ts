@@ -13,7 +13,7 @@ import {
 import { FakeLlmAdapter, createLlmRegistry } from '@incubator/llm';
 import { FakeGitHub } from '@incubator/git';
 import { FixedClock, Logger, MemoryKeychain, MemorySink, nodeExec } from '@incubator/runtime';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CliDeps, DepsFactory } from './deps.js';
 import { main } from './main.js';
 
@@ -505,6 +505,133 @@ describe('publish, handoff, auth, gc', () => {
           await main(['enhance', dir, '--prompt', REQUEST, ...extra], io().io, factory),
           extra.join(' '),
         ).toBe(2);
+    });
+  });
+
+  describe('folder runs: the commit and push requests', () => {
+    const bareNode = path.resolve(
+      import.meta.dirname,
+      '../../../packages/analyzer/fixtures/bare-node',
+    );
+    const REQUEST = 'Kitchen staff need to export the orders list as a CSV file.';
+    const saved: Record<string, string | undefined> = {};
+    beforeAll(() => {
+      // The commit is made as the owner; the machine's own git configuration is not consulted.
+      const cfg = path.join(mkdtempSync(path.join(tmpdir(), 'cli gitcfg ')), 'gitconfig');
+      writeFileSync(cfg, '[user]\n\tname = Owner Person\n\temail = owner@example.invalid\n');
+      for (const k of ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'FAKE_AGENT_MODE'])
+        saved[k] = process.env[k];
+      process.env['GIT_CONFIG_GLOBAL'] = cfg;
+      process.env['GIT_CONFIG_NOSYSTEM'] = '1';
+      process.env['FAKE_AGENT_MODE'] = 'edit';
+    });
+    afterAll(() => {
+      for (const [k, v] of Object.entries(saved))
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+    });
+    const setup = async () => {
+      const d = publishDeps({ dir: enhanceFixtureDir('export-orders') });
+      const { dir } = await seedExistingRepo(d.h.github, 'order-desk', bareNode);
+      return { ...d, dir };
+    };
+    const start = ['--in-place', '--repo', 'octo/order-desk', '--prompt', REQUEST, '--yes'];
+
+    it('parks at the commit request, which --yes does not answer, then commits and pushes on request', async () => {
+      const { h, dir, factory } = await setup();
+      const a = io();
+      expect(await main(['enhance', dir, ...start], a.io, factory)).toBe(2);
+      const runId = /run (\S+): the agent has stopped/.exec(a.err.join(''))![1]!;
+      expect(a.err.join('')).toContain('src/agent-work.txt');
+      expect(a.err.join('')).toContain(`incubator resume ${runId} --commit`);
+      // --yes accepts defaults; it is not consent to commit.
+      expect(await main(['resume', runId, '--yes'], io().io, factory)).toBe(2);
+      expect(await main(['resume', runId, '--push'], io().io, factory)).toBe(2);
+      expect(await main(['resume', runId, '-m', 'x'], io().io, factory)).toBe(2);
+      const b = io();
+      expect(
+        await main(['resume', runId, '--commit', '-m', 'feat: export orders'], b.io, factory),
+      ).toBe(2);
+      expect(b.err.join('')).toContain(`incubator resume ${runId} --push`);
+      const log = await nodeExec.run('git', ['log', '-1', '--format=%s|%an'], {
+        cwd: dir,
+        timeoutMs: 30_000,
+      });
+      expect(log.stdout.trim()).toBe('feat: export orders|Owner Person');
+      expect(h.github.repos.get('octo/order-desk')!.prs).toEqual([]);
+      const c = io();
+      expect(await main(['resume', runId, '--push'], c.io, factory)).toBe(0);
+      expect(c.err.join('')).toContain('✔ opened https://github.com/octo/order-desk/pull/1');
+    });
+
+    it('keeps the commit local with --skip-push, and the changes uncommitted with --leave', async () => {
+      const first = await setup();
+      const a = io();
+      await main(['enhance', first.dir, ...start], a.io, first.factory);
+      const runA = /run (\S+): the agent has stopped/.exec(a.err.join(''))![1]!;
+      await main(['resume', runA, '--commit'], io().io, first.factory);
+      const done = io();
+      expect(await main(['resume', runA, '--skip-push'], done.io, first.factory)).toBe(0);
+      expect(done.err.join('')).toMatch(/✔ committed \w+ on incubator\/enhance-20260501/);
+
+      const second = await setup();
+      const b = io();
+      await main(['enhance', second.dir, ...start], b.io, second.factory);
+      const runB = /run (\S+): the agent has stopped/.exec(b.err.join(''))![1]!;
+      const left = io();
+      expect(await main(['resume', runB, '--leave'], left.io, second.factory)).toBe(0);
+      expect(left.err.join('')).toContain('left the changes uncommitted');
+    });
+
+    it('asks on a terminal: the owner reviews the changes, commits, and decides on the push', async () => {
+      const { h, dir, factory } = await setup();
+      const answers = ['y', 'y'];
+      const asked: string[] = [];
+      const t = io(true);
+      const tty = {
+        ...t.io,
+        readLine: (m: string) => {
+          asked.push(m);
+          return Promise.resolve(answers.shift() ?? '');
+        },
+      };
+      expect(
+        await main(
+          // --yes takes the spec defaults; the commit and the push are still asked.
+          ['enhance', dir, '--in-place', '--repo', 'octo/order-desk', '--prompt', REQUEST, '--yes'],
+          tty,
+          factory,
+        ),
+      ).toBe(0);
+      const err = t.err.join('');
+      expect(asked).toEqual([expect.stringContaining('Commit?'), expect.stringContaining('Push')]);
+      expect(err).toContain('src/agent-work.txt');
+      expect(err).toContain('committing as Owner Person');
+      expect(err).toContain('✔ opened https://github.com/octo/order-desk/pull/1');
+      expect(h.github.repos.get('octo/order-desk')!.prs).toHaveLength(1);
+    });
+
+    it('refuses a bad folder, a URL for --in-place, and a --dir with --spec-only', async () => {
+      const { dir, factory } = await setup();
+      writeFileSync(path.join(dir, 'half-done.txt'), 'wip\n');
+      const dirty = io();
+      expect(await main(['enhance', dir, ...start], dirty.io, factory)).toBe(2);
+      expect(dirty.err.join('')).toContain('uncommitted');
+      expect(
+        await main(
+          ['enhance', 'https://github.com/octo/x', '--in-place', '--prompt', 'x'],
+          io().io,
+          factory,
+        ),
+      ).toBe(2);
+      const full = mkdtempSync(path.join(tmpdir(), 'cli-full '));
+      writeFileSync(path.join(full, 'a.txt'), 'x');
+      const notEmpty = io();
+      expect(await main(['new', '--prompt', 'x', '--dir', full], notEmpty.io, factory)).toBe(2);
+      expect(notEmpty.err.join('')).toContain('not empty');
+      expect(
+        await main(['new', '--prompt', 'x', '--dir', full, '--spec-only'], io().io, factory),
+      ).toBe(2);
     });
   });
 

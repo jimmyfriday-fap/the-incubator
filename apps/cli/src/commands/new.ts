@@ -12,6 +12,7 @@ import { serializeSpec, type IncubatorSpec } from '@incubator/spec';
 import type { CliDeps } from '../deps.js';
 import type { Io } from '../io.js';
 import { TerminalPrompter } from '../prompter.js';
+import { finishLoop, reportFinish } from './finish.js';
 import { summarizeSpec } from '../summary.js';
 
 export interface NewOptions {
@@ -23,11 +24,28 @@ export interface NewOptions {
   adapter?: string;
   scaffoldTo?: string;
   keep?: boolean;
+  /** Initialize the repository in this folder (empty or missing); the agent then codes in it. */
+  dir?: string;
 }
 
 export function choosePrompter(io: Io, yes: boolean | undefined): Prompter {
   if (yes) return new DefaultsPrompter();
   return io.isTTY ? new TerminalPrompter(io) : new NonInteractivePrompter();
+}
+
+/**
+ * The end of a run: a folder run's commit and push requests are asked here on a terminal (and
+ * otherwise reported as parked, with the command that answers them); every other run reports as before.
+ */
+export async function settleRun(
+  deps: CliDeps,
+  io: Io,
+  state: RunState,
+  resume: (runId: string) => Promise<RunState>,
+  out?: string,
+): Promise<number> {
+  const settled = await finishLoop(deps, io, state, resume);
+  return (await reportFinish(deps, io, settled)) ?? reportRun(deps, io, settled, out);
 }
 
 /** Prints the outcome of an advance() and returns the exit code. */
@@ -137,11 +155,22 @@ export async function runNew(deps: CliDeps, io: Io, opts: NewOptions): Promise<n
     });
   if (opts.adapter && !isLlmAdapterId(opts.adapter))
     throw new PolicyError(`unknown adapter ${opts.adapter}`, { code: 'usage' });
+  if (opts.dir && (opts.specOnly || opts.scaffoldTo))
+    throw new PolicyError('--dir cannot be combined with --spec-only or --scaffold-to', {
+      code: 'usage',
+    });
+  let dir: string | undefined;
+  if (opts.dir) {
+    const v = await deps.engine.inspectFolder(opts.dir, 'new');
+    if (!v.ok) throw new PolicyError(v.problems.join(' '), { code: 'bad_folder' });
+    dir = v.path;
+  }
   const runId = deps.engine.start({
     kind: 'new',
     narrative: narrative.trim(),
     ...(opts.specOnly ? { specOnly: true } : {}),
     ...(opts.scaffoldTo ? { out: path.resolve(opts.scaffoldTo) } : {}),
+    ...(dir ? { dir } : {}),
     ...(opts.keep ? { keep: true } : {}),
     yes: Boolean(opts.yes),
     ...(opts.adapter ? { adapter: opts.adapter } : {}),
@@ -149,6 +178,7 @@ export async function runNew(deps: CliDeps, io: Io, opts: NewOptions): Promise<n
   });
   deps.log.addSink(fileSink(path.join(deps.store.runDir(runId), 'logs', 'incubator.log')));
   io.stderr(`▶ run ${runId}\n`);
-  const state = await deps.engine.advance(runId, choosePrompter(io, opts.yes));
-  return reportRun(deps, io, state, opts.out);
+  const prompter = choosePrompter(io, opts.yes);
+  const state = await deps.engine.advance(runId, prompter);
+  return settleRun(deps, io, state, (id) => deps.engine.resume(id, prompter), opts.out);
 }

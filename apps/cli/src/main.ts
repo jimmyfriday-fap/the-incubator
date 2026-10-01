@@ -55,6 +55,10 @@ export async function main(
       'after approval, write the repository here and stop (no publish)',
     )
     .option('--keep', 'keep the run workspace after publishing')
+    .option(
+      '--dir <folder>',
+      'initialize the new repository in this empty (or missing) folder; the agent codes there and you approve the commit and push',
+    )
     .action(async (opts: NewOptions) => {
       code = await runNew(getDeps(), io, opts);
     });
@@ -67,6 +71,11 @@ export async function main(
     .option('--adapter <id>', 'switch the LLM adapter for the rest of the run')
     .option('--prompt <text>', 'answer a parked "what do you want to change?" (enhance runs)')
     .option('--prompt-file <path>', 'read that answer from a file')
+    .option('--commit', "folder runs: commit the agent's changes (message: -m, or the drafted one)")
+    .option('-m, --message <text>', 'the commit message for --commit')
+    .option('--leave', 'folder runs: keep the changes uncommitted')
+    .option('--push', 'folder runs: push the branch and open a pull request')
+    .option('--skip-push', 'folder runs: keep the commit local')
     .action(
       async (
         runId: string,
@@ -76,6 +85,11 @@ export async function main(
           out?: string;
           prompt?: string;
           promptFile?: string;
+          commit?: boolean;
+          message?: string;
+          leave?: boolean;
+          push?: boolean;
+          skipPush?: boolean;
         },
       ) => {
         code = await runResume(getDeps(), io, runId, opts);
@@ -117,6 +131,10 @@ export async function main(
     .option('--prompt <text>', 'what you want to change (asked for on a terminal when omitted)')
     .option('--prompt-file <path>', 'read what you want to change from a file')
     .option('--with-gaps', 'also deliver the canonical-pattern gaps, as a separate commit')
+    .option(
+      '--in-place',
+      'work in the local folder itself, on a new branch: the agent codes there and you approve the commit and push',
+    )
     .option(
       '--repo <owner/name>',
       'GitHub repository for the PR when the source is not a GitHub URL',

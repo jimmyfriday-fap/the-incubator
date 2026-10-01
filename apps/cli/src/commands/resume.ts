@@ -4,7 +4,8 @@ import { PolicyError, fileSink } from '@incubator/runtime';
 import { isLlmAdapterId } from '@incubator/llm';
 import type { CliDeps } from '../deps.js';
 import type { Io } from '../io.js';
-import { choosePrompter, reportRun } from './new.js';
+import { answerFinish, type FinishFlags } from './finish.js';
+import { choosePrompter, settleRun } from './new.js';
 
 export async function runResume(
   deps: CliDeps,
@@ -16,7 +17,7 @@ export async function runResume(
     out?: string;
     prompt?: string;
     promptFile?: string;
-  },
+  } & FinishFlags,
 ): Promise<number> {
   if (opts.adapter && !isLlmAdapterId(opts.adapter))
     throw new PolicyError(`unknown adapter ${opts.adapter}`, { code: 'usage' });
@@ -32,10 +33,10 @@ export async function runResume(
     : opts.prompt;
   // The answer to a parked "what do you want to change?" (enhance runs).
   if (request !== undefined) deps.engine.submitRequest(runId, request);
-  const state = await deps.engine.resume(
-    runId,
-    choosePrompter(io, opts.yes),
-    opts.adapter ? { adapter: opts.adapter } : {},
-  );
-  return reportRun(deps, io, state, opts.out);
+  // The commit and push requests are the owner's: --yes never answers them.
+  await answerFinish(deps, runId, opts);
+  const prompter = choosePrompter(io, opts.yes);
+  const run = (id: string) =>
+    deps.engine.resume(id, prompter, opts.adapter ? { adapter: opts.adapter } : {});
+  return settleRun(deps, io, await run(runId), run, opts.out);
 }

@@ -1,6 +1,7 @@
 import { ExitCode, type Exec } from '@incubator/runtime';
 import { startServer } from '@incubator/web';
 import type { CliDeps } from '../deps.js';
+import { createFolderPicker } from '../folder-picker.js';
 import type { Io } from '../io.js';
 
 /** Hands the launch URL to the OS default browser (argv only, no shell; TDD §9.1). */
@@ -49,7 +50,14 @@ export async function runUi(
   opts: { open?: boolean },
   stop?: Promise<unknown>,
 ): Promise<number> {
-  const server = await startServer({ engine: deps.engine, store: deps.store, log: deps.log });
+  // The browser cannot open a native dialog; this process can, so it offers one (ADR-022).
+  const pickFolder = await createFolderPicker(deps.exec);
+  const server = await startServer({
+    engine: deps.engine,
+    store: deps.store,
+    log: deps.log,
+    ...(pickFolder ? { host: { pickFolder } } : {}),
+  });
   const sig = stop ? null : untilSignal();
   try {
     io.stderr(`▶ The Incubator UI is serving ${server.origin} (Ctrl+C to stop)\n`);
