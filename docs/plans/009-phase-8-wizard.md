@@ -16,7 +16,7 @@ The owner asked for the app to open as a wizard (ADR-022, ADR-023):
   agent's own summary, a drafted message). The agent loses `git commit`.
 
 Pieces: a host-capability hook on the web server (the renderer still only speaks HTTP, ADR-012
-unchanged); `inspectFolder`; folder runs in the engine (`dir`, `inPlace`, the `CODE`, `COMMIT` and `PUSH`
+unchanged); `inspectFolder`; folder runs in the engine (`dir`, the `CODE`, `COMMIT` and `PUSH`
 states); new `GitOps` (`status`, `fetch`, `checkout`, `remoteAdd`, owner-identity commit, `--` before clone
 operands); a handoff that streams progress and keeps the agent's summary; the wizard UI.
 
@@ -27,17 +27,17 @@ input, not spec); no edits to `security/accepted-risks.json` or run ceilings. So
 
 ## Touched files and markers
 
-| File or directory                                                           | Marker / note                                                              |
-| --------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `packages/git/src/gitops.ts`                                                | `status`, `fetch`, `checkout`, `remoteAdd`, owner-identity commit, `--`    |
-| `packages/core/src/{handoff,folders,engine,publish,store,state,testing}.ts` | allowed tools without commit; `summary`; folder runs; CODE/COMMIT/PUSH     |
-| `packages/core/prompts/handoff.md`                                          | v1.1.0: the agent does not commit                                          |
-| `packages/core/fixtures/handoff/fake-agent.mjs`                             | `edit` mode: writes a file, emits result text                              |
-| `apps/web/src/server/{server,driver}.ts`, `apps/web/src/api-types.ts`       | `host.pickFolder`, `/api/folders/*`, coding/commit/push routes             |
-| `apps/web/src/ui/views/{Home,Wizard,Coding,FinishChanges}.tsx`              | the wizard, live progress, the commit and push requests                    |
-| `apps/cli/src/{folder-picker.ts,commands/*}`                                | native picker per OS; `new --dir`, `enhance --in-place`, `resume --commit` |
-| `apps/desktop/src/main.ts`                                                  | `dialog.showOpenDialog` as the server's host picker                        |
-| `tests/scenarios/local-folder/`, `tests/adapters/local-folder.ts`           | happy, validation and fault scenarios                                      |
+| File or directory                                                                   | Marker / note                                                                |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `packages/git/src/gitops.ts`                                                        | `status`, `fetch`, `checkout`, `remoteAdd`, owner-identity commit, `--`      |
+| `packages/core/src/{handoff,folders,finish,engine,publish,store,state,testing}.ts`  | allowed tools without commit; `summary`; folder runs; CODE/COMMIT/PUSH       |
+| `packages/core/prompts/handoff.md`                                                  | v1.1.0: the agent does not commit                                            |
+| `packages/core/fixtures/handoff/fake-agent.mjs`                                     | `edit` mode: writes a file, emits result text                                |
+| `apps/web/src/server/{server,driver}.ts`, `apps/web/src/api-types.ts`               | `host.pickFolder`, `/api/folders/*`, coding/commit/push routes               |
+| `apps/web/src/ui/views/{Home,Wizard,Coding,FinishChanges}.tsx`                      | the wizard, live progress, the commit and push requests                      |
+| `apps/cli/src/{folder-picker.ts,commands/{finish,new,enhance,resume,ui}.ts}`        | native picker per OS; `new --dir`, `enhance --in-place`, `resume --commit`   |
+| `apps/desktop/{src/main.ts,src/testing-fixtures/fakes.ts,scripts/build.mjs,smoke/}` | `dialog.showOpenDialog` as the host picker; test-build fake picker and agent |
+| `tests/scenarios/local-folder/`, `tests/adapters/local-folder.ts`                   | happy, validation and fault scenarios                                        |
 
 ## Acceptance commands
 
@@ -69,6 +69,9 @@ the owner's files are never deleted; the original branch is unchanged; commit an
 
 ## Review rounds
 
-| Round | Finding                                                               | Status |
-| ----- | --------------------------------------------------------------------- | ------ |
-| 1     | Plan drafted and approved by the owner, decisions recorded in ADR-023 | CLOSED |
+| Round | Finding                                                                | Status |
+| ----- | ---------------------------------------------------------------------- | ------ |
+| 1     | Plan drafted and approved by the owner, decisions recorded in ADR-023  | CLOSED |
+| 2     | The picker's `purpose` only picks a title; no input reaches a script   | CLOSED |
+| 3     | A folder re-check was missing after the owner cleans up: "Check again" | CLOSED |
+| 4     | `--yes` must not stand in for consent to commit or push (CLI)          | CLOSED |

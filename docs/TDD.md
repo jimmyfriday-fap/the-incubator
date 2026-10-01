@@ -633,6 +633,10 @@ stateDiagram-v2
   VERIFY --> PUBLISH
   PUBLISH --> HANDOFF
   HANDOFF --> DONE
+  HANDOFF --> CODE: folder run (§7.5)
+  CODE --> COMMIT: the agent stopped
+  COMMIT --> PUSH: owner approved the commit
+  PUSH --> DONE: owner approved the push, or kept it local
   DONE --> [*]
   INTAKE --> PARKED
   ANALYZE --> PARKED
@@ -644,6 +648,9 @@ stateDiagram-v2
   VERIFY --> PARKED
   PUBLISH --> PARKED
   HANDOFF --> PARKED
+  CODE --> PARKED
+  COMMIT --> PARKED
+  PUSH --> PARKED
   note right of PARKED: resume replays the journal and re-enters the parked-at state
 ```
 
@@ -655,6 +662,10 @@ example, a changed workspace hash raises the nudge rule from §3.2). `--spec-onl
 `REQUEST` exists only in enhance runs (§7.4). It holds the owner's change request; without one, the
 run parks with `needs_request` until the CLI (`resume --prompt`) or the UI answers. Adopt runs go
 from `ANALYZE` straight to `REVIEW`, because their spec is drafted from the detectors, not by a model.
+
+`CODE`, `COMMIT` and `PUSH` exist only in folder runs (§7.5). `CODE` is the coding agent working in the
+owner's folder. `COMMIT` parks with `needs_commit` until the owner approves (or declines) the commit;
+`PUSH` parks with `needs_push` until the owner approves the push or keeps the commit local.
 
 ### 5.2 Clarification algorithm
 
@@ -1050,6 +1061,42 @@ flowchart LR
   `existingRepo`, so the same request against the repository after its own delivery was merged gives
   the same `request.md` and is recognised as already delivered.
 
+### 7.5 Local folder runs (ADR-022, ADR-023)
+
+The wizard (§9.2) and `incubator new --dir` / `incubator enhance --in-place` start a **folder run**:
+`RunInput.dir` is a folder the owner chose. Everything up to the repository is as before; what changes
+is where the coding agent works and who commits.
+
+- **New solution.** The folder must be empty or missing (`inspectFolder`, `out_not_empty` otherwise,
+  checked before any GitHub call). The Publisher renders into the folder itself (the paired tests
+  repository goes to its `-tests` sibling), runs `git init`, commits, creates the GitHub repository,
+  adds `origin` and pushes `main`, as in §7.1. In a folder it **never wipes or cleans anything**: the
+  only files it may find on a re-render are the run's own (recorded by `render.begin`). The agent then
+  codes on `incubator/build-<date>`, never on `main`, which deploys staging.
+- **Update an existing solution.** The folder must be a git repository with a clean working tree. The
+  scan, plan and delivery commit are made in the run workspace clone exactly as in §7.4 (so the
+  additive proof and replay safety are unchanged). Delivery into the folder fetches the run's branch
+  from the clone (`git fetch <clone> refs/heads/<b>:refs/heads/<b>`) and checks it out; the owner's
+  previous branch is never written to. If the folder moved since the scan, the run parks
+  `folder_changed` and touches nothing.
+- **CODE.** The agent (the handoff of §8) works in the folder with `git add`, `git commit` and
+  `git checkout` removed from its allowed tools; the prompt tells it to leave uncommitted changes and
+  to end with a short summary. Progress (turns, tool calls, cost, a cleaned snippet of its latest text)
+  is journaled as `handoff.progress`. `.incubator/state/` is hidden through the repository's local
+  `.git/info/exclude`.
+- **COMMIT.** The run parks `needs_commit` with the changed files (`git status`), the agent's verdict
+  and summary, and a drafted message (`feat: <ticket title>`, the summary, an `Incubator-Run` trailer).
+  The owner edits and approves; the commit is made with the **owner's** git identity, and the run parks
+  `no_git_identity` if git does not know it. "Leave uncommitted" is the only alternative: nothing is
+  ever discarded.
+- **PUSH.** The run parks `needs_push`. Approving pushes the branch with the token and opens one pull
+  request (found, not duplicated, on replay) whose body carries the agent's summary. Skipping, or having
+  no GitHub target, ends the run with the commit kept locally.
+- **Replay safety.** The commit and push steps recognise their own work from the `Incubator-Run` /
+  `Incubator-Part: finish` trailers, so a crash at any point resumes without a second commit or PR
+  (a 14-point crash matrix in `folder-runs.test.ts`; scenarios `local-folder`).
+- **Consent.** `--yes` accepts defaults; it is never consent to commit or push.
+
 ---
 
 ## 8. Handoff (brief §8)
@@ -1112,7 +1159,7 @@ flowchart LR
 
   | Method | Path                                     | Purpose                                                              |
   | ------ | ---------------------------------------- | -------------------------------------------------------------------- |
-  | GET    | `/session`                               | CSRF token, versions, adapter capabilities                           |
+  | GET    | `/session`                               | CSRF token, versions, `capabilities.pickFolder`                      |
   | POST   | `/runs`                                  | start `new`, `adopt` or `enhance`                                    |
   | GET    | `/runs`, `/runs/:id`                     | list and inspect runs                                                |
   | POST   | `/runs/:id/answers`                      | CLARIFY answers                                                      |
@@ -1121,10 +1168,27 @@ flowchart LR
   | GET    | `/runs/:id/tree`, `/runs/:id/file?path=` | preview; `path` is normalized and confined to the workspace          |
   | GET    | `/runs/:id/spec-diff?from=&to=`          | a JSON-pointer diff between spec revisions                           |
   | POST   | `/runs/:id/publish`, `/runs/:id/handoff` | effectful steps                                                      |
+  | POST   | `/folders/pick`                          | the host's native folder dialog (`{purpose}` → `{path \| null}`)     |
+  | POST   | `/folders/inspect`                       | `{path, purpose}` → a verdict: problems, warnings, branch, origin    |
+  | POST   | `/runs/:id/commit`, `/runs/:id/push`     | the owner's answers at COMMIT and PUSH (§7.5)                        |
   | GET    | `/runs/:id/events`                       | SSE `RunEvent` stream; `Last-Event-ID` = journal seq, for reconnects |
+
+- **Host capabilities** (ADR-022). `ServerOptions.host.pickFolder` is how the embedding process
+  offers the operating system's folder dialog: Electron's `dialog.showOpenDialog` in the desktop app;
+  PowerShell's `FolderBrowserDialog` (a constant, encoded script), `osascript` or `zenity`/`kdialog` for
+  `incubator ui`. The page asks over HTTP, behind the same token, Origin and CSRF checks as every other
+  call (one dialog at a time); without a picker the page offers a field for a pasted path. No preload
+  and no IPC (ADR-012).
 
 ### 9.2 UI (`apps/web/src/ui`)
 
+- **The wizard (Phase 8).** The first screen asks **"What would you like to do"**: **New solution** or
+  **Update an existing solution**. Each begins with a folder (Browse… and a path field, explained by
+  `/folders/inspect`; "Check again" after the owner cleans up). New solution: folder, then the
+  narrative. Update: folder, then Analyze (or "only add the canonical-pattern files", the adopt path).
+  The existing steps follow: questions, review, and publish. A folder run then shows the `Coding`
+  view (live progress) and the `FinishChanges` requests: the changed files, the agent's summary, an
+  editable commit message and the owner's git identity, then the push.
 - **Stack:** React 19 + Vite 8, with no UI framework dependency beyond a small CSS module set.
 - **Views:**
   - **Wizard:** intake (narrative text or file, repo URL or path), then CLARIFY cards (options with
@@ -1155,6 +1219,9 @@ flowchart LR
     ("Scanned N of M files …"), the full report on demand, and a text box. After that the normal
     questions and review follow; the REVIEW tree previews the delivery, not the canonical tree.
     Finished adopt and enhance runs offer "Enhance" in Recent runs.
+  - **Folder runs (Phase 8).** See the wizard above and §7.5. Test ids: `intent`, `pick-folder`,
+    `folder-path`, `commit-request`, `changed-files`, `agent-summary`, `commit-message`, `commit`,
+    `push-request`, `push`, `skip-push`, `finish-pr-link`.
   - **Opening the browser.** `incubator ui` opens the default browser (`open`, `xdg-open`, or
     `rundll32 url.dll,FileProtocolHandler`, argv only), or prints the single-use link with
     `--no-open`.
@@ -1189,6 +1256,10 @@ flowchart LR
   - **Enhance (Phase 7).** The same UI and server, so no desktop code changed beyond the test
     build: `INCUBATOR_TEST_FIXTURE=enhance:<name>` picks recorded enhancement turns, and the smoke
     test enhances a local repository whose path contains a space, to a local branch.
+  - **Folder dialog (Phase 8).** The main process answers `/folders/pick` with
+    `dialog.showOpenDialog` (`openDirectory`, plus `createDirectory` for a new solution). The test build
+    takes `INCUBATOR_TEST_PICK_FOLDER` instead and runs the fake coding agent (as Electron-as-node); the
+    smoke tests drive both wizard paths with folder paths that contain a space.
   - **Sandbox.** The renderer sandbox is forced with `app.enableSandbox()`. Only an explicit
     `--no-sandbox` skips it, for root in containers.
   - **Release lane.** `promote-to-production.yml` is the base render, adopted verbatim.
@@ -1220,6 +1291,7 @@ CLIs or a real GitHub org. Never mark a live criterion `PASS` without having run
 | **5 Web UI**                    | Fastify server, React UI, SSE; `incubator ui`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Playwright (headless Chromium, preinstalled) covers the greenfield and brownfield flows to DONE on fakes; request-security tests for a missing token, a bad cookie, a wrong Origin, a wrong Host and a missing CSRF header, each expecting 401/403.                                                                                                                                                                      |
 | **6 Electron**                  | Desktop shell, electron-builder config, `desktop.yml` CI matrix (3 OS)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | CI builds artifacts on all three OSes (run URLs recorded); a Linux xvfb smoke test completes a fake greenfield run locally and in CI; Windows/macOS launch smoke runs in CI; installer UX checks are `PENDING LOCAL VERIFICATION`.                                                                                                                                                                                       |
 | **7 Enhance an existing repo**  | Deep scan with skip accounting; `enhance` run (REQUEST, enhance prompt, additive delivery with `design` stage, optional gaps commit, handoff); adopt replay-safety; `incubator enhance`; web and desktop request step                                                                                                                                                                                                                                                                                                                                                                                                                                         | Scenarios `enhance-existing` (2 happy, 3 validation, 3 fault); crash-resume matrix; scan golden; web e2e and desktop smoke on fakes                                                                                                                                                                                                                                                                                      |
+| **8 Wizard and local folders**  | `RunInput.dir`; folder-mode Publisher; owner-approved commit and push (CODE, COMMIT, PUSH); the agent loses `git commit`; native folder dialog (desktop, `incubator ui`); wizard UI; `new --dir`, `enhance --in-place`, `resume --commit/--push/--skip-push/--leave`                                                                                                                                                                                                                                                                                                                                                                                          | Scenarios `local-folder`; crash-resume matrix for commit and push; web e2e and desktop smoke on fakes (both paths, folder with a space). The real Windows dialog, a real coding agent and live GitHub are `PENDING LOCAL VERIFICATION`.                                                                                                                                                                                  |
 
 **Dogfood checkpoints.** From Phase 2 on, the Incubator's own `incubator.json` (platform `cli`, stack
 `node-lib` + desktop, deploy `package-release` if Q1 is approved) is rendered in CI, and the files
