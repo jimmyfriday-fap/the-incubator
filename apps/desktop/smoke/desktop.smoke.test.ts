@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import { cpSync, existsSync, mkdtempSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -43,6 +43,14 @@ afterEach(async () => {
   await Promise.all(running.splice(0).map(stop));
 });
 
+// The owner's git identity and the fake agent's behaviour for a launch (the machine's own git
+// configuration is not consulted).
+function ownerGit(): Record<string, string> {
+  const cfg = path.join(mkdtempSync(path.join(os.tmpdir(), 'desktop gitcfg ')), 'gitconfig');
+  writeFileSync(cfg, '[user]\n\tname = Owner Person\n\temail = owner@example.invalid\n');
+  return { GIT_CONFIG_GLOBAL: cfg, GIT_CONFIG_NOSYSTEM: '1', FAKE_AGENT_MODE: 'edit' };
+}
+
 // Each launch gets its own home and userData, so the single-instance lock is never shared.
 const isolated = () => ({
   INCUBATOR_HOME: mkdtempSync(path.join(os.tmpdir(), 'desktop-home-')),
@@ -70,7 +78,7 @@ describe('desktop smoke', () => {
     const app = await launch('release');
     const page = await app.firstWindow();
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\/$/);
-    await page.getByTestId('narrative').waitFor();
+    await page.getByTestId('intent').waitFor();
     // No Node in the renderer (nodeIntegration off, context isolation on, no preload).
     expect(
       await page.evaluate(() => typeof (globalThis as Record<string, unknown>)['require']),
@@ -100,9 +108,22 @@ describe('desktop smoke', () => {
     expect(r.stderr).toContain('is refused: this is not a test build');
   });
 
-  it('test build: completes a fake greenfield run to DONE', async () => {
-    const app = await launch('test', [TEST_FAKES_FLAG]);
+  it('test build: a new solution in a chosen folder goes from the dropdown to a pushed pull request', async () => {
+    // The folder has a space, as on the owner's machine, and does not exist yet.
+    const folder = path.join(mkdtempSync(path.join(os.tmpdir(), 'new repo ')), 'stock room');
+    const app = await launch('test', [TEST_FAKES_FLAG], {
+      INCUBATOR_TEST_PICK_FOLDER: folder,
+      ...ownerGit(),
+    });
     const page = await app.firstWindow();
+    await page.getByTestId('intent').selectOption({ label: 'New solution' });
+    await page.getByTestId('pick-folder').click();
+    await expect
+      .poll(() => page.getByTestId('folder-path').inputValue(), { timeout: 30_000 })
+      .toBe(folder);
+    await expect
+      .poll(() => page.getByTestId('folder-ok').textContent(), { timeout: 30_000 })
+      .toContain('will be created');
     await page
       .getByTestId('narrative')
       .fill(
@@ -114,16 +135,27 @@ describe('desktop smoke', () => {
     await page.getByTestId('review').waitFor({ timeout: 30_000 });
     await page.getByTestId('owner-login').fill('octo');
     await page.getByTestId('approve').click();
+    // The agent codes in the folder; the owner then approves the commit, and the push.
+    await page.getByTestId('commit-request').waitFor({ timeout: 90_000 });
+    expect(await page.getByTestId('changed-files').textContent()).toContain('src/agent-work.txt');
+    await page.getByTestId('commit').click();
+    await page.getByTestId('push-request').waitFor({ timeout: 60_000 });
+    await page.getByTestId('push').click();
     await expect
       .poll(() => page.getByTestId('run-state').textContent(), { timeout: 90_000 })
       .toBe('DONE');
     expect(await page.getByTestId('repo-link').getAttribute('href')).toBe(
       'https://github.com/octo/stockroom',
     );
+    expect(await page.getByTestId('finish-pr-link').getAttribute('href')).toBe(
+      'https://github.com/octo/stockroom/pull/1',
+    );
+    expect(existsSync(path.join(folder, '.git'))).toBe(true);
+    expect(existsSync(path.join(folder, 'src', 'agent-work.txt'))).toBe(true);
     await page.screenshot({ path: path.resolve(desktop, '../../.reports/desktop-smoke.png') });
   });
 
-  it('test build: enhances a local repository whose path has a space, to a local branch', async () => {
+  it('test build: updates a local repository whose path has a space, committing on a new branch', async () => {
     // A path with a space, as on the owner's machine: it must survive the UI, the clone and git.
     const src = path.join(mkdtempSync(path.join(os.tmpdir(), 'enhance repo ')), 'order desk');
     cpSync(path.resolve(desktop, '../../packages/analyzer/fixtures/bare-node'), src, {
@@ -131,19 +163,27 @@ describe('desktop smoke', () => {
       filter: (f) => !f.endsWith('expected-gap-report.json'),
     });
     const { nodeExec } = await import('@incubator/runtime');
+    const env = { ...process.env, ...ownerGit() };
+    const git = (...args: string[]) =>
+      nodeExec.run('git', args, { cwd: src, timeoutMs: 30_000, env });
     for (const args of [
       ['init', '-q', '-b', 'main'],
       ['add', '-A'],
-      ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'existing'],
+      ['commit', '-q', '-m', 'existing'],
     ])
-      expect((await nodeExec.run('git', args, { cwd: src, timeoutMs: 30_000 })).code).toBe(0);
+      expect((await git(...args)).code).toBe(0);
 
     const app = await launch('test', [TEST_FAKES_FLAG], {
       INCUBATOR_TEST_FIXTURE: 'enhance:export-orders',
+      INCUBATOR_TEST_PICK_FOLDER: src,
+      ...ownerGit(),
     });
     const page = await app.firstWindow();
-    await page.getByTestId('adopt-repo').fill(src);
-    await page.getByTestId('adopt-local').check();
+    await page.getByTestId('intent').selectOption({ label: 'Update an existing solution' });
+    await page.getByTestId('pick-folder').click();
+    await expect
+      .poll(() => page.getByTestId('folder-ok').textContent(), { timeout: 30_000 })
+      .toContain('working tree clean');
     await page.getByTestId('start-enhance').click();
     await page.getByTestId('change-request').waitFor({ timeout: 60_000 });
     await page
@@ -154,18 +194,20 @@ describe('desktop smoke', () => {
     // A local repository has no GitHub origin to take the owner from, so the review asks for it.
     await page.getByTestId('owner-login').fill('octo');
     await page.getByTestId('approve').click();
+    await page.getByTestId('commit-request').waitFor({ timeout: 90_000 });
+    expect(await page.getByTestId('changed-files').textContent()).toContain('src/agent-work.txt');
+    // The owner's own branch is untouched until the delivery branch is committed.
+    await page.getByTestId('commit').click();
+    // Nothing to push to (no GitHub origin), so the run ends with the commit kept locally.
     await expect
       .poll(() => page.getByTestId('run-state').textContent(), { timeout: 90_000 })
       .toBe('DONE');
-    expect(await page.getByTestId('plan-path').textContent()).toBe(
-      'docs/plans/001-enhance-20260501.md',
+    await page.getByTestId('committed').waitFor();
+    expect((await git('branch', '--show-current')).stdout.trim()).toBe(
+      'incubator/enhance-20260501',
     );
-    await page.getByTestId('local-branch').waitFor();
-    // The owner's checkout was not touched.
-    expect(
-      (await nodeExec.run('git', ['status', '--porcelain'], { cwd: src, timeoutMs: 30_000 }))
-        .stdout,
-    ).toBe('');
+    expect((await git('status', '--porcelain')).stdout).toBe('');
+    expect((await git('log', '--format=%an', '-1')).stdout.trim()).toBe('Owner Person');
     await page.screenshot({
       path: path.resolve(desktop, '../../.reports/desktop-smoke-enhance.png'),
     });

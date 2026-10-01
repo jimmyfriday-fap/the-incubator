@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, dialog, session, shell, type WebContents } from 'electron';
 import { Logger, fileSink, formatError, incubatorHome } from '@incubator/runtime';
 import { createLiveEngine, type Engine, type RunStore } from '@incubator/core';
-import { startServer, type RunningServer } from '@incubator/web';
+import { startServer, type HostCapabilities, type RunningServer } from '@incubator/web';
 import { extractArchive, type PacksArchive } from './packs-archive.js';
 import {
   TEST_FAKES_FLAG,
@@ -20,7 +20,15 @@ declare const __INCUBATOR_TEST_BUILD__: boolean;
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-async function wiring(): Promise<{ engine: Engine; store: RunStore; log: Logger }> {
+interface Wiring {
+  engine: Engine;
+  store: RunStore;
+  log: Logger;
+  /** Test builds only: a folder picker that answers without opening a dialog. */
+  pickFolder?: HostCapabilities['pickFolder'];
+}
+
+async function wiring(): Promise<Wiring> {
   // why: the constant is false in release builds, so the bundler drops this branch and the fakes.
   if (__INCUBATOR_TEST_BUILD__ && process.argv.includes(TEST_FAKES_FLAG)) {
     const { fakeWiring } = await import('./testing-fixtures/fakes.js');
@@ -29,6 +37,30 @@ async function wiring(): Promise<{ engine: Engine; store: RunStore; log: Logger 
   const log = new Logger([fileSink(path.join(incubatorHome(), 'desktop.log'))]);
   const live = createLiveEngine({ log });
   return { engine: live.engine, store: live.store, log };
+}
+
+/**
+ * The native folder dialog (ADR-022). It runs here in the main process and the renderer reaches it
+ * over the same HTTP routes as in the browser: no preload, no IPC (ADR-012).
+ */
+function folderDialog(
+  window: () => BrowserWindow | undefined,
+): NonNullable<HostCapabilities['pickFolder']> {
+  return async (purpose) => {
+    const options: Electron.OpenDialogOptions = {
+      title:
+        purpose === 'new'
+          ? 'Choose the folder for the new repository'
+          : 'Choose the folder that contains your local repository',
+      // why: createDirectory lets the owner make the new repository's folder in the dialog itself.
+      properties: purpose === 'new' ? ['openDirectory', 'createDirectory'] : ['openDirectory'],
+    };
+    const win = window();
+    const r = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
+    return r.canceled ? null : (r.filePaths[0] ?? null);
+  };
 }
 
 function lockDown(contents: WebContents, origin: string, hosts: () => string[]): void {
@@ -78,8 +110,15 @@ async function main(): Promise<void> {
       archive,
       path.join(app.getPath('userData'), 'packs'),
     );
-    const { engine, store, log } = await wiring();
-    server = await startServer({ engine, store, log, uiDir: path.join(appRoot, 'ui') });
+    const { engine, store, log, pickFolder } = await wiring();
+    const windows: { main?: BrowserWindow } = {};
+    server = await startServer({
+      engine,
+      store,
+      log,
+      uiDir: path.join(appRoot, 'ui'),
+      host: { pickFolder: pickFolder ?? folderDialog(() => windows.main) },
+    });
     const hosts = () => {
       try {
         return leantimeHosts(store.list().map((id) => engine.finalSpec(id)));
@@ -87,20 +126,21 @@ async function main(): Promise<void> {
         return [];
       }
     };
-    const win = new BrowserWindow({
+    const main = new BrowserWindow({
       width: 1280,
       height: 900,
       title: 'The Incubator',
       show: false,
       webPreferences: secureWebPreferences(),
     });
-    lockDown(win.webContents, server.origin, hosts);
-    win.once('ready-to-show', () => win.show());
+    windows.main = main;
+    lockDown(main.webContents, server.origin, hosts);
+    main.once('ready-to-show', () => main.show());
     app.on('second-instance', () => {
-      if (win.isMinimized()) win.restore();
-      win.focus();
+      if (main.isMinimized()) main.restore();
+      main.focus();
     });
-    await win.loadURL(server.url);
+    await main.loadURL(server.url);
   } catch (err) {
     // why: always leave a trace on stderr; a modal would block headless test builds forever.
     process.stderr.write(`The Incubator could not start: ${formatError(err)}\n`);

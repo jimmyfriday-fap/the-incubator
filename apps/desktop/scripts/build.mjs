@@ -110,6 +110,7 @@ cpSync(ui, path.join(out, 'ui'), { recursive: true });
 if (testBuild) {
   copy('packages/core/fixtures/discovery', 'fixtures/discovery');
   copy('packages/core/fixtures/enhance', 'fixtures/enhance');
+  copy('packages/core/fixtures/handoff', 'fixtures/handoff');
 }
 
 const pkg = JSON.parse(readFileSync(path.join(desktop, 'package.json'), 'utf8'));
