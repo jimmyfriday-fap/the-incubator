@@ -698,6 +698,7 @@ can't drift. Ajv 2020 in strict mode, with `ajv-formats`, is the validator. The 
 | `testing.completenessThreshold` (default `70`)             | the brief requires a threshold but gives it no home (ADR-018)             |
 | `testing.pairedRepo.name` (default `<slug>-tests`)         | an explicit name so resume and adopt can find it                          |
 | `lanes.workLanes` default = all nine                       | an empty list would make handoff meaningless                              |
+| `other` in `platform`, `stack.*` and `deploy.target`       | a repository with no stack pack; enhancement mode only (ADR-024, §7.4)    |
 | `tracker.leantime.statusMap`                               | Leantime status IDs are per project                                       |
 | `deploy.target` adds `package-release`                     | **proposed, Q1**: libraries and CLIs (including this repo) have no server |
 | `stack.framework` enum per pack                            | determinism needs a finite set (Q2)                                       |
@@ -978,6 +979,12 @@ Name:` → theme; `pyproject.toml` + FastAPI/uvicorn → `python-service`;
 change. `enhance` joins the brief's two inputs ("an idea and/or an existing repository"): the
 repository is scanned in full, the owner describes the change, and the existing discovery loop
 turns that into enhancement requests grounded in the scan.
+
+Any repository can be updated (ADR-024). When no stack pack fits (a Flutter app, a Go service), the
+spec says `other` for the platform, the stack and the deploy target, the delivery carries the plan, the
+tickets and the lane templates only, and a request for the canonical gaps is turned off with a warning.
+The scan names the ecosystem from its root manifest (a built-in label, never repository text). `adopt`
+still needs a pack and refuses, naming the ecosystem and pointing at `enhance`.
 
 ```mermaid
 flowchart LR
@@ -1397,3 +1404,4 @@ flowchart LR
 | [021](adr/021-deep-scan-caps-and-skip-accounting.md)   | Deep scan: deterministic, capped, honest about skipped files                 |
 | [022](adr/022-host-capabilities-over-http.md)          | Native capabilities (folder dialog) reach the UI as HTTP routes              |
 | [023](adr/023-local-folder-workflow.md)                | Folder workflows; the owner approves every commit and push                   |
+| [024](adr/024-spec-value-other.md)                     | The spec value `other`: updating a repository with no stack pack             |

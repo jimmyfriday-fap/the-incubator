@@ -1,0 +1,56 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-gaps-unavailable-other",
+  "feature": "enhance-existing",
+  "title": "Asking for the canonical files on a repository with no stack pack delivers the plan alone",
+  "tags": ["validation"],
+  "seed": {
+    "fixtures": "export-orders",
+    "repo": "flutter-app"
+  },
+  "context": {},
+  "mocks": {
+    "ai": ["packages/core/fixtures/enhance/export-orders"]
+  },
+  "stages": [
+    {
+      "name": "enhance",
+      "input": {
+        "request": "Kitchen staff need to export the orders list as a CSV file at the end of the day.",
+        "withGaps": true
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "DONE"
+        },
+        {
+          "path": "parkedReason",
+          "op": "eq",
+          "value": null
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "files",
+          "op": "length",
+          "value": 9
+        },
+        {
+          "path": "addedOnly",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "sourceUntouched",
+          "op": "eq",
+          "value": true
+        }
+      ]
+    }
+  ]
+}

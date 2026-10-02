@@ -32,6 +32,7 @@ const PLATFORM_FOR_PACK: Record<StackPack, IncubatorSpec['platform']> = {
   'python-service': 'service',
   wordpress: 'wordpress-plugin',
   'node-lib': 'library',
+  other: 'other',
 };
 
 /** The full default spec for whatever platform/pack the draft already chose. */
@@ -48,13 +49,13 @@ export function defaultsFor(draft: DraftSpec): IncubatorSpec {
   const home =
     (getAt(draft, 'testing.home') as IncubatorSpec['testing']['home'] | undefined) ?? 'in-repo';
   const target: IncubatorSpec['deploy']['target'] =
-    pack === 'node-lib' ? 'package-release' : 'vps-tailscale';
+    pack === 'other' ? 'other' : pack === 'node-lib' ? 'package-release' : 'vps-tailscale';
   const testing: IncubatorSpec['testing'] = {
     home,
     profiles: ['quick', 'full', 'chaos', 'hardening', 'release', 'live'],
     coverageThreshold: 80,
     completenessThreshold: 70,
-    e2e: pack === 'node-lib' ? 'none' : 'playwright',
+    e2e: pack === 'node-lib' || pack === 'other' ? 'none' : 'playwright',
   };
   if (home === 'paired-repo') testing.pairedRepo = { name: `${slug}-tests`.slice(0, 100) };
   return {

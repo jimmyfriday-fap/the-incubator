@@ -10,11 +10,14 @@ const git = createGitOps(nodeExec);
 const ident = { identity: { name: 'T', email: 't@example.invalid' } };
 const tmp = () => mkdtempSync(path.join(os.tmpdir(), 'folders test '));
 
-async function repo(opts: { origin?: string; commit?: boolean } = {}) {
+async function repo(opts: { origin?: string; commit?: boolean; manifest?: boolean } = {}) {
   const dir = path.join(tmp(), 'my repo');
   mkdirSync(dir);
   await git.init(dir, 'main');
   writeFileSync(path.join(dir, 'a.txt'), 'x\n');
+  // A library manifest, so the repository has a stack pack unless a test says otherwise.
+  if (opts.manifest !== false)
+    writeFileSync(path.join(dir, 'package.json'), '{ "name": "my-repo", "main": "index.js" }\n');
   if (opts.commit !== false) {
     await git.addAll(dir);
     await git.commit(dir, 'chore: one', ident);
@@ -142,6 +145,42 @@ describe('inspectFolder: an existing solution', () => {
     expect(text).toContain('gitlab.com');
     expect(text).not.toContain('s3cret-token');
     expect(text).not.toContain('user:');
+  });
+});
+
+describe('inspectFolder: the stack pack', () => {
+  it('says a supported repository has a pack', async () => {
+    const v = await inspectFolder(
+      git,
+      await repo({ origin: 'https://github.com/octo/app.git' }),
+      'existing',
+    );
+    expect(v.stack).toEqual({ supported: true, label: 'node-lib' });
+    expect(v.warnings).toEqual([]);
+  });
+
+  it('warns, without blocking, when no pack fits, and names the ecosystem', async () => {
+    const dir = await repo({ origin: 'https://github.com/octo/app.git', manifest: false });
+    const none = await inspectFolder(git, dir, 'existing');
+    expect(none.ok).toBe(true);
+    expect(none.stack).toEqual({ supported: false, label: 'unrecognised stack' });
+    expect(none.warnings).toEqual([
+      'No Incubator stack pack fits this repository. It can be updated, but the canonical-pattern files are not available for it.',
+    ]);
+    const flutter = path.join(tmp(), 'flutter app');
+    mkdirSync(flutter);
+    await git.init(flutter, 'main');
+    writeFileSync(path.join(flutter, 'pubspec.yaml'), 'name: app\n');
+    await git.addAll(flutter);
+    await git.commit(flutter, 'chore: one', ident);
+    await git.remoteAdd(flutter, 'origin', 'https://github.com/octo/app.git');
+    const v = await inspectFolder(git, flutter, 'existing');
+    expect(v.ok).toBe(true);
+    expect(v.stack).toEqual({ supported: false, label: 'Dart/Flutter' });
+    expect(v.warnings.join(' ')).toContain(
+      'This is a Dart/Flutter repository, which has no Incubator stack pack.',
+    );
+    expect((await inspectFolder(git, path.join(tmp(), 'new one'), 'new')).stack).toBeNull();
   });
 });
 

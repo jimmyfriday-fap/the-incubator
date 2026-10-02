@@ -73,7 +73,11 @@ export function renderScanReport(scan: RepoScan): string {
       ? `${a.stack.pack} / ${a.stack.framework} (${a.stack.platform}, confidence ${a.stack.confidence}): ${a.stack.evidence
           .map((e) => `${e.file} (${e.note})`)
           .join('; ')}`
-      : 'No stack detected.',
+      : a.ecosystem
+        ? `${a.ecosystem.label} (not a supported stack: canonical-pattern files are unavailable): ${a.ecosystem.evidence
+            .map((e) => e.file)
+            .join(', ')}`
+        : 'No stack detected.',
     '',
   );
   out.push('## Entry points', '');
@@ -201,6 +205,8 @@ export function scanDigest(scan: RepoScan): string {
       framework: a.stack.framework,
       platform: a.stack.platform,
     },
+    // Only for a repository without a pack, so every other digest stays byte-identical.
+    ...(!a.stack && a.ecosystem ? { ecosystem: a.ecosystem.label } : {}),
     entryPoints: scan.entryPoints.slice(0, DIGEST_CAPS.entryPoints),
     modules: scan.modules.slice(0, DIGEST_CAPS.modules),
     moduleDependencies: scan.edges.slice(0, DIGEST_CAPS.edges),

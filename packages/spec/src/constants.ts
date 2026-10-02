@@ -50,6 +50,9 @@ export const SECURITY_FIELDS: readonly string[] = [
 
 export type StackPack = IncubatorSpec['stack']['pack'];
 
+/** The value that marks a stack with no pack. Canonical-pattern files are unavailable for it. */
+export const OTHER = 'other';
+
 export const PACK_FOR_PLATFORM: Record<IncubatorSpec['platform'], readonly StackPack[]> = {
   web: ['node-web'],
   service: ['python-service', 'node-web'],
@@ -57,6 +60,7 @@ export const PACK_FOR_PLATFORM: Record<IncubatorSpec['platform'], readonly Stack
   library: ['node-lib'],
   'wordpress-plugin': ['wordpress'],
   'wordpress-theme': ['wordpress'],
+  other: ['other'],
 };
 
 export const STACK_DEFAULTS: Record<StackPack, IncubatorSpec['stack']> = {
@@ -88,6 +92,14 @@ export const STACK_DEFAULTS: Record<StackPack, IncubatorSpec['stack']> = {
     auth: 'none',
     packageManager: 'pnpm',
   },
+  // A stack the Incubator has no pack for: only an enhancement run may describe one (ADR-024).
+  other: {
+    pack: 'other',
+    framework: 'other',
+    database: 'other',
+    auth: 'other',
+    packageManager: 'other',
+  },
 };
 
 export const FRAMEWORKS_FOR_PACK: Record<
@@ -98,6 +110,7 @@ export const FRAMEWORKS_FOR_PACK: Record<
   'python-service': ['fastapi'],
   wordpress: ['wordpress-plugin', 'wordpress-theme'],
   'node-lib': ['typescript-lib'],
+  other: ['other'],
 };
 
 export const PACKAGE_MANAGERS_FOR_PACK: Record<
@@ -108,6 +121,7 @@ export const PACKAGE_MANAGERS_FOR_PACK: Record<
   'python-service': ['uv'],
   wordpress: ['composer'],
   'node-lib': ['pnpm', 'npm'],
+  other: ['other'],
 };
 
 export const DEFAULT_RUN_CEILINGS = { turns: 60, toolCalls: 400, minutes: 45, usd: 10 } as const;

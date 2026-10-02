@@ -1,0 +1,75 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "happy-unsupported-stack",
+  "feature": "enhance-existing",
+  "title": "A repository with no stack pack (a Flutter app) is updated as stack \"other\"",
+  "tags": ["happy"],
+  "seed": {
+    "fixtures": "export-orders",
+    "repo": "flutter-app"
+  },
+  "context": {},
+  "mocks": {
+    "ai": ["packages/core/fixtures/enhance/export-orders"]
+  },
+  "stages": [
+    {
+      "name": "enhance",
+      "input": {
+        "request": "Kitchen staff need to export the orders list as a CSV file at the end of the day."
+      },
+      "assertions": [
+        {
+          "path": "state",
+          "op": "eq",
+          "value": "DONE"
+        },
+        {
+          "path": "exitCode",
+          "op": "eq",
+          "value": 0
+        },
+        {
+          "path": "prs",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 1
+        },
+        {
+          "path": "addedOnly",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "sourceUntouched",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "features",
+          "op": "contains",
+          "value": "export-orders"
+        },
+        {
+          "path": "files",
+          "op": "contains",
+          "value": "docs/plans/001-enhance-20260501.md"
+        },
+        {
+          "path": "files",
+          "op": "contains",
+          "value": ".incubator/lanes/enhancement/existing/design.md"
+        },
+        {
+          "path": "planLint",
+          "op": "length",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

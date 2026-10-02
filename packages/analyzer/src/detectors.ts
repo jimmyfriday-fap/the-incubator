@@ -14,10 +14,19 @@ export interface StackGuess {
   evidence: Evidence[];
 }
 
+/** What a repository is written in, by its root manifest. A label for people, never a decision. */
+export interface Ecosystem {
+  id: string;
+  label: string;
+  evidence: Evidence[];
+}
+
 export interface Analysis {
   name: string | null;
   description: string | null;
   stack: StackGuess | null;
+  /** Set whenever a known root manifest is present, whether or not a stack pack fits. */
+  ecosystem: Ecosystem | null;
   tests: { runners: string[]; files: number; count: number };
   workflows: string[];
   agents: string[];
@@ -222,12 +231,57 @@ export function detectDeploy(view: RepoView, stack: StackGuess | null): Analysis
 }
 
 /** Runs every detector. Pure over the view; repository content is data, never instructions. */
+/**
+ * Root manifests, most specific first. The id and label are constants chosen by which file exists:
+ * nothing read from the repository ever becomes part of them (threat T6).
+ */
+const ECOSYSTEMS: readonly { id: string; label: string; files: readonly string[] }[] = [
+  { id: 'dart', label: 'Dart/Flutter', files: ['pubspec.yaml'] },
+  { id: 'rust', label: 'Rust', files: ['Cargo.toml'] },
+  { id: 'go', label: 'Go', files: ['go.mod'] },
+  { id: 'swift', label: 'Swift', files: ['Package.swift'] },
+  { id: 'elixir', label: 'Elixir', files: ['mix.exs'] },
+  {
+    id: 'jvm',
+    label: 'Java/Kotlin',
+    files: [
+      'pom.xml',
+      'build.gradle',
+      'build.gradle.kts',
+      'settings.gradle',
+      'settings.gradle.kts',
+    ],
+  },
+  { id: 'ruby', label: 'Ruby', files: ['Gemfile'] },
+  { id: 'dotnet', label: '.NET', files: ['*.sln', '*.csproj', '*.fsproj'] },
+  { id: 'php', label: 'PHP', files: ['composer.json'] },
+  { id: 'python', label: 'Python', files: ['pyproject.toml', 'requirements.txt', 'setup.py'] },
+  { id: 'node', label: 'Node.js', files: ['package.json'] },
+];
+
+/** Ecosystems a stack pack exists for; any other one makes a weak stack guess give way (draft.ts). */
+export const PACKED_ECOSYSTEMS: ReadonlySet<string> = new Set(['node', 'python', 'php']);
+
+export function detectEcosystem(view: RepoView): Ecosystem | null {
+  for (const e of ECOSYSTEMS) {
+    const found = e.files.flatMap((f) => (f.includes('*') ? view.glob(f) : view.has(f) ? [f] : []));
+    if (found.length)
+      return {
+        id: e.id,
+        label: e.label,
+        evidence: found.slice(0, 3).map((file) => ({ file, note: 'root manifest' })),
+      };
+  }
+  return null;
+}
+
 export function analyze(view: RepoView): Analysis {
   const { guess, name, description } = detectStack(view);
   return {
     name,
     description,
     stack: guess,
+    ecosystem: detectEcosystem(view),
     tests: detectTests(view),
     workflows: view.glob('.github/workflows/*.{yml,yaml}'),
     agents: [

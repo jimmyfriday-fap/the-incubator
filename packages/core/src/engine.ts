@@ -14,6 +14,7 @@ import { complete } from '@incubator/llm';
 import type { RepoRef } from '@incubator/git';
 import {
   ENHANCEMENT_SPEC_VERSION,
+  OTHER,
   completeSpec,
   discoveryTurnWireSchema,
   specHash,
@@ -22,7 +23,7 @@ import {
   type DiscoveryTurn,
   type IncubatorSpec,
 } from '@incubator/spec';
-import { attributionIssues, mergeTurn, type Draft } from './discovery/merge.js';
+import { attributionIssues, mergeTurn, otherIssues, type Draft } from './discovery/merge.js';
 import { buildUserPrompt } from './discovery/prompt-builder.js';
 import { MAX_ROUNDS, questionIssues, selectQuestions } from './discovery/questions.js';
 import type { JournalEntry } from './journal.js';
@@ -70,11 +71,13 @@ import {
   scanDigest,
   scanHash,
   summarizeGaps,
+  unsupportedStackLabel,
   viewFromDir,
   type RepoScan,
 } from '@incubator/analyzer';
-import { render, type RenderResult, type RenderedFile } from '@incubator/templates';
+import { render, renderLanes, type RenderResult, type RenderedFile } from '@incubator/templates';
 import {
+  ENHANCEMENT_LANES,
   Enhancer,
   buildDelivery,
   enhanceBranch,
@@ -441,14 +444,8 @@ export class Engine {
       const repoName =
         got.ref?.name ?? path.basename(path.resolve(s.input.repo!)).replace(/\.git$/, '');
       const owner = { type: s.input.ownerType ?? 'user', login: got.ref?.owner ?? '' } as const;
-      let inspected: ReturnType<Adopter['inspect']>;
-      try {
-        inspected = a.inspect(got.dir, owner, repoName);
-      } catch (e) {
-        if (e instanceof Error && e.message.startsWith('no supported stack'))
-          throw new ParkError('no_stack', e.message);
-        throw e;
-      }
+      // Any repository can be updated: one with no stack pack gets an `other` draft (ADR-024).
+      const inspected = a.inspect(got.dir, owner, repoName, { allowOther: true });
       const { items } = inspected;
       const scan = deepScan(viewFromDir(got.dir));
       const git = this.deps.publish?.git;
@@ -485,7 +482,13 @@ export class Engine {
         totalIsLowerBound: scan.coverage.totalIsLowerBound,
         baseline: spec.intent.coreFeatures.map((f) => f.id),
         gaps: summarizeGaps(items),
+        ...(spec.stack.pack === OTHER ? { stack: unsupportedStackLabel(inspected.analysis) } : {}),
       });
+      if (spec.stack.pack === OTHER && s.input.withGaps)
+        this.record(runId, 'step.warn', {
+          step: 'enhance.gaps_unavailable',
+          message: `the canonical-pattern files need a stack pack, and this repository (${unsupportedStackLabel(inspected.analysis)}) has none: they are left out`,
+        });
       this.writeRevision(runId, spec as unknown as Draft, {
         inferred: true,
         hash: specHash(spec),
@@ -570,7 +573,22 @@ export class Engine {
     const baseline = this.enhanceBaseline(runId);
     const features = spec.intent.coreFeatures.filter((f) => !baseline.includes(f.id));
     const scan = this.readScan(runId);
-    const base = await render({ ...spec, intent: { ...spec.intent, coreFeatures: [] } });
+    // With no stack pack there is no canonical tree to render: only the lane templates, which need none.
+    const base: RenderResult =
+      spec.stack.pack === OTHER
+        ? {
+            files: await renderLanes(ENHANCEMENT_LANES),
+            packs: [],
+            lock: {
+              lockVersion: 1,
+              incubatorVersion: INCUBATOR_VERSION,
+              specHash: specHash(spec),
+              packs: [],
+              files: {},
+            },
+            settings: { variables: [], secrets: [] },
+          }
+        : await render({ ...spec, intent: { ...spec.intent, coreFeatures: [] } });
     const date = prior?.date ?? enhanceDate(this.deps.clock);
     // Same day, same plan file: a re-run on a repository that already has this run's plan is a
     // no-op rather than a second numbered plan.
@@ -629,7 +647,7 @@ export class Engine {
       if (!plan) {
         const d = planDelta(delivery, dir);
         let gaps: EnhancePlanRecord['gaps'] = null;
-        if (s.input.withGaps) {
+        if (s.input.withGaps && spec.stack.pack !== OTHER) {
           const view = viewFromDir(dir);
           const gd = planDelta(base, dir);
           const mine = (p: string): boolean => !files.has(p);
@@ -1345,7 +1363,7 @@ export class Engine {
           const delta = planDelta(d.delivery, d.dir);
           for (const k of ['create', 'identical', 'proposed', 'owned'] as const)
             for (const p of delta[k]) status.set(p, k);
-          if (this.state(runId).input.withGaps) {
+          if (this.state(runId).input.withGaps && spec.stack.pack !== OTHER) {
             const gd = planDelta(d.base, d.dir);
             for (const k of ['create', 'identical', 'proposed', 'owned'] as const)
               for (const p of gd[k])
@@ -1431,7 +1449,7 @@ export class Engine {
           ...attributionIssues(before, turn),
           ...(enhance
             ? [...featureIssues(turn.draftSpec, baseline), ...outsideIntentIssues(before, turn)]
-            : []),
+            : otherIssues(turn)),
         ],
       },
     );

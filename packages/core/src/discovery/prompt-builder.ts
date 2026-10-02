@@ -1,10 +1,14 @@
-import { FIXED_BY_PACKS, specSchema, type Decision } from '@incubator/spec';
+import { FIXED_BY_PACKS, OTHER, specSchema, type Decision } from '@incubator/spec';
 import { MAX_QUESTIONS_PER_ROUND, MAX_ROUNDS } from './questions.js';
 
 type Node = Record<string, unknown>;
 
-/** `path: a | b | c` for every enum in the spec schema, so the model sees the allowed values. */
-export function allowedValues(): string[] {
+/**
+ * `path: a | b | c` for every enum in the spec schema, so the model sees the allowed values.
+ * `other` (a stack with no pack, ADR-024) is listed only when the draft already is such a repository:
+ * a model must never pick it, and every other prompt stays byte-identical.
+ */
+export function allowedValues(includeOther = false): string[] {
   const out: string[] = [];
   const defs = specSchema['$defs'] as Record<string, Node>;
   const walk = (node: Node | undefined, prefix: string): void => {
@@ -12,7 +16,10 @@ export function allowedValues(): string[] {
     const ref = node['$ref'];
     const n = typeof ref === 'string' ? defs[ref.replace('#/$defs/', '')] : node;
     if (!n) return;
-    if (Array.isArray(n['enum'])) out.push(`${prefix}: ${(n['enum'] as string[]).join(' | ')}`);
+    if (Array.isArray(n['enum']))
+      out.push(
+        `${prefix}: ${(n['enum'] as string[]).filter((v) => includeOther || v !== OTHER).join(' | ')}`,
+      );
     const items = n['items'] as Node | undefined;
     if (items) walk(items, `${prefix}[]`);
     for (const [k, v] of Object.entries(
@@ -60,7 +67,9 @@ export function buildUserPrompt(ctx: TurnContext): string {
     decided.length ? decided.join('\n') : '(none)',
     '',
     '## Allowed values',
-    ...allowedValues().map((v) => `- ${v}`),
+    ...allowedValues((ctx.draft['stack'] as { pack?: string } | undefined)?.pack === OTHER).map(
+      (v) => `- ${v}`,
+    ),
     '',
     '## Fixed by the template packs (never ask about these)',
     FIXED_BY_PACKS.join(', '),

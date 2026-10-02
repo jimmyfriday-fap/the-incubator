@@ -33,6 +33,16 @@
         }
       ]
     },
+    "ecosystem": {
+      "id": "node",
+      "label": "Node.js",
+      "evidence": [
+        {
+          "file": "package.json",
+          "note": "root manifest"
+        }
+      ]
+    },
     "tests": {
       "runners": [
         "vitest"

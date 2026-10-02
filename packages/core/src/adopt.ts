@@ -8,6 +8,7 @@ import {
   analyze,
   draftFromAnalysis,
   gapReport,
+  hasNoPack,
   isEmptyDelta,
   planDelta,
   renderGapReport,
@@ -85,14 +86,21 @@ export class Adopter {
     dir: string,
     owner: IncubatorSpec['project']['owner'],
     repoName: string,
+    opts: { allowOther?: boolean } = {},
   ): { analysis: Analysis; items: GapItem[]; spec: IncubatorSpec } {
     const view = viewFromDir(dir);
     const analysis = analyze(view);
-    const items = gapReport(view, analysis.stack?.pack ?? null);
+    // A repository treated as having no pack (ADR-024) has no pack-scoped canonical items either.
+    const noPack = opts.allowOther === true && hasNoPack(analysis);
+    const items = gapReport(view, noPack ? null : (analysis.stack?.pack ?? null));
     const spec = analysis.hasSpec
       ? completeSpec(JSON.parse(readFileSync(path.join(dir, 'incubator.json'), 'utf8')) as never)
           .spec
-      : draftFromAnalysis(analysis, { repoName, owner }).spec;
+      : draftFromAnalysis(analysis, {
+          repoName,
+          owner,
+          ...(opts.allowOther ? { allowOther: true } : {}),
+        }).spec;
     return { analysis, items, spec };
   }
 

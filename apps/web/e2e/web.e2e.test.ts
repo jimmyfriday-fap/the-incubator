@@ -262,6 +262,45 @@ describe('web UI (Playwright, fakes)', () => {
     expect(errors, errors.join('\n')).toEqual([]);
   });
 
+  it('update: a repository with no stack pack (Flutter) is scanned and reviewed, with the canonical files unavailable', async () => {
+    const { h, page, errors } = await open({ enhance: 'export-orders', pick: [] });
+    const { dir } = await seedAdoptRepo(h, 'flutter-app');
+    await intent(page).selectOption({ label: 'Update an existing solution' });
+    await page.getByTestId('folder-path').fill(dir);
+    await page.getByTestId('repo-ref').fill('octo/flutter-app');
+    await expect.poll(() => page.getByTestId('start-enhance').isDisabled(), UI).toBe(false);
+    // The folder check already says why the canonical files are off, and adopt is not offered.
+    expect(await page.getByTestId('no-pack').textContent()).toContain('Dart/Flutter');
+    expect(await page.getByTestId('enhance-gaps').isDisabled()).toBe(true);
+    expect(await page.getByTestId('start-adopt').isDisabled()).toBe(true);
+    expect((await page.locator('.warn').allTextContents()).join(' ')).toContain(
+      'This is a Dart/Flutter repository, which has no Incubator stack pack.',
+    );
+    await page.getByTestId('start-enhance').click();
+    await page.waitForURL(/\/runs\/[\w-]+$/);
+
+    // No park at ANALYZE: the scan is done and the owner is asked what to change.
+    await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
+    expect(await page.getByTestId('scan-coverage').textContent()).toMatch(
+      /^Scanned \d+ of \d+ files/,
+    );
+    await page
+      .getByTestId('request-text')
+      .fill('Kitchen staff need to export the orders list as a CSV file at the end of the day.');
+    await page.getByTestId('submit-request').click();
+
+    // Review says the stack values are placeholders, and previews the plan without a canonical tree.
+    await page.getByTestId('review').waitFor({ timeout: 30_000 });
+    expect(await page.getByTestId('no-pack-note').textContent()).toContain(
+      'no Incubator stack pack',
+    );
+    const tree = page.getByTestId('tree');
+    await expect.poll(() => tree.textContent(), UI).toContain('docs/plans/001-enhance-20260501.md');
+    expect(await tree.textContent()).not.toContain('CLAUDE.md');
+    await shot(page, 'enhance-other-review');
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
   it('update: browse to the repository → scan → what to change → review → the agent codes in the folder → commit → push → DONE', async () => {
     const { h, page, errors } = await open({ enhance: 'export-orders', pick: [] });
     const { dir } = await seedAdoptRepo(h, 'bare-node');

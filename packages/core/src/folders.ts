@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { GitOps, RepoRef } from '@incubator/git';
+import { analyze, hasNoPack, unsupportedStackLabel, viewFromDir } from '@incubator/analyzer';
 import { parseGitHubRef } from './adopt.js';
 
 /** What the wizard may do with a folder: a new repository goes in it, or an existing one is updated. */
@@ -24,6 +25,11 @@ export interface FolderVerdict {
     /** A GitHub repository found on a remote other than `origin`, offered as the push target. */
     suggested: { remote: string; ref: RepoRef } | null;
   } | null;
+  /**
+   * `existing`: whether a stack pack fits the repository. Without one it can still be updated, but the
+   * canonical-pattern files are unavailable (ADR-024). `label` is a built-in constant.
+   */
+  stack: { supported: boolean; label: string } | null;
   /** Reasons the folder cannot be used. Empty when `ok`. */
   problems: string[];
   /** Things worth knowing that do not block (for example, "no GitHub origin: push will be unavailable"). */
@@ -49,6 +55,7 @@ export async function inspectFolder(
     exists: false,
     empty: null,
     git: null,
+    stack: null,
     problems: [],
     warnings: [],
   };
@@ -144,6 +151,17 @@ export async function inspectFolder(
       verdict.warnings.push(`This is a git repository. ${originSentence(originUrl)} ${tail}`);
     }
   }
+  // A repository with its own incubator.json has already been through the Incubator.
+  const analysis = analyze(viewFromDir(dir));
+  const supported = analysis.hasSpec || !hasNoPack(analysis);
+  verdict.stack = {
+    supported,
+    label: supported ? (analysis.stack?.pack ?? 'incubator.json') : unsupportedStackLabel(analysis),
+  };
+  if (!supported)
+    verdict.warnings.push(
+      `${analysis.ecosystem ? `This is a ${verdict.stack.label} repository, which has no Incubator stack pack.` : 'No Incubator stack pack fits this repository.'} It can be updated, but the canonical-pattern files are not available for it.`,
+    );
   verdict.ok = verdict.problems.length === 0;
   return verdict;
 }

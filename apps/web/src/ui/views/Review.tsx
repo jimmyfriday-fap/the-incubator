@@ -100,6 +100,13 @@ export function Review(props: {
   return (
     <section className="card wide review" data-testid="review">
       <h2>Review the spec</h2>
+      {(diff?.spec['stack'] as { pack?: string } | undefined)?.pack === 'other' && (
+        <p className="warn" data-testid="no-pack-note">
+          This repository has no Incubator stack pack. The platform, stack, deploy and testing
+          values below say <code>other</code> and are not used: only your change requests are
+          delivered, and the canonical-pattern files are left out.
+        </p>
+      )}
       <div className="review-grid">
         <div>
           <label className="inline">

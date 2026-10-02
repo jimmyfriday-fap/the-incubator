@@ -17,7 +17,7 @@ export function renderGapReport(a: Analysis, items: readonly GapItem[], delta?: 
   const lines = [
     '# Incubator gap report',
     '',
-    `**Stack:** ${a.stack ? `${a.stack.pack} (${a.stack.framework}, ${a.stack.platform}; ${a.stack.confidence} confidence)` : 'not detected'}  `,
+    `**Stack:** ${a.stack ? `${a.stack.pack} (${a.stack.framework}, ${a.stack.platform}; ${a.stack.confidence} confidence)` : a.ecosystem ? `${a.ecosystem.label} (no stack pack)` : 'not detected'}  `,
     `**Tests:** ${a.tests.count} test(s) in ${a.tests.files} file(s)${a.tests.runners.length ? ` — ${a.tests.runners.join(', ')}` : ''}  `,
     `**Canonical items:** ${s.present} present, ${s.partial} partial, ${s.missing} missing${a.truncated ? ' (repository truncated at 5,000 files)' : ''}`,
     '',

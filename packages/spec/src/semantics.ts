@@ -1,4 +1,9 @@
-import { FRAMEWORKS_FOR_PACK, PACKAGE_MANAGERS_FOR_PACK, PACK_FOR_PLATFORM } from './constants.js';
+import {
+  FRAMEWORKS_FOR_PACK,
+  OTHER,
+  PACKAGE_MANAGERS_FOR_PACK,
+  PACK_FOR_PLATFORM,
+} from './constants.js';
 import type { IncubatorSpec } from './types.gen.js';
 import type { Issue } from './validate.js';
 
@@ -110,6 +115,40 @@ export function validateSemantics(spec: IncubatorSpec): Issue[] {
       '/intent/coreFeatures',
       'feature id "health" is reserved for the built-in health feature',
     );
+  // `other` (ADR-024): a stack with no pack. It is all-or-nothing and only an enhancement run may use it.
+  const isOther = pack === OTHER;
+  const otherAt: [string, unknown][] = [
+    ['/platform', spec.platform],
+    ['/stack/pack', pack],
+    ['/stack/framework', framework],
+    ['/stack/packageManager', packageManager],
+    ['/stack/database', database],
+    ['/stack/auth', spec.stack.auth],
+    ['/deploy/target', spec.deploy.target],
+  ];
+  if (spec.mode !== 'enhancement') {
+    for (const [at, value] of otherAt)
+      if (value === OTHER)
+        add(
+          'other_mode',
+          at,
+          '"other" marks a stack the Incubator has no pack for; it is only valid for mode enhancement. New and adopted projects need node-web, node-lib, python-service or wordpress',
+        );
+  }
+  if ((spec.deploy.target === OTHER) !== isOther)
+    add(
+      'other_deploy',
+      '/deploy/target',
+      'deploy.target is "other" exactly when stack.pack is "other"',
+    );
+  if (isOther) {
+    if (database !== OTHER || spec.stack.auth !== OTHER)
+      add('other_fields', '/stack', 'stack pack "other" has database "other" and auth "other"');
+    if (spec.testing.e2e !== 'none')
+      add('other_fields', '/testing/e2e', 'stack pack "other" has no generated e2e lane');
+  } else if (database === OTHER || spec.stack.auth === OTHER) {
+    add('other_fields', '/stack', 'database and auth "other" are only for stack pack "other"');
+  }
   // Enhancement runs (spec 1.1): the mode, the version and the repository block go together.
   if (spec.mode === 'enhancement') {
     if (spec.incubatorVersion !== '1.1')

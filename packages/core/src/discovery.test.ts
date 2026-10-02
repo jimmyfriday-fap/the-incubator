@@ -14,6 +14,8 @@ import { DefaultsPrompter, NonInteractivePrompter, ScriptedPrompter } from './pr
 import { loadPrompt, parsePrompt } from './prompts.js';
 import { discoveryFixtureDir, fakeEngine } from './testing.js';
 import { Journal } from './journal.js';
+import { otherIssues } from './discovery/merge.js';
+import { allowedValues, buildUserPrompt } from './discovery/prompt-builder.js';
 
 const NARRATIVES = [
   'saas-web',
@@ -52,6 +54,34 @@ describe('discovery prompt', () => {
     expect(p.body).toMatchSnapshot();
     expect(() => parsePrompt('no front matter')).toThrow();
     expect(() => parsePrompt('---\nname: x\nversion: one\n---\nbody')).toThrow(/semver/);
+  });
+
+  it('never offers "other" to the model, unless the draft already is a repository with no pack', () => {
+    // Hidden by default, so every prompt for a new or supported project is unchanged (ADR-024).
+    const hidden = allowedValues();
+    expect(hidden.join('\n')).not.toMatch(/\bother\b/);
+    expect(hidden).toContain('stack.pack: node-web | wordpress | python-service | node-lib');
+    expect(allowedValues(true)).toContain(
+      'stack.pack: node-web | wordpress | python-service | node-lib | other',
+    );
+    const ctx = { round: 1, narrative: 'x', analysis: null, decisions: [] };
+    const prompt = (draft: Record<string, unknown>) =>
+      buildUserPrompt({ ...ctx, draft }).split('## Allowed values')[1]!;
+    expect(prompt({ stack: { pack: 'node-web' } })).not.toMatch(/\bother\b/);
+    expect(prompt({})).not.toMatch(/\bother\b/);
+    expect(prompt({ stack: { pack: 'other' } })).toContain('- deploy.target: ');
+    expect(prompt({ stack: { pack: 'other' } })).toMatch(/- platform: .* \| other\n/);
+  });
+
+  it('sends a turn that picks "other" back to the model', () => {
+    const turn = (draftSpec: Record<string, unknown>) =>
+      ({ draftSpec, questions: [], done: true }) as never;
+    expect(otherIssues(turn({ stack: { pack: 'node-web' }, platform: 'web' }))).toEqual([]);
+    expect(
+      otherIssues(turn({ stack: { pack: 'other' }, deploy: { target: 'other' } })).map(
+        (i) => `${i.code} ${i.path}`,
+      ),
+    ).toEqual(['stack.other /draftSpec/stack/pack', 'stack.other /draftSpec/deploy/target']);
   });
 });
 

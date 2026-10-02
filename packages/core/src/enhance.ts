@@ -2,10 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { ToolError, sha256Hex, type Clock } from '@incubator/runtime';
 import type { GitIdentity } from '@incubator/git';
-import { changedPaths, deepMerge, type DiscoveryTurn, type Issue } from '@incubator/spec';
+import { OTHER, changedPaths, deepMerge, type DiscoveryTurn, type Issue } from '@incubator/spec';
 import type { IncubatorSpec } from '@incubator/spec';
 import { writeTree, type RenderResult, type RenderedFile } from '@incubator/templates';
-import { clean, cmp, type RepoScan } from '@incubator/analyzer';
+import { clean, cmp, unsupportedStackLabel, type RepoScan } from '@incubator/analyzer';
 import { proveAdditions, type AdoptContext } from './adopt.js';
 import { withoutMeta, withoutPackFixed, type Draft } from './discovery/merge.js';
 import type { PublishDeps } from './publish.js';
@@ -315,7 +315,7 @@ export function buildDelivery(d: DeliveryInput): Map<string, RenderedFile> {
           TICKET_TITLE: clean(f.summary, 240),
           TICKET_BODY: `${clean(f.summary, 240)}\n\nOwner's request: ${clean(d.request, 600)}`,
           TARGETS: targets.join(', ') || '(none resolved from the scan)',
-          REPO_MAP: `${d.scan.analysis.stack ? `${d.scan.analysis.stack.pack} / ${d.scan.analysis.stack.framework}` : 'stack not detected'}; see ${dir}/scan-report.md`,
+          REPO_MAP: `${d.spec.stack.pack === OTHER ? `${unsupportedStackLabel(d.scan.analysis)} (no stack pack)` : d.scan.analysis.stack ? `${d.scan.analysis.stack.pack} / ${d.scan.analysis.stack.framework}` : 'stack not detected'}; see ${dir}/scan-report.md`,
         }),
       ),
     );

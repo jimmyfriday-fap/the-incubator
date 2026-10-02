@@ -397,17 +397,95 @@ describe('enhance', () => {
     }
   });
 
-  it('parks on a repository with no supported stack', async () => {
+  it('updates a repository with no stack pack as "other": plan, lanes and ticket, no canonical file', async () => {
     const h = engineFor('export-orders');
-    const { ref, dir } = await seed(h, 'notes', async (d) => {
-      cpSync(path.join(fixtures, 'compliant'), d, { recursive: true });
-      const { rmSync, writeFileSync } = await import('node:fs');
-      rmSync(path.join(d, 'incubator.json'));
-      writeFileSync(path.join(d, 'README.md'), '# notes\n');
-    });
-    const runId = start(h, dir, ref);
+    const { ref, dir } = await seed(h, 'order-desk', path.join(fixtures, 'flutter-app'));
+    const before = hashes(dir);
+    // Asking for the canonical files on a repository with no pack is turned off with a warning.
+    const runId = start(h, dir, ref, { noPublish: true, withGaps: true });
     const s = await h.engine.advance(runId, new DefaultsPrompter());
-    expect(s.parked).toMatchObject({ reason: 'no_stack' });
+    expect(s.state).toBe('DONE');
+    expect(s.parked ?? null).toBeNull();
+    const spec = h.engine.draft(runId);
+    expect(spec).toMatchObject({
+      mode: 'enhancement',
+      incubatorVersion: '1.1',
+      platform: 'other',
+      stack: {
+        pack: 'other',
+        framework: 'other',
+        packageManager: 'other',
+        database: 'other',
+        auth: 'other',
+      },
+      deploy: { target: 'other' },
+      testing: { e2e: 'none' },
+    });
+    const ws = workspace(h, runId);
+    const added = (await git(['diff', '--name-status', 'main..HEAD'], ws)).stdout
+      .trim()
+      .split('\n')
+      .map((l) => l.split('\t') as [string, string]);
+    expect(new Set(added.map(([st]) => st))).toEqual(new Set(['A']));
+    const paths = added.map(([, p]) => p).sort();
+    expect(paths).toEqual(
+      [
+        '.incubator/enhance/20260501/analysis-summary.md',
+        '.incubator/enhance/20260501/design-export-orders.md',
+        '.incubator/enhance/20260501/request.md',
+        '.incubator/enhance/20260501/scan-report.md',
+        '.incubator/lanes/enhancement/existing/codegen.md',
+        '.incubator/lanes/enhancement/existing/design.md',
+        '.incubator/lanes/enhancement/existing/enrich.md',
+        '.incubator/tickets/E-export-orders.json',
+        'docs/plans/001-enhance-20260501.md',
+      ].sort(),
+    );
+    const report = readFileSync(
+      path.join(ws, '.incubator/enhance/20260501/scan-report.md'),
+      'utf8',
+    );
+    expect(report).toContain(
+      'Dart/Flutter (not a supported stack: canonical-pattern files are unavailable): pubspec.yaml',
+    );
+    expect(
+      readFileSync(path.join(ws, '.incubator/enhance/20260501/design-export-orders.md'), 'utf8'),
+    ).toContain('Dart/Flutter');
+    expect(h.engine.enhanceSummary(runId)).toMatchObject({ noop: null, plan: { gaps: null } });
+    expect(
+      h.engine
+        .entries(runId)
+        .some((e) => e.type === 'step.warn' && e['step'] === 'enhance.gaps_unavailable'),
+    ).toBe(true);
+    expect(hashes(dir)).toEqual(before);
+  });
+
+  it('treats a weak Node guess as no pack when the root manifest is another ecosystem', async () => {
+    const h = engineFor('export-orders');
+    const { ref, dir } = await seed(h, 'order-desk', (d) => {
+      cpSync(path.join(fixtures, 'flutter-app'), d, { recursive: true });
+      // A tooling package.json (no bin, main, exports or web dependency) is only a low-confidence guess.
+      writeFileSync(path.join(d, 'package.json'), '{ "name": "tooling", "private": true }\n');
+      return Promise.resolve();
+    });
+    const runId = start(h, dir, ref, { noPublish: true });
+    expect((await h.engine.advance(runId, new DefaultsPrompter())).state).toBe('DONE');
+    expect(h.engine.draft(runId)).toMatchObject({ stack: { pack: 'other' } });
+  });
+
+  it('adopt still refuses a repository with no stack pack, and names what it is', async () => {
+    const h = engineFor('export-orders');
+    const { ref, dir } = await seed(h, 'order-desk', path.join(fixtures, 'flutter-app'));
+    const runId = h.engine.start({
+      kind: 'adopt',
+      repo: dir,
+      repoRef: ref,
+      yes: true,
+      surface: 'test',
+    });
+    await expect(h.engine.advance(runId, new DefaultsPrompter())).rejects.toThrow(
+      /no supported stack detected.*Dart\/Flutter.*incubator enhance/,
+    );
   });
 
   it('hands the delivered plan and its own tickets to the agent', async () => {
@@ -448,7 +526,7 @@ describe('enhance helpers', () => {
   it('ships the enhance prompt versioned and byte-pinned', () => {
     const p = loadPrompt('enhance');
     expect(p.name).toBe('enhance');
-    expect(p.version).toBe('1.0.0');
+    expect(p.version).toBe('1.1.0');
     expect(p.body).toMatchSnapshot();
   });
 

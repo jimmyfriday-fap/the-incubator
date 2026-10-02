@@ -355,6 +355,47 @@ export async function render(
   };
 }
 
+const LANE_SRC = 'files/.incubator/lanes/lane/';
+
+/**
+ * The lane prompt templates (`.incubator/lanes/<lane>/*.md`) for the given lanes, from the base pack
+ * alone. They depend only on the lane, so no spec and no stack pack is needed: this is how an update of
+ * a repository with no pack (ADR-024) gets them. The bytes equal the full `render()`'s for every pack.
+ */
+export async function renderLanes(
+  lanes: readonly string[],
+  reg: PackRegistry = loadRegistry(),
+): Promise<Map<string, RenderedFile>> {
+  const pack = reg.packs.get('base');
+  if (!pack) throw new ToolError('the base pack is missing', { code: 'pack_selection' });
+  const files = new Map<string, RenderedFile>();
+  const ctx = deepFreeze({
+    v: structuredClone(reg.versions),
+    h: makeHelpers(reg.actionsLock),
+    pack: { id: pack.manifest.id, version: pack.manifest.version },
+  });
+  for (const entry of pack.manifest.files) {
+    if (!entry.src.startsWith(LANE_SRC)) continue;
+    for (const lane of lanes) {
+      const as = entry.as ?? 'item';
+      if (entry.when && !evaluateWhen(entry.when, { [as]: lane })) continue;
+      const data = { ...ctx, [as]: lane };
+      const where = `${pack.manifest.id}:${entry.src}`;
+      const dest = renderString(entry.dest, data, `${where} (dest)`).replace(/\.eta$/, '');
+      const text = renderString(pack.files.get(entry.src)!.toString('utf8'), data, where);
+      files.set(dest, {
+        path: dest,
+        bytes: Buffer.from(normalizeText(text, { markdown: isMarkdown(dest) }), 'utf8'),
+        mode: entry.mode ?? '0644',
+        pack: pack.manifest.id,
+        ...(entry.role ? { role: entry.role } : {}),
+      });
+    }
+  }
+  await formatWithPrettier(files);
+  return files;
+}
+
 const PRETTIER_EXT = /\.(json|md|ya?ml|ts|tsx|js|mjs|cjs|css|html)$/i;
 const DEFAULT_PRETTIER = {
   printWidth: 100,

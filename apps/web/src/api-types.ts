@@ -25,6 +25,8 @@ export interface FolderCheck {
     /** A GitHub repository on a remote other than `origin`, offered as the push target. */
     suggested: { remote: string; ref: { owner: string; name: string } } | null;
   } | null;
+  /** Whether a stack pack fits the repository; without one the canonical files are unavailable. */
+  stack: { supported: boolean; label: string } | null;
   problems: string[];
   warnings: string[];
 }

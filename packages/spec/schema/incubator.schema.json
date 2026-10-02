@@ -101,7 +101,7 @@
       }
     },
     "platform": {
-      "enum": ["web", "service", "cli", "library", "wordpress-plugin", "wordpress-theme"]
+      "enum": ["web", "service", "cli", "library", "wordpress-plugin", "wordpress-theme", "other"]
     },
     "stack": {
       "title": "Stack",
@@ -109,19 +109,20 @@
       "additionalProperties": false,
       "required": ["pack", "framework", "database", "auth", "packageManager"],
       "properties": {
-        "pack": { "enum": ["node-web", "wordpress", "python-service", "node-lib"] },
+        "pack": { "enum": ["node-web", "wordpress", "python-service", "node-lib", "other"] },
         "framework": {
           "enum": [
             "fastify-react",
             "fastapi",
             "wordpress-plugin",
             "wordpress-theme",
-            "typescript-lib"
+            "typescript-lib",
+            "other"
           ]
         },
-        "database": { "enum": ["postgres", "mariadb", "none"] },
-        "auth": { "enum": ["none", "session", "oauth", "jwt", "wordpress"] },
-        "packageManager": { "enum": ["pnpm", "npm", "composer", "uv"] }
+        "database": { "enum": ["postgres", "mariadb", "none", "other"] },
+        "auth": { "enum": ["none", "session", "oauth", "jwt", "wordpress", "other"] },
+        "packageManager": { "enum": ["pnpm", "npm", "composer", "uv", "other"] }
       }
     },
     "lanes": {
@@ -158,7 +159,7 @@
       "additionalProperties": false,
       "required": ["target", "staging", "prod"],
       "properties": {
-        "target": { "enum": ["vps-tailscale", "docker-host", "package-release"] },
+        "target": { "enum": ["vps-tailscale", "docker-host", "package-release", "other"] },
         "registry": { "type": "string", "maxLength": 200 },
         "staging": {
           "title": "StagingTarget",

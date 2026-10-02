@@ -18,6 +18,13 @@ const SKIP = new Set([
   'coverage',
   '.tools',
   '.reports',
+  // Build and cache directories of ecosystems without a pack (ADR-024).
+  '.dart_tool',
+  '.pub-cache',
+  '.gradle',
+  '.symlinks',
+  'Pods',
+  'DerivedData',
 ]);
 
 /**

@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '@incubator/runtime';
 import { completeSpec, validateSemantics, validateSpec } from '@incubator/spec';
 import { BUNDLED_PACKS_DIR, loadRegistry } from './registry.js';
-import { render, type RenderResult } from './render.js';
+import { render, renderLanes, type RenderResult } from './render.js';
 import { lintTemplate } from './template-lint.js';
 
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -154,4 +154,34 @@ describe('packsDir', () => {
       else process.env['INCUBATOR_PACKS_DIR'] = before;
     }
   });
+});
+
+describe('renderLanes (lane templates without a stack pack, ADR-024)', () => {
+  const lanes = ['enhancement/existing', 'enhancement/new'];
+
+  it('gives the design, enrich and codegen templates of each lane, and nothing else', async () => {
+    const files = await renderLanes(lanes);
+    expect([...files.keys()].sort()).toEqual(
+      lanes
+        .flatMap((l) => ['codegen', 'design', 'enrich'].map((f) => `.incubator/lanes/${l}/${f}.md`))
+        .sort(),
+    );
+    for (const f of files.values()) expect(f.pack).toBe('base');
+  });
+
+  for (const name of combos) {
+    it(`is byte-equal to the full render of ${name}`, async () => {
+      const { spec } = completeSpec(
+        JSON.parse(readFileSync(path.join(comboDir, `${name}.json`), 'utf8')) as never,
+      );
+      const full = await render(spec);
+      const only = await renderLanes(lanes);
+      for (const [p, f] of only) {
+        const twin = full.files.get(p);
+        expect(twin, p).toBeDefined();
+        expect(f.bytes.equals(twin!.bytes), p).toBe(true);
+        expect(f.mode).toBe(twin!.mode);
+      }
+    });
+  }
 });

@@ -46,6 +46,8 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
   };
   const usable = check?.ok === true;
   const needsRef = intent === 'update' && usable && check?.git?.origin === null;
+  // No stack pack: the repository can be updated, but there are no canonical files to add.
+  const noPack = check?.stack?.supported === false;
 
   return (
     <section className="card wide wizard" data-testid="wizard">
@@ -128,11 +130,18 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
             <input
               data-testid="enhance-gaps"
               type="checkbox"
-              checked={gaps}
+              checked={gaps && !noPack}
+              disabled={noPack}
               onChange={(e) => setGaps(e.target.checked)}
             />{' '}
             also add the missing canonical-pattern files (as a separate commit)
           </label>
+          {noPack && (
+            <p className="muted" data-testid="no-pack">
+              Not available for {check?.stack?.label}: the canonical-pattern files need a stack
+              pack.
+            </p>
+          )}
           <div className="actions">
             <button
               data-testid="start-enhance"
@@ -142,7 +151,7 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
                   kind: 'enhance',
                   dir: check!.path,
                   ...(repoRef.trim() ? { repoRef: repoRef.trim() } : {}),
-                  ...(gaps ? { withGaps: true } : {}),
+                  ...(gaps && !noPack ? { withGaps: true } : {}),
                 })
               }
             >
@@ -151,7 +160,7 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
             <button
               data-testid="start-adopt"
               className="secondary"
-              disabled={!usable || starting}
+              disabled={!usable || starting || noPack}
               onClick={() =>
                 go({
                   kind: 'adopt',

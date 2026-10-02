@@ -28,7 +28,8 @@ export interface IncubatorSpec {
   existingRepo?: ExistingRepo;
   project: Project;
   intent: Intent;
-  platform: 'web' | 'service' | 'cli' | 'library' | 'wordpress-plugin' | 'wordpress-theme';
+  platform:
+    'web' | 'service' | 'cli' | 'library' | 'wordpress-plugin' | 'wordpress-theme' | 'other';
   stack: Stack;
   lanes: Lanes;
   deploy: Deploy;
@@ -84,12 +85,17 @@ export interface CoreFeature {
   targets?: string[];
 }
 export interface Stack {
-  pack: 'node-web' | 'wordpress' | 'python-service' | 'node-lib';
+  pack: 'node-web' | 'wordpress' | 'python-service' | 'node-lib' | 'other';
   framework:
-    'fastify-react' | 'fastapi' | 'wordpress-plugin' | 'wordpress-theme' | 'typescript-lib';
-  database: 'postgres' | 'mariadb' | 'none';
-  auth: 'none' | 'session' | 'oauth' | 'jwt' | 'wordpress';
-  packageManager: 'pnpm' | 'npm' | 'composer' | 'uv';
+    | 'fastify-react'
+    | 'fastapi'
+    | 'wordpress-plugin'
+    | 'wordpress-theme'
+    | 'typescript-lib'
+    | 'other';
+  database: 'postgres' | 'mariadb' | 'none' | 'other';
+  auth: 'none' | 'session' | 'oauth' | 'jwt' | 'wordpress' | 'other';
+  packageManager: 'pnpm' | 'npm' | 'composer' | 'uv' | 'other';
 }
 export interface Lanes {
   environments: ('local' | 'staging' | 'prod')[];
@@ -101,7 +107,7 @@ export interface Branches {
   prod: BranchName;
 }
 export interface Deploy {
-  target: 'vps-tailscale' | 'docker-host' | 'package-release';
+  target: 'vps-tailscale' | 'docker-host' | 'package-release' | 'other';
   registry?: string;
   staging: StagingTarget;
   prod: ProdTarget;

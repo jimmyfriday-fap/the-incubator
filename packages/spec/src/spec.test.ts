@@ -330,3 +330,101 @@ describe('enhancement specs (version 1.1)', () => {
     expect(validateSemantics(ok)).toEqual([]);
   });
 });
+
+describe('stack "other": a repository with no pack (ADR-024)', () => {
+  const existingRepo = {
+    ref: 'octo/order-desk',
+    defaultBranch: 'main',
+    baseSha: 'a'.repeat(40),
+    scanHash: 'b'.repeat(64),
+  };
+  const other = (): IncubatorSpec => ({
+    ...completeSpec({
+      platform: 'other',
+      stack: { pack: 'other' },
+      project: { name: 'Order Desk' },
+    }).spec,
+    incubatorVersion: '1.1',
+    mode: 'enhancement',
+    existingRepo,
+  });
+  const codes = (s: IncubatorSpec) => validateSemantics(s).map((i) => i.code);
+
+  it('defaults every stack field, the platform and the deploy target to other, with no e2e lane', () => {
+    const s = other();
+    expect(s).toMatchObject({
+      platform: 'other',
+      stack: {
+        pack: 'other',
+        framework: 'other',
+        packageManager: 'other',
+        database: 'other',
+        auth: 'other',
+      },
+      deploy: { target: 'other' },
+      testing: { e2e: 'none' },
+    });
+    expect(validateSpec(s).issues).toEqual([]);
+    expect(validateSemantics(s)).toEqual([]);
+    // The pack alone is enough to get there.
+    expect(completeSpec({ stack: { pack: 'other' } }).spec.platform).toBe('other');
+  });
+
+  it('is only valid for an enhancement: new and adopted projects are refused', () => {
+    for (const mode of ['greenfield', 'brownfield'] as const) {
+      const { existingRepo: _dropped, ...rest } = other();
+      const s = { ...rest, incubatorVersion: '1.0', mode } as IncubatorSpec;
+      const issues = validateSemantics(s).filter((i) => i.code === 'other_mode');
+      expect(issues.map((i) => i.path).sort()).toEqual(
+        [
+          '/deploy/target',
+          '/platform',
+          '/stack/auth',
+          '/stack/database',
+          '/stack/framework',
+          '/stack/pack',
+          '/stack/packageManager',
+        ].sort(),
+      );
+      expect(issues[0]!.message).toContain('only valid for mode enhancement');
+    }
+  });
+
+  it('is all or nothing', () => {
+    const half = other();
+    half.stack.framework = 'fastapi';
+    expect(codes(half)).toContain('pack_framework');
+    const pm = other();
+    pm.stack.packageManager = 'pnpm';
+    expect(codes(pm)).toContain('pack_package_manager');
+    const platform = other();
+    platform.platform = 'web';
+    expect(codes(platform)).toContain('platform_pack');
+    const deploy = other();
+    deploy.deploy.target = 'docker-host';
+    expect(codes(deploy)).toContain('other_deploy');
+    const db = other();
+    db.stack.database = 'postgres';
+    expect(codes(db)).toContain('other_fields');
+    const e2e = other();
+    e2e.testing.e2e = 'playwright';
+    expect(codes(e2e)).toContain('other_fields');
+  });
+
+  it('cannot leak into a supported pack, even in an enhancement', () => {
+    const base = completeSpec({ stack: { pack: 'node-web' }, project: { name: 'Shop' } }).spec;
+    const enhancement = { ...base, incubatorVersion: '1.1', mode: 'enhancement', existingRepo };
+    const framework = structuredClone(enhancement) as IncubatorSpec;
+    framework.stack.framework = 'other';
+    expect(codes(framework)).toContain('pack_framework');
+    const deploy = structuredClone(enhancement) as IncubatorSpec;
+    deploy.deploy.target = 'other';
+    expect(codes(deploy)).toContain('other_deploy');
+    const auth = structuredClone(enhancement) as IncubatorSpec;
+    auth.stack.auth = 'other';
+    expect(codes(auth)).toContain('other_fields');
+    const platform = structuredClone(enhancement) as IncubatorSpec;
+    platform.platform = 'other';
+    expect(codes(platform)).toContain('platform_pack');
+  });
+});

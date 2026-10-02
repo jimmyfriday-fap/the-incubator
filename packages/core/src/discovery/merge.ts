@@ -1,9 +1,11 @@
 import {
   FIXED_BY_PACKS,
+  OTHER,
   SECURITY_FIELDS,
   changedPaths,
   covers,
   deepMerge,
+  getAt,
   setAt,
   type Decision,
   type DiscoveryTurn,
@@ -49,6 +51,28 @@ export function attributionIssues(before: Draft, turn: DiscoveryTurn): Issue[] {
       path: `/draftSpec/${p.replaceAll('.', '/')}`,
       message: `draftSpec sets ${p} without a matching decisions[] entry`,
     }));
+}
+
+const OTHER_PATHS = [
+  'platform',
+  'stack.pack',
+  'stack.framework',
+  'stack.packageManager',
+  'stack.database',
+  'stack.auth',
+  'deploy.target',
+] as const;
+
+/**
+ * A model may never choose `other` (ADR-024): it marks a repository the scan found no pack for. The
+ * turn is sent back to the model with this issue instead of failing later at validation.
+ */
+export function otherIssues(turn: DiscoveryTurn): Issue[] {
+  return OTHER_PATHS.filter((p) => getAt(turn.draftSpec, p) === OTHER).map((p) => ({
+    code: 'stack.other',
+    path: `/draftSpec/${p.replaceAll('.', '/')}`,
+    message: `${p} cannot be "other": choose one of the listed values`,
+  }));
 }
 
 function upsert(list: Decision[], d: Decision): Decision[] {

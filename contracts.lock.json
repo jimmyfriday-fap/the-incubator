@@ -3,7 +3,7 @@
     ".incubator/agent-profile.json": "b38bbca023178825818e24af03e2affc4b77178cd4e437781d62d881ce9d685a",
     "config/completeness.json": "b666ff23be57489ff53a66e7c8784980068a19588f2a95ef093a9c901cb63446",
     "packages/spec/schema/discovery-turn.schema.json": "77a64b52239766e5f6283f3445074aa34e575eb7c0105b78b90bbf0cc0704def",
-    "packages/spec/schema/incubator.schema.json": "48a84bac9d1268b34667f925b0c2140719d9b9359633b7f050049331d09f0d79",
+    "packages/spec/schema/incubator.schema.json": "89993156a19684365a06a4f602db7bd8a274bcfa417d81605de2b97acc2619d2",
     "packages/templates/schema/pack.schema.json": "72f05e1c2760512dfd3a34178dac0247d9219ccd52a397ee722e72427f023226",
     "schemas/agent-profile.schema.json": "beb0b92032782749230d81660b853af48037ed6c68fc5f03bf0cf2026fcad5b2",
     "schemas/deploy-tasks.schema.json": "834da6ff7057384e76b30cc80ef423b0e96c6bd20b0245ab38c8e4b86297339d",
