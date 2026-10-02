@@ -3,6 +3,7 @@ import os from 'node:os';
 import http from 'node:http';
 import path from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright-core';
+import { nodeExec } from '@incubator/runtime';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { seedAdoptRepo, startFakeServer } from '../src/testing-fixtures/fake-web.js';
 import type { RunningServer } from '../src/server/server.js';
@@ -231,6 +232,33 @@ describe('web UI (Playwright, fakes)', () => {
     expect(await page.getByTestId('gap-report').textContent()).toContain('Incubator gap report');
     await shot(page, 'brownfield-2-done');
     expect(h.github.repos.get('octo/bare-node')!.prs).toHaveLength(1);
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  it('update: a GitHub remote that is not origin is suggested and pre-fills the repository field', async () => {
+    const { h, page, errors } = await open();
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    await nodeExec.run(
+      'git',
+      ['remote', 'add', 'github', 'https://github.com/octo/bare-node.git'],
+      {
+        cwd: dir,
+        timeoutMs: 10_000,
+      },
+    );
+    await intent(page).selectOption({ label: 'Update an existing solution' });
+    await page.getByTestId('folder-path').fill(dir);
+    const field = page.getByTestId('repo-ref');
+    await expect.poll(() => field.inputValue(), UI).toBe('octo/bare-node');
+    const note = (await page.locator('.warn').allTextContents()).join(' ');
+    expect(note).toContain('This is a git repository.');
+    expect(note).toContain('The remote "github" points to GitHub (octo/bare-node)');
+    // A value the owner typed survives the next check of the same folder.
+    await field.fill('octo/other');
+    await page.getByTestId('folder-path').fill(`${dir} `);
+    await page.getByTestId('folder-path').fill(dir);
+    await expect.poll(() => page.getByTestId('start-enhance').isDisabled(), UI).toBe(false);
+    expect(await field.inputValue()).toBe('octo/other');
     expect(errors, errors.join('\n')).toEqual([]);
   });
 

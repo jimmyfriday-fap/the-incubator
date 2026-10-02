@@ -21,6 +21,8 @@ export interface FolderVerdict {
     clean: boolean;
     changed: string[];
     origin: RepoRef | null;
+    /** A GitHub repository found on a remote other than `origin`, offered as the push target. */
+    suggested: { remote: string; ref: RepoRef } | null;
   } | null;
   /** Reasons the folder cannot be used. Empty when `ok`. */
   problems: string[];
@@ -36,7 +38,7 @@ const SHOWN_CHANGES = 8;
  * resumes. Paths are never interpolated into commands: git gets them as `cwd`.
  */
 export async function inspectFolder(
-  git: Pick<GitOps, 'status' | 'headSha' | 'currentBranch' | 'remoteGetUrl'>,
+  git: Pick<GitOps, 'status' | 'headSha' | 'currentBranch' | 'remotes'>,
   input: string,
   purpose: FolderPurpose,
 ): Promise<FolderVerdict> {
@@ -92,19 +94,29 @@ export async function inspectFolder(
     verdict.problems.push('That folder is not a git repository (there is no .git inside it).');
     return verdict;
   }
-  const [status, head, branch, origin] = await Promise.all([
+  const [status, head, branch, remotes] = await Promise.all([
     git.status(dir),
     git.headSha(dir),
     git.currentBranch(dir),
-    git.remoteGetUrl(dir),
+    git.remotes(dir),
   ]);
   const changed = status.map((e) => e.path);
+  const originUrl = remotes.find((r) => r.name === 'origin')?.url ?? null;
+  const originRef = originUrl ? parseGitHubRef(originUrl) : null;
+  // why: a repository often keeps GitHub under another name (`github`, `upstream`) when origin is elsewhere.
+  const others = originRef
+    ? []
+    : remotes.flatMap((r) => {
+        const ref = r.name === 'origin' ? null : parseGitHubRef(r.url);
+        return ref ? [{ remote: r.name, ref }] : [];
+      });
   verdict.git = {
     branch,
     head,
     clean: changed.length === 0,
     changed: changed.slice(0, SHOWN_CHANGES),
-    origin: origin ? parseGitHubRef(origin) : null,
+    origin: originRef,
+    suggested: others.length === 1 ? others[0]! : null,
   };
   if (!head)
     verdict.problems.push(
@@ -116,14 +128,46 @@ export async function inspectFolder(
     verdict.problems.push(
       `That repository has ${changed.length} uncommitted change${changed.length === 1 ? '' : 's'}. Commit or stash them first, so your work stays separate from the update.`,
     );
-  if (!verdict.git.origin)
-    verdict.warnings.push(
-      origin
-        ? 'The origin is not a GitHub repository, so the final push and pull request will not be available.'
-        : 'There is no origin remote, so the final push and pull request will not be available.',
-    );
+  if (!originRef) {
+    const tail =
+      'Name a GitHub repository (owner/name) for the push and pull request, or finish with a local commit.';
+    if (verdict.git.suggested) {
+      const { remote, ref } = verdict.git.suggested;
+      verdict.warnings.push(
+        `This is a git repository. ${originSentence(originUrl)} The remote "${remote}" points to GitHub (${ref.owner}/${ref.name}), which is suggested for the push and pull request.`,
+      );
+    } else if (others.length > 1) {
+      verdict.warnings.push(
+        `This is a git repository. ${originSentence(originUrl)} Several remotes point to GitHub (${others.map((o) => `${o.ref.owner}/${o.ref.name}`).join(', ')}). ${tail}`,
+      );
+    } else {
+      verdict.warnings.push(`This is a git repository. ${originSentence(originUrl)} ${tail}`);
+    }
+  }
   verdict.ok = verdict.problems.length === 0;
   return verdict;
+}
+
+/**
+ * Only the host of a remote URL, never the URL itself: it can embed a token
+ * (`https://user:token@host/...`), and the warning is shown on screen and logged.
+ */
+export function remoteHost(url: string): string | null {
+  const scp = /^[^@/\s]+@([^:/\s]+):/.exec(url.trim());
+  if (scp) return scp[1]!;
+  try {
+    return new URL(url.trim()).hostname || null;
+  } catch {
+    return null;
+  }
+}
+
+function originSentence(originUrl: string | null): string {
+  if (!originUrl) return 'It has no origin remote.';
+  const host = remoteHost(originUrl);
+  return host
+    ? `Its origin points to ${host}, not GitHub.`
+    : 'Its origin does not point to GitHub.';
 }
 
 function writable(dir: string): boolean {

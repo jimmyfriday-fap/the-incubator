@@ -43,6 +43,8 @@ export interface GitOps {
   diffNameStatus(dir: string, base: string, head: string): Promise<[string, string][]>;
   /** The URL of a remote, or null. */
   remoteGetUrl(dir: string, name?: string): Promise<string | null>;
+  /** Every configured remote with its fetch URL (empty when there are none). */
+  remotes(dir: string): Promise<{ name: string; url: string }[]>;
   /** `git status --porcelain=v1 -z`: every changed or untracked path, ignored files excluded. */
   status(dir: string): Promise<StatusEntry[]>;
   /** Fetches one ref from another repository (local path or URL) into a local ref. */
@@ -212,6 +214,17 @@ export function createGitOps(exec: Exec): GitOps {
     async remoteGetUrl(dir, name = 'origin') {
       const r = await git(['remote', 'get-url', name], { cwd: dir, allowFail: true });
       return r.code === 0 ? r.stdout.trim() : null;
+    },
+    async remotes(dir) {
+      const names = await git(['remote'], { cwd: dir, allowFail: true });
+      if (names.code !== 0) return [];
+      const out: { name: string; url: string }[] = [];
+      for (const name of names.stdout.split('\n').map((n) => n.trim())) {
+        if (!name) continue;
+        const r = await git(['remote', 'get-url', name], { cwd: dir, allowFail: true });
+        if (r.code === 0 && r.stdout.trim()) out.push({ name, url: r.stdout.trim() });
+      }
+      return out;
     },
     async clone(remote, dir, opts = {}) {
       await git(

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FolderCheck, StartRunBody } from '../../api-types.js';
 import { getSession } from '../api.js';
 import { FolderField } from './FolderField.js';
@@ -31,7 +31,15 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
     setFolder('');
     setCheck(null);
   };
-  const onCheck = useCallback((c: FolderCheck | null) => setCheck(c), []);
+  // The last repository this form filled in itself; a value the owner typed is never overwritten.
+  const suggestedRef = useRef('');
+  const onCheck = useCallback((c: FolderCheck | null) => {
+    setCheck(c);
+    const s = c?.git?.suggested;
+    const next = s ? `${s.ref.owner}/${s.ref.name}` : '';
+    setRepoRef((cur) => (cur === '' || cur === suggestedRef.current ? next : cur));
+    suggestedRef.current = next;
+  }, []);
   const go = (body: StartRunBody) => {
     setStarting(true);
     void start(body).finally(() => setStarting(false));

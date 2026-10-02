@@ -71,6 +71,18 @@ describe('GitOps', () => {
     await expect(git.checkout(owner, 'no-such-branch')).rejects.toThrow('git checkout failed');
   });
 
+  it('lists every remote with its URL, and nothing when there are none', async () => {
+    const dir = tmp('gitops-remotes-');
+    await git.init(dir, 'main');
+    expect(await git.remotes(dir)).toEqual([]);
+    await git.remoteAdd(dir, 'origin', 'https://gitlab.com/o/r.git');
+    await git.remoteAdd(dir, 'github', 'https://github.com/octo/r.git');
+    const all = await git.remotes(dir);
+    expect(all.map((r) => r.name).sort()).toEqual(['github', 'origin']);
+    expect(all.find((r) => r.name === 'github')?.url).toBe('https://github.com/octo/r.git');
+    expect(await git.remotes(tmp('gitops-notrepo-'))).toEqual([]);
+  });
+
   it('adds a remote once, accepts the same URL again, and refuses a different one', async () => {
     const dir = await repo();
     expect(await git.remoteGetUrl(dir)).toBeNull();

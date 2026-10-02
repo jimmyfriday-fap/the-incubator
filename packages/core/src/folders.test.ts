@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createGitOps } from '@incubator/git';
 import { nodeExec } from '@incubator/runtime';
-import { inspectFolder } from './folders.js';
+import { inspectFolder, remoteHost } from './folders.js';
 
 const git = createGitOps(nodeExec);
 const ident = { identity: { name: 'T', email: 't@example.invalid' } };
@@ -92,6 +92,7 @@ describe('inspectFolder: an existing solution', () => {
   it('warns, without blocking, when there is no GitHub origin', async () => {
     const none = await inspectFolder(git, await repo(), 'existing');
     expect(none.ok).toBe(true);
+    expect(none.warnings.join(' ')).toContain('This is a git repository.');
     expect(none.warnings.join(' ')).toContain('no origin remote');
     const other = await inspectFolder(
       git,
@@ -99,7 +100,57 @@ describe('inspectFolder: an existing solution', () => {
       'existing',
     );
     expect(other.ok).toBe(true);
-    expect(other.warnings.join(' ')).toContain('not a GitHub repository');
+    expect(other.warnings.join(' ')).toContain('This is a git repository.');
+    expect(other.warnings.join(' ')).toContain('Its origin points to gitlab.com, not GitHub.');
+    expect(other.git?.suggested).toBeNull();
+  });
+
+  it('suggests the one GitHub remote that is not origin', async () => {
+    const dir = await repo({ origin: 'https://gitlab.com/o/r.git' });
+    await git.remoteAdd(dir, 'github', 'https://github.com/octo/app.git');
+    const v = await inspectFolder(git, dir, 'existing');
+    expect(v.ok).toBe(true);
+    expect(v.git?.origin).toBeNull();
+    expect(v.git?.suggested).toEqual({ remote: 'github', ref: { owner: 'octo', name: 'app' } });
+    expect(v.warnings.join(' ')).toContain(
+      'The remote "github" points to GitHub (octo/app), which is suggested',
+    );
+  });
+
+  it('suggests nothing when several remotes point to GitHub, and lists them', async () => {
+    const dir = await repo({ origin: 'https://gitlab.com/o/r.git' });
+    await git.remoteAdd(dir, 'one', 'https://github.com/octo/one.git');
+    await git.remoteAdd(dir, 'two', 'git@github.com:octo/two.git');
+    const v = await inspectFolder(git, dir, 'existing');
+    expect(v.git?.suggested).toBeNull();
+    expect(v.warnings.join(' ')).toContain('Several remotes point to GitHub (octo/one, octo/two)');
+  });
+
+  it('keeps a GitHub origin as the target and does not suggest anything', async () => {
+    const dir = await repo({ origin: 'https://github.com/octo/app.git' });
+    await git.remoteAdd(dir, 'mirror', 'https://github.com/octo/mirror.git');
+    const v = await inspectFolder(git, dir, 'existing');
+    expect(v.git?.origin).toEqual({ owner: 'octo', name: 'app' });
+    expect(v.git?.suggested).toBeNull();
+    expect(v.warnings).toEqual([]);
+  });
+
+  it('never puts a credential from a remote URL into a warning', async () => {
+    const dir = await repo({ origin: 'https://user:s3cret-token@gitlab.com/o/r.git' });
+    const v = await inspectFolder(git, dir, 'existing');
+    const text = v.warnings.join(' ');
+    expect(text).toContain('gitlab.com');
+    expect(text).not.toContain('s3cret-token');
+    expect(text).not.toContain('user:');
+  });
+});
+
+describe('remoteHost', () => {
+  it('reads only the host from https, ssh and scp-style URLs', () => {
+    expect(remoteHost('https://user:tok@gitlab.com/o/r.git')).toBe('gitlab.com');
+    expect(remoteHost('ssh://git@bitbucket.org/o/r.git')).toBe('bitbucket.org');
+    expect(remoteHost('git@gitlab.example.com:o/r.git')).toBe('gitlab.example.com');
+    expect(remoteHost('not a url')).toBeNull();
   });
 
   it('refuses a detached HEAD', async () => {

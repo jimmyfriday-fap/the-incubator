@@ -42,6 +42,9 @@ export async function runEnhance(
       throw new PolicyError('--in-place needs a local folder, not a URL', { code: 'usage' });
     const v = await deps.engine.inspectFolder(source, 'existing');
     if (!v.ok) throw new PolicyError(v.problems.join(' '), { code: 'bad_folder' });
+    for (const w of v.warnings)
+      io.stderr(`${w}
+`);
     dir = v.path;
   }
   let request = opts.promptFile ? readFileSync(path.resolve(opts.promptFile), 'utf8') : opts.prompt;

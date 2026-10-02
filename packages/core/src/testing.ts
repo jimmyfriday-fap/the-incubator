@@ -135,6 +135,7 @@ export function faultyGit(inner: GitOps) {
         'currentBranch',
         'diffNameStatus',
         'remoteGetUrl',
+        'remotes',
         'status',
         'fetch',
         'checkout',

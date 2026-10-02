@@ -1078,7 +1078,10 @@ is where the coding agent works and who commits.
   additive proof and replay safety are unchanged). Delivery into the folder fetches the run's branch
   from the clone (`git fetch <clone> refs/heads/<b>:refs/heads/<b>`) and checks it out; the owner's
   previous branch is never written to. If the folder moved since the scan, the run parks
-  `folder_changed` and touches nothing.
+  `folder_changed` and touches nothing. The push target is `origin` when it is GitHub. When it is not,
+  `inspectFolder` looks at the other remotes: exactly one GitHub remote is suggested (the wizard
+  pre-fills it, and the owner can change it), and the warning says the folder is a git repository and
+  names only the host `origin` points to, never the URL, which can carry a token.
 - **CODE.** The agent (the handoff of §8) works in the folder with `git add`, `git commit` and
   `git checkout` removed from its allowed tools; the prompt tells it to leave uncommitted changes and
   to end with a short summary. Progress (turns, tool calls, cost, a cleaned snippet of its latest text)

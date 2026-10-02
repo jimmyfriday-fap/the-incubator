@@ -22,6 +22,8 @@ export interface FolderCheck {
     clean: boolean;
     changed: string[];
     origin: { owner: string; name: string } | null;
+    /** A GitHub repository on a remote other than `origin`, offered as the push target. */
+    suggested: { remote: string; ref: { owner: string; name: string } } | null;
   } | null;
   problems: string[];
   warnings: string[];
