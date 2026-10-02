@@ -6,3 +6,4 @@ export * from './report.js';
 export * from './delta.js';
 export * from './scan.js';
 export * from './scan-report.js';
+export * from './checks.js';

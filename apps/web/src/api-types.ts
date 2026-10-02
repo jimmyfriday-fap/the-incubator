@@ -44,6 +44,8 @@ export interface FinishInfo {
     turns: number;
     toolCalls: number;
     costUsd: number | null;
+    /** What the agent could run to check its work (absent on runs from before ADR-025). */
+    checks?: { mode: 'gate' | 'approved' | 'none'; commands: string[] };
   } | null;
   files: { code: string; path: string }[];
   message: string;
@@ -127,6 +129,11 @@ export interface EnhanceDetail {
     gaps: { create: string[]; proposed: string[] } | null;
     features: { id: string; lane: string; targets: string[] }[];
   } | null;
+  /**
+   * Folder runs on a repository with no Incubator gate: the check commands proposed for the coding
+   * agent, and what the owner approved (null until they decide). Null when it does not apply.
+   */
+  checks: { proposed: { command: string; why: string }[]; approved: string[] | null } | null;
   /** The deterministic scan report (first line: scanned N of M files). */
   scanReport: string | null;
 }

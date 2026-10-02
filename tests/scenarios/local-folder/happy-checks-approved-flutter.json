@@ -1,0 +1,64 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "happy-checks-approved-flutter",
+  "feature": "local-folder",
+  "title": "On a Flutter repository the agent runs exactly the check commands the owner approved",
+  "tags": ["happy"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": ["packages/core/fixtures/enhance/export-orders"]
+  },
+  "stages": [
+    {
+      "name": "folder",
+      "input": {
+        "mode": "update",
+        "repo": "flutter-app",
+        "checks": ["flutter analyze", "flutter test"]
+      },
+      "assertions": [
+        {
+          "path": "parkedReason",
+          "op": "eq",
+          "value": "needs_commit"
+        },
+        {
+          "path": "checksMode",
+          "op": "eq",
+          "value": "approved"
+        },
+        {
+          "path": "checksRefused",
+          "op": "eq",
+          "value": null
+        },
+        {
+          "path": "agentCommands",
+          "op": "length",
+          "value": 4
+        },
+        {
+          "path": "agentCommands",
+          "op": "contains",
+          "value": "Bash(flutter analyze:*)"
+        },
+        {
+          "path": "agentCommands",
+          "op": "contains",
+          "value": "Bash(flutter test:*)"
+        },
+        {
+          "path": "changedFiles",
+          "op": "contains",
+          "value": "src/agent-work.txt"
+        },
+        {
+          "path": "commits",
+          "op": "eq",
+          "value": 1
+        }
+      ]
+    }
+  ]
+}

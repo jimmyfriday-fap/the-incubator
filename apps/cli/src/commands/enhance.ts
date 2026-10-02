@@ -5,6 +5,7 @@ import { isLlmAdapterId } from '@incubator/llm';
 import type { CliDeps } from '../deps.js';
 import type { Io } from '../io.js';
 import { parseRepoOption } from './adopt.js';
+import { applyChecks, checksHint } from './checks.js';
 import { choosePrompter, reportEnhance, settleRun } from './new.js';
 
 export interface EnhanceOptions {
@@ -18,6 +19,10 @@ export interface EnhanceOptions {
   withGaps?: boolean;
   /** Work in the local folder itself, on a new branch; the agent codes there and the owner commits. */
   inPlace?: boolean;
+  /** `--check <command>`: check commands the owner approves for the coding agent (ADR-025). */
+  check?: string[];
+  /** False for `--no-checks`: the agent edits and runs nothing. */
+  checks?: boolean;
 }
 
 /**
@@ -67,10 +72,17 @@ export async function runEnhance(
     ...(opts.adapter ? { adapter: opts.adapter } : {}),
   });
   deps.log.addSink(fileSink(path.join(deps.store.runDir(runId), 'logs', 'incubator.log')));
+  if (dir) applyChecks(deps, runId, opts);
+  else if (opts.check?.length || opts.checks === false)
+    throw new PolicyError('--check and --no-checks are for --in-place runs', { code: 'usage' });
   io.stderr(`▶ run ${runId}: scanning ${source}\n`);
   const prompter = choosePrompter(io, opts.yes);
   const state = await deps.engine.advance(runId, prompter);
   const resume = (id: string) => deps.engine.resume(id, prompter);
-  if (dir || state.state !== 'DONE') return settleRun(deps, io, state, resume);
+  if (dir || state.state !== 'DONE') {
+    const code = await settleRun(deps, io, state, resume);
+    if (dir) checksHint(deps, io, runId);
+    return code;
+  }
   return reportEnhance(deps, io, runId);
 }

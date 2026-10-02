@@ -1,0 +1,48 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-checks-none-without-approval",
+  "feature": "local-folder",
+  "title": "Accepting the defaults approves no command: the agent edits files and can run nothing",
+  "tags": ["validation"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": ["packages/core/fixtures/enhance/export-orders"]
+  },
+  "stages": [
+    {
+      "name": "folder",
+      "input": {
+        "mode": "update",
+        "repo": "flutter-app"
+      },
+      "assertions": [
+        {
+          "path": "parkedReason",
+          "op": "eq",
+          "value": "needs_commit"
+        },
+        {
+          "path": "checksMode",
+          "op": "eq",
+          "value": "none"
+        },
+        {
+          "path": "agentCommands",
+          "op": "length",
+          "value": 2
+        },
+        {
+          "path": "agentCommands",
+          "op": "contains",
+          "value": "Bash(git status:*)"
+        },
+        {
+          "path": "agentCommands",
+          "op": "contains",
+          "value": "Bash(git diff:*)"
+        }
+      ]
+    }
+  ]
+}

@@ -25,6 +25,10 @@ interface Input {
   agent?: 'edit' | 'idle';
   /** Pre-existing files: `new` folder not empty, or `update` folder with uncommitted work. */
   preexisting?: boolean;
+  /** `update`: the analyzer fixture to seed the folder from (default `bare-node`). */
+  repo?: string;
+  /** `update`: the check commands the owner approves; absent means they did not decide (ADR-025). */
+  checks?: string[];
   /** Arms a one-shot git or GitHub failure right after the owner answers commit or push. */
   crash?: { at: 'commit' | 'push'; method: 'commit' | 'push' | 'openPr'; when: 'after' };
 }
@@ -46,6 +50,12 @@ interface Out {
   githubRepoCreated: boolean;
   originalBranchUnchanged: boolean;
   stateDirTracked: boolean;
+  /** What the agent could run: `gate`, `approved` or `none`; null when no agent was launched. */
+  checksMode: string | null;
+  /** The `Bash(...)` entries of the agent's allowed-tool list. */
+  agentCommands: string[];
+  /** Why the owner's check commands were refused, when they were. */
+  checksRefused: string | null;
 }
 
 const combos = path.resolve(import.meta.dirname, '../../packages/templates/fixtures/combos');
@@ -107,7 +117,7 @@ export const adapter: FeatureAdapter<Record<string, never>, Out> = {
           const seeded = await seedExistingRepo(
             h.github,
             'order-desk',
-            path.join(analyzerFixtures, 'bare-node'),
+            path.join(analyzerFixtures, input.repo ?? 'bare-node'),
           );
           dir = seeded.dir;
           ref = seeded.ref;
@@ -141,6 +151,14 @@ export const adapter: FeatureAdapter<Record<string, never>, Out> = {
                 surface: 'test',
               });
         let resumes = 0;
+        let checksRefused: string | null = null;
+        if (input.checks) {
+          try {
+            h.engine.submitChecks(runId, input.checks);
+          } catch (e) {
+            checksRefused = e instanceof Error ? e.message : String(e);
+          }
+        }
         const step = async (fn: () => Promise<ReturnType<typeof h.engine.state>>) => {
           try {
             return await fn();
@@ -186,6 +204,9 @@ export const adapter: FeatureAdapter<Record<string, never>, Out> = {
             : 0;
           const owned = { ...before };
           const now = tree(dir);
+          const launch = h.engine.entries(runId).findLast((e) => e.type === 'handoff.launch');
+          const argv = (launch?.['argv'] as string[] | undefined) ?? [];
+          const toolList = argv[argv.indexOf('--allowedTools') + 1] ?? '';
           return {
             state: s.state,
             exitCode: s.state === 'PARKED' ? 2 : 0,
@@ -205,6 +226,9 @@ export const adapter: FeatureAdapter<Record<string, never>, Out> = {
             originalBranchUnchanged:
               !startBranch || (await out(['rev-parse', startBranch], dir)) === startSha,
             stateDirTracked: tracked.includes('.incubator/state/'),
+            checksMode: (launch?.['checks'] as { mode?: string } | undefined)?.mode ?? null,
+            agentCommands: launch ? toolList.split(',').filter((t) => t.startsWith('Bash(')) : [],
+            checksRefused,
           };
         } catch (err) {
           return {
@@ -223,6 +247,9 @@ export const adapter: FeatureAdapter<Record<string, never>, Out> = {
             githubRepoCreated: false,
             originalBranchUnchanged: true,
             stateDirTracked: false,
+            checksMode: null,
+            agentCommands: [],
+            checksRefused,
           };
         } finally {
           if (input.mode === 'new') rmSync(path.dirname(dir), { recursive: true, force: true });
@@ -239,6 +266,12 @@ export const adapter: FeatureAdapter<Record<string, never>, Out> = {
     if (!o.ownerWorkUntouched) errors.push('a file the owner had was changed or deleted');
     if (!o.originalBranchUnchanged) errors.push("the owner's starting branch was written to");
     if (o.stateDirTracked) errors.push('.incubator/state/ was committed');
+    // An agent on a repository without the Incubator gate never gets a command nobody approved.
+    if (
+      o.checksMode === 'none' &&
+      o.agentCommands.some((t) => !/^Bash\(git (status|diff):\*\)$/.test(t))
+    )
+      errors.push('the agent could run a command although none was approved');
     return errors;
   },
 };

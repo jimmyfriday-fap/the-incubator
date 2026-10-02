@@ -1094,6 +1094,16 @@ is where the coding agent works and who commits.
   to end with a short summary. Progress (turns, tool calls, cost, a cleaned snippet of its latest text)
   is journaled as `handoff.progress`. `.incubator/state/` is hidden through the repository's local
   `.git/info/exclude`.
+- **What the agent may run (ADR-025).** A repository with the Incubator gate (`.incubator/lock.json`,
+  `scripts/check.mjs`, `.incubator/agent-profile.json`) keeps the tool list of §8. Any other repository
+  is external: the scan proposes its own check commands from built-in constants (`flutter test`,
+  `go test ./...`, `npm run test`), the owner edits and approves them at review (`enhance.checks`; on
+  the CLI `--check`, or `--no-checks`), and the agent gets the edit tools, `Bash(<command>:*)` for each
+  approved command and read-only git. Nothing approved (`--yes` approves nothing) means nothing runs,
+  with a recorded warning and an "untested" note at the commit request. The commands are validated
+  (plain words only, no shells, no `git`, no bare runners), the agent gets the `handoff-external`
+  prompt, and a CLI that cannot restrict tools parks `checks_unenforceable`. The Incubator itself never
+  runs these commands.
 - **COMMIT.** The run parks `needs_commit` with the changed files (`git status`), the agent's verdict
   and summary, and a drafted message (`feat: <ticket title>`, the summary, an `Incubator-Run` trailer).
   The owner edits and approves; the commit is made with the **owner's** git identity, and the run parks
@@ -1405,3 +1415,4 @@ flowchart LR
 | [022](adr/022-host-capabilities-over-http.md)          | Native capabilities (folder dialog) reach the UI as HTTP routes              |
 | [023](adr/023-local-folder-workflow.md)                | Folder workflows; the owner approves every commit and push                   |
 | [024](adr/024-spec-value-other.md)                     | The spec value `other`: updating a repository with no stack pack             |
+| [025](adr/025-owner-approved-check-commands.md)        | The owner approves what a coding agent runs in an external repository        |

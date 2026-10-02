@@ -16,7 +16,11 @@ const agentCaps: Capabilities = {
   installed: true,
   path: process.execPath,
   version: '1',
-  flags: { printMode: [fakeAgent, '-p'], streamJson: ['--output-format', 'stream-json'] },
+  flags: {
+    printMode: [fakeAgent, '-p'],
+    streamJson: ['--output-format', 'stream-json'],
+    allowedTools: '--allowedTools',
+  },
   stdinPrompt: true,
   eligible: { discovery: true, analysis: true, handoff: true },
   reasons: [],
@@ -465,5 +469,175 @@ describe("the decisions are the owner's", () => {
     expect(() => h.engine.submitCommit(runId, { action: 'commit' })).toThrow(
       'not waiting for a commit decision',
     );
+  });
+});
+
+describe('check commands on a repository the Incubator did not build (ADR-025)', () => {
+  async function seeded(fixture: string) {
+    const h = harness({ llm: { dir: enhanceFixtureDir('export-orders') } });
+    const { ref, dir } = await seedExistingRepo(
+      h.github,
+      fixture,
+      path.join(analyzerFixtures, fixture),
+    );
+    await setOwner(dir);
+    const runId = h.engine.start({
+      kind: 'enhance',
+      repo: dir,
+      repoRef: ref,
+      dir,
+      request: REQUEST,
+      yes: true,
+      surface: 'test',
+    });
+    return { h, ref, dir, runId };
+  }
+  const launch = (h: Harness, runId: string) =>
+    h.engine.entries(runId).findLast((e) => e.type === 'handoff.launch')!;
+  const tools = (h: Harness, runId: string): string[] => {
+    const argv = launch(h, runId)['argv'] as string[];
+    return argv[argv.indexOf('--allowedTools') + 1]!.split(',');
+  };
+
+  it('proposes built-in commands that fit the repository, and runs none without approval', async () => {
+    const { h, runId } = await seeded('flutter-app');
+    const s = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(s.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(h.engine.proposedChecks(runId)).toEqual([
+      { command: 'flutter analyze', why: 'pubspec.yaml: static analysis' },
+      { command: 'flutter test', why: 'test/: *_test.dart files' },
+    ]);
+    // `yes` is not an approval: the agent gets edit tools and read-only git, and nothing else.
+    expect(h.engine.approvedChecks(runId)).toBeNull();
+    expect(tools(h, runId)).toEqual([
+      'Read',
+      'Edit',
+      'Write',
+      'Glob',
+      'Grep',
+      'Bash(git status:*)',
+      'Bash(git diff:*)',
+    ]);
+    expect(launch(h, runId)['checks']).toEqual({ mode: 'none', commands: [] });
+    expect(
+      h.engine.entries(runId).some((e) => e.type === 'step.warn' && e['step'] === 'code.checks'),
+    ).toBe(true);
+    expect((await h.engine.finishDetail(runId))!.agent).toMatchObject({
+      checks: { mode: 'none', commands: [] },
+    });
+  });
+
+  it('lets the agent run exactly what the owner approved', async () => {
+    const { h, runId } = await seeded('flutter-app');
+    expect(h.engine.submitChecks(runId, ['  flutter   analyze ', 'flutter test', ''])).toEqual([
+      'flutter analyze',
+      'flutter test',
+    ]);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    expect(tools(h, runId)).toEqual([
+      'Read',
+      'Edit',
+      'Write',
+      'Glob',
+      'Grep',
+      'Bash(flutter analyze:*)',
+      'Bash(flutter test:*)',
+      'Bash(git status:*)',
+      'Bash(git diff:*)',
+    ]);
+    expect(launch(h, runId)['checks']).toEqual({
+      mode: 'approved',
+      commands: ['flutter analyze', 'flutter test'],
+    });
+    expect((await h.engine.finishDetail(runId))!.agent).toMatchObject({
+      checks: { mode: 'approved', commands: ['flutter analyze', 'flutter test'] },
+    });
+  });
+
+  it('treats an empty approval as a decision, and refuses unsafe or late commands', async () => {
+    const { h, runId } = await seeded('flutter-app');
+    for (const bad of [
+      'flutter test; rm -rf .',
+      'flutter test && curl x',
+      'bash',
+      'git push',
+      'flutter',
+      'node -e x',
+      'npm run test | cat',
+      '../outside/run test',
+      '/usr/bin/flutter test',
+      'flutter test "a b"',
+    ])
+      expect(() => h.engine.submitChecks(runId, [bad]), bad).toThrow('check commands refused');
+    expect(h.engine.approvedChecks(runId)).toBeNull();
+    expect(h.engine.submitChecks(runId, [])).toEqual([]);
+    expect(h.engine.approvedChecks(runId)).toEqual([]);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    expect(launch(h, runId)['checks']).toEqual({ mode: 'none', commands: [] });
+    // Once the agent has started, the list is closed.
+    expect(() => h.engine.submitChecks(runId, ['flutter test'])).toThrow('already started coding');
+  });
+
+  it('covers a supported stack too: a repository without the Incubator gate is external', async () => {
+    const { h, runId } = await seeded('bare-node');
+    h.engine.submitChecks(runId, ['npm run test']);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    expect(tools(h, runId)).toContain('Bash(npm run test:*)');
+    expect(tools(h, runId).some((t) => t.includes('scripts/check.mjs'))).toBe(false);
+  });
+
+  it('leaves an Incubator-built repository on its own gate, whatever was approved', async () => {
+    const h = harness();
+    const dir = freshFolder();
+    const { runId, s } = await newSolution(h, dir);
+    expect(s.parked).toMatchObject({ state: 'COMMIT' });
+    expect(tools(h, runId)).toEqual([
+      'Read',
+      'Edit',
+      'Write',
+      'Glob',
+      'Grep',
+      'Bash(node scripts/check.mjs:*)',
+      'Bash(node scripts/test-profile.mjs:*)',
+      'Bash(node scripts/scaffold.mjs:*)',
+      'Bash(git status:*)',
+      'Bash(git diff:*)',
+    ]);
+    expect(launch(h, runId)['checks']).toEqual({ mode: 'gate', commands: [] });
+    expect(() => h.engine.submitChecks(runId, ['npm run test'])).toThrow(
+      'not an update of an existing repository',
+    );
+  });
+
+  it('parks instead of launching an agent it cannot hold to the list', async () => {
+    const h = fakePublishEngine({
+      llm: { dir: enhanceFixtureDir('export-orders') },
+      handoff: {
+        exec: nodeExec,
+        probe: () =>
+          Promise.resolve({
+            ...agentCaps,
+            flags: { printMode: [fakeAgent, '-p'], streamJson: ['--output-format', 'stream-json'] },
+          }),
+      },
+    });
+    const { ref, dir } = await seedExistingRepo(
+      h.github,
+      'flutter-app',
+      path.join(analyzerFixtures, 'flutter-app'),
+    );
+    await setOwner(dir);
+    const runId = h.engine.start({
+      kind: 'enhance',
+      repo: dir,
+      repoRef: ref,
+      dir,
+      request: REQUEST,
+      yes: true,
+      surface: 'test',
+    });
+    const s = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(s.parked).toMatchObject({ state: 'CODE', reason: 'checks_unenforceable' });
+    expect(h.engine.entries(runId).some((e) => e.type === 'handoff.launch')).toBe(false);
   });
 });

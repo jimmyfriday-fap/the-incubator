@@ -8,6 +8,7 @@ import { runScaffold, type ScaffoldCliOptions } from './commands/scaffold.js';
 import { runPublish } from './commands/publish.js';
 import { runHandoff } from './commands/handoff.js';
 import { runAuthDelete, runAuthSet, runAuthStatus } from './commands/auth.js';
+import { collectCheck } from './commands/checks.js';
 import { runGc } from './commands/gc.js';
 import { runAdopt, type AdoptOptions } from './commands/adopt.js';
 import { runEnhance, type EnhanceOptions } from './commands/enhance.js';
@@ -76,6 +77,13 @@ export async function main(
     .option('--leave', 'folder runs: keep the changes uncommitted')
     .option('--push', 'folder runs: push the branch and open a pull request')
     .option('--skip-push', 'folder runs: keep the commit local')
+    .option(
+      '--check <command>',
+      'in-place runs: approve a check command the coding agent may run (repeat for more)',
+      collectCheck,
+      [],
+    )
+    .option('--no-checks', 'in-place runs: approve none, so the agent edits files and runs nothing')
     .action(
       async (
         runId: string,
@@ -90,6 +98,8 @@ export async function main(
           leave?: boolean;
           push?: boolean;
           skipPush?: boolean;
+          check?: string[];
+          checks?: boolean;
         },
       ) => {
         code = await runResume(getDeps(), io, runId, opts);
@@ -141,6 +151,13 @@ export async function main(
     )
     .option('--org', 'the owner is an organization')
     .option('--no-publish', 'write the enhance branch in the run workspace only (no push, no PR)')
+    .option(
+      '--check <command>',
+      'in-place runs: approve a check command the coding agent may run (repeat for more)',
+      collectCheck,
+      [],
+    )
+    .option('--no-checks', 'in-place runs: approve none, so the agent edits files and runs nothing')
     .option('--adapter <id>', 'claude-cli | copilot-cli | cursor-cli | anthropic-api')
     .option('-y, --yes', 'accept every recommended default without prompting')
     .action(async (source: string, opts: EnhanceOptions) => {

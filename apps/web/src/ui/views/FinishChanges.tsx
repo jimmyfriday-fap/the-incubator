@@ -43,6 +43,19 @@ export function CommitRequest({
           {finish.agent?.tripped ? ` (${finish.agent.tripped})` : ''}
         </p>
       )}
+      {finish.agent?.checks?.mode === 'approved' && (
+        <p className="muted" data-testid="agent-checks">
+          The agent could run only the commands you approved (
+          {finish.agent.checks.commands.join(', ')}). Whether they passed is its own report: read it
+          below.
+        </p>
+      )}
+      {finish.agent?.checks?.mode === 'none' && (
+        <p className="warn" data-testid="agent-checks">
+          No check commands were approved, so the agent could not run anything. This work is
+          untested: run the repository's tests yourself before you commit.
+        </p>
+      )}
       {finish.agent?.summary && (
         <>
           <h3>What the agent reported</h3>

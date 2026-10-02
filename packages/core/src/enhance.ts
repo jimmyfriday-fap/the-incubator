@@ -180,6 +180,33 @@ export interface DeliveryInput {
   targets: Record<string, string[]>;
   /** The rendered base pack (for the enhancement lane templates). */
   base: RenderResult;
+  /**
+   * The repository has no Incubator gate (ADR-025): the lane templates name the owner-approved check
+   * commands instead of `pnpm check:quick`, which does not exist there.
+   */
+  external?: boolean;
+}
+
+/**
+ * The two places the lane templates name the Incubator's own gate, and what an external repository
+ * reads instead. Kept as exact phrases so a template change that drops one fails a test rather than
+ * silently leaving the old wording in.
+ */
+export const EXTERNAL_LANE_WORDING: readonly (readonly [string, string])[] = [
+  [
+    'After every step run `pnpm check:quick`.',
+    'After every step run the check commands the owner approved for this repository (if none were approved, run nothing).',
+  ],
+  [
+    'Every step must be provable by a command in `config/run-profiles.json` or `pnpm check:quick`.',
+    "Every step must be provable by one of the repository's own check commands that the owner approved.",
+  ],
+];
+
+function externalLane(f: RenderedFile): RenderedFile {
+  let text = f.bytes.toString('utf8');
+  for (const [from, to] of EXTERNAL_LANE_WORDING) text = text.replace(from, to);
+  return { ...f, bytes: Buffer.from(text, 'utf8') };
 }
 
 const file = (p: string, text: string): RenderedFile => ({
@@ -302,7 +329,8 @@ export function buildDelivery(d: DeliveryInput): Map<string, RenderedFile> {
   const lanes = new Set(d.features.map((f) => f.lane));
   for (const [p, f] of d.base.files)
     for (const lane of lanes)
-      if (p.startsWith(`.incubator/lanes/${lane}/`)) put({ ...f, pack: 'enhance' });
+      if (p.startsWith(`.incubator/lanes/${lane}/`))
+        put({ ...(d.external ? externalLane(f) : f), pack: 'enhance' });
   for (const f of d.features) {
     const brief = d.base.files.get(`.incubator/lanes/${f.lane}/design.md`);
     if (!brief) throw new ToolError(`the base pack has no design template for lane ${f.lane}`);

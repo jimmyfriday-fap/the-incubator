@@ -297,8 +297,39 @@ describe('web UI (Playwright, fakes)', () => {
     const tree = page.getByTestId('tree');
     await expect.poll(() => tree.textContent(), UI).toContain('docs/plans/001-enhance-20260501.md');
     expect(await tree.textContent()).not.toContain('CLAUDE.md');
+
+    // The owner decides what the coding agent may run: the proposals are prefilled, never applied
+    // on their own. An unsafe line is refused and nothing is approved.
+    const editor = page.getByTestId('checks-editor');
+    expect(await editor.inputValue()).toBe('flutter analyze\nflutter test');
+    expect(await page.getByTestId('checks-proposed').textContent()).toContain('pubspec.yaml');
     await shot(page, 'enhance-other-review');
-    expect(errors, errors.join('\n')).toEqual([]);
+    await editor.fill('flutter test; rm -rf .');
+    await page.getByTestId('approve').click();
+    await expect
+      .poll(() => page.getByTestId('review-error').textContent(), UI)
+      .toContain('check commands refused');
+    expect(await state(page).textContent()).not.toBe('DONE');
+    await editor.fill('flutter analyze\nflutter test');
+    await page.getByTestId('approve').click();
+
+    // The agent coded in the folder with exactly those commands; the commit request says so.
+    await page.getByTestId('commit-request').waitFor({ timeout: 60_000 });
+    expect(await page.getByTestId('agent-checks').textContent()).toContain(
+      'flutter analyze, flutter test',
+    );
+    const runId = page.url().split('/').pop()!;
+    const launch = h.engine.entries(runId).findLast((e) => e.type === 'handoff.launch')!;
+    expect(launch['checks']).toEqual({
+      mode: 'approved',
+      commands: ['flutter analyze', 'flutter test'],
+    });
+    await shot(page, 'enhance-other-commit');
+    // The console shows the refused request (HTTP 4xx) and nothing else.
+    expect(
+      errors.filter((e) => !/Failed to load resource/.test(e)),
+      errors.join('\n'),
+    ).toEqual([]);
   });
 
   it('update: browse to the repository → scan → what to change → review → the agent codes in the folder → commit → push → DONE', async () => {

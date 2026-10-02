@@ -4,12 +4,13 @@ import { describe, expect, it } from 'vitest';
 import type { GitHubMethod, GitOps } from '@incubator/git';
 import { ToolError, nodeExec } from '@incubator/runtime';
 import { completeSpec } from '@incubator/spec';
-import { render, writeTree } from '@incubator/templates';
+import { render, renderLanes, writeTree } from '@incubator/templates';
 import type { RepoScan } from '@incubator/analyzer';
 import { FakeLlmAdapter, type Capabilities } from '@incubator/llm';
 import { DefaultsPrompter, NonInteractivePrompter } from './prompter.js';
 import { loadPrompt } from './prompts.js';
 import {
+  EXTERNAL_LANE_WORDING,
   featureIssues,
   nextPlanNumber,
   resolveTargets,
@@ -493,7 +494,11 @@ describe('enhance', () => {
       installed: true,
       path: process.execPath,
       version: '1.0.0',
-      flags: { printMode: ['agent.mjs', '-p'], streamJson: ['--output-format', 'stream-json'] },
+      flags: {
+        printMode: ['agent.mjs', '-p'],
+        streamJson: ['--output-format', 'stream-json'],
+        allowedTools: '--allowedTools',
+      },
       stdinPrompt: true,
       eligible: { discovery: true, analysis: true, handoff: true },
       reasons: [],
@@ -634,4 +639,41 @@ describe('enhance resumes after a crash at any step (ADR-010, ADR-020)', () => {
       expect(hashes(dir)).toEqual(before);
     },
   );
+});
+
+describe('lane templates on a repository without the Incubator gate (ADR-025)', () => {
+  const lane = (ws: string, f: string) =>
+    readFileSync(path.join(ws, '.incubator/lanes/enhancement/existing', f), 'utf8');
+
+  it('still finds both gate phrases in the base templates, so the rewording cannot rot', async () => {
+    const files = await renderLanes(['enhancement/existing']);
+    const all = [...files.values()].map((f) => f.bytes.toString('utf8')).join('\n');
+    for (const [from, to] of EXTERNAL_LANE_WORDING) {
+      expect(all).toContain(from);
+      expect(all).not.toContain(to);
+    }
+  });
+
+  it('names the owner-approved commands instead of pnpm check:quick', async () => {
+    const h = engineFor('export-orders');
+    const { ref, dir } = await seed(h, 'order-desk', path.join(fixtures, 'flutter-app'));
+    const runId = start(h, dir, ref, { noPublish: true });
+    await h.engine.advance(runId, new DefaultsPrompter());
+    const ws = workspace(h, runId);
+    const text = lane(ws, 'codegen.md') + lane(ws, 'enrich.md');
+    for (const [from, to] of EXTERNAL_LANE_WORDING) {
+      expect(text).toContain(to);
+      expect(text).not.toContain(from);
+    }
+    expect(text).not.toContain('pnpm check:quick');
+  });
+
+  it('keeps the gate wording when the canonical files arrive in the same delivery', async () => {
+    const h = engineFor('export-orders');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const runId = start(h, dir, ref, { noPublish: true, withGaps: true });
+    await h.engine.advance(runId, new DefaultsPrompter());
+    const ws = workspace(h, runId);
+    expect(lane(ws, 'codegen.md')).toContain('After every step run `pnpm check:quick`.');
+  });
 });

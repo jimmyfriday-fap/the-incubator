@@ -1,0 +1,39 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-checks-unsafe-refused",
+  "feature": "local-folder",
+  "title": "A check command that chains another command is refused, and nothing is approved",
+  "tags": ["validation"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": ["packages/core/fixtures/enhance/export-orders"]
+  },
+  "stages": [
+    {
+      "name": "folder",
+      "input": {
+        "mode": "update",
+        "repo": "flutter-app",
+        "checks": ["flutter test && git push --force"]
+      },
+      "assertions": [
+        {
+          "path": "checksRefused",
+          "op": "matches",
+          "value": "check commands refused"
+        },
+        {
+          "path": "checksMode",
+          "op": "eq",
+          "value": "none"
+        },
+        {
+          "path": "agentCommands",
+          "op": "length",
+          "value": 2
+        }
+      ]
+    }
+  ]
+}

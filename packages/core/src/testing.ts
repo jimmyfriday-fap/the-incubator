@@ -75,6 +75,8 @@ export function fakeAgentHandoff(): NonNullable<EngineDeps['handoff']> {
         flags: {
           printMode: [fakeAgentPath(), '-p'],
           streamJson: ['--output-format', 'stream-json'],
+          // As the real claude CLI: the allowed-tool list is how approved checks are enforced.
+          allowedTools: '--allowedTools',
         },
         stdinPrompt: true,
         eligible: { discovery: true, analysis: true, handoff: true },

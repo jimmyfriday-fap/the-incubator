@@ -36,6 +36,7 @@ import {
   finalMessage,
   finishBody,
   finishTrailer,
+  type AgentChecks,
   type AgentReport,
   type FinishDetail,
 } from './finish.js';
@@ -70,11 +71,14 @@ import {
   renderScanReport,
   scanDigest,
   scanHash,
+  proposeChecks,
   summarizeGaps,
   unsupportedStackLabel,
   viewFromDir,
+  type CheckProposal,
   type RepoScan,
 } from '@incubator/analyzer';
+import { externalTools, isCanonicalRepo, normalizeChecks, validateChecks } from './checks.js';
 import { render, renderLanes, type RenderResult, type RenderedFile } from '@incubator/templates';
 import {
   ENHANCEMENT_LANES,
@@ -422,6 +426,63 @@ export class Engine {
     );
   }
 
+  /** Check commands proposed at the scan: built-in constants chosen by the repository's manifests. */
+  proposedChecks(runId: string): CheckProposal[] {
+    const e = this.entries(runId).find((x) => x.type === 'enhance.scan');
+    return (e?.['checks'] as CheckProposal[] | undefined) ?? [];
+  }
+
+  /** What the owner approved: a list (possibly empty), or null while they have not decided. */
+  approvedChecks(runId: string): string[] | null {
+    const e = this.entries(runId).findLast((x) => x.type === 'enhance.checks');
+    return e ? (e['commands'] as string[]) : null;
+  }
+
+  /**
+   * The owner's decision on what the coding agent may run in a repository the Incubator did not
+   * build (ADR-025). An empty list is a decision too: edits only. Accepted until coding starts.
+   */
+  submitChecks(runId: string, commands: readonly string[]): string[] {
+    const s = this.state(runId);
+    if (s.input.kind !== 'enhance')
+      throw new PolicyError(`run ${runId} is not an update of an existing repository`, {
+        code: 'not_waiting',
+      });
+    if (s.done || s.steps['code.start'] !== undefined)
+      throw new PolicyError(`run ${runId} has already started coding`, { code: 'not_waiting' });
+    const clean = normalizeChecks(commands);
+    const issues = validateChecks(clean);
+    if (issues.length)
+      throw new PolicyError(
+        `check commands refused: ${issues.map((i) => `${i.path} ${i.message}`).join('; ')}`,
+        { code: 'bad_checks', details: { issues } },
+      );
+    this.record(runId, 'enhance.checks', { commands: clean });
+    return clean;
+  }
+
+  /**
+   * What the owner is asked at review, for a folder run on a repository with no Incubator gate: the
+   * proposals and the decision so far. Null when the question does not arise (no folder, an
+   * Incubator-built repository, or the canonical files arriving with this run).
+   */
+  checksDetail(runId: string): { proposed: CheckProposal[]; approved: string[] | null } | null {
+    const s = this.state(runId);
+    if (s.input.kind !== 'enhance' || !s.input.dir) return null;
+    const dir = this.runDir(s);
+    if (!existsSync(dir) || isCanonicalRepo(dir)) return null;
+    const pack = this.finalSpec(runId)?.stack.pack;
+    if (s.input.withGaps === true && pack !== undefined && pack !== OTHER) return null;
+    return { proposed: this.proposedChecks(runId), approved: this.approvedChecks(runId) };
+  }
+
+  /** What a coding agent may run in `repo`: its own gate, the approved commands, or nothing. */
+  handoffChecks(runId: string, repo: string): AgentChecks {
+    if (isCanonicalRepo(repo)) return { mode: 'gate', commands: [] };
+    const approved = this.approvedChecks(runId) ?? [];
+    return { mode: approved.length ? 'approved' : 'none', commands: approved };
+  }
+
   /** The web and desktop "What do you want to change?" step; resume the run afterwards. */
   submitRequest(runId: string, text: string): void {
     const s = this.state(runId);
@@ -483,6 +544,10 @@ export class Engine {
         baseline: spec.intent.coreFeatures.map((f) => f.id),
         gaps: summarizeGaps(items),
         ...(spec.stack.pack === OTHER ? { stack: unsupportedStackLabel(inspected.analysis) } : {}),
+        // Proposals only: the owner approves what the coding agent may run (ADR-025).
+        checks: isCanonicalRepo(got.dir)
+          ? []
+          : proposeChecks(viewFromDir(got.dir), inspected.analysis),
       });
       if (spec.stack.pack === OTHER && s.input.withGaps)
         this.record(runId, 'step.warn', {
@@ -615,6 +680,10 @@ export class Engine {
       features,
       targets,
       base,
+      // No Incubator gate in the repository, and none arriving with this delivery.
+      external:
+        !isCanonicalRepo(dir) &&
+        !(this.state(runId).input.withGaps === true && spec.stack.pack !== OTHER),
     });
     const delivery: RenderResult = { ...base, files };
     return { dir, features, base, date, planPath, targets, files, delivery };
@@ -952,6 +1021,13 @@ export class Engine {
         });
       }
       ensureLocalExclude(dir);
+      const checks = this.handoffChecks(runId, dir);
+      if (checks.mode === 'none')
+        this.record(runId, 'step.warn', {
+          step: 'code.checks',
+          message:
+            'no check commands were approved for this repository: the agent can edit files but cannot run anything, so its work is untested',
+        });
       let last = 0;
       const out = await this.launchHandoff(runId, {
         onProgress: (p) => {
@@ -961,7 +1037,7 @@ export class Engine {
           this.record(runId, 'handoff.progress', { ...p });
         },
       });
-      this.record(runId, 'step.ok', { step: 'code.done', data: agentReport(out) });
+      this.record(runId, 'step.ok', { step: 'code.done', data: { ...agentReport(out), checks } });
     });
     this.enter(runId, 'COMMIT');
   }
@@ -1196,7 +1272,7 @@ export class Engine {
   async prepareHandoff(
     runId: string,
     opts: { agent?: HandoffAgent } = {},
-  ): Promise<{ plan: HandoffPlan; prompt: string; ticket: string | null }> {
+  ): Promise<{ plan: HandoffPlan; prompt: string; ticket: string | null; checks: AgentChecks }> {
     const s = this.state(runId);
     // A folder run codes before it is finished; every other run is handed off once it is done.
     const coding = Boolean(s.input.dir) && (s.state === 'CODE' || s.done);
@@ -1255,10 +1331,18 @@ export class Engine {
       : path.join(repo, 'docs', 'plans', '000-bootstrap.md');
     if (!existsSync(planPath))
       throw new PolicyError(`no executor plan at ${planPath}`, { code: 'no_plan' });
+    const checks = this.handoffChecks(runId, repo);
+    const external = checks.mode !== 'gate';
+    // Approval means nothing if the CLI cannot be held to it.
+    if (external && !caps.flags.allowedTools)
+      throw new ParkError(
+        'checks_unenforceable',
+        `${AGENT_ADAPTERS[agent]} cannot restrict which commands an agent runs, so it cannot code in a repository the Incubator did not build`,
+      );
     const plan: HandoffPlan = {
       agent,
       bin: caps.path,
-      argv: buildHandoffArgv(caps, ceilings),
+      argv: buildHandoffArgv(caps, ceilings, external ? externalTools(checks.commands) : undefined),
       cwd: repo,
       planPath,
       ceilings,
@@ -1266,8 +1350,12 @@ export class Engine {
     };
     return {
       plan,
-      prompt: handoffPrompt(readFileSync(planPath, 'utf8')),
+      prompt: handoffPrompt(
+        readFileSync(planPath, 'utf8'),
+        external ? { checks: checks.commands } : undefined,
+      ),
       ticket: activeTicket(repo, spec, delivered?.features.map(ticketId)),
+      checks,
     };
   }
 
@@ -1280,12 +1368,13 @@ export class Engine {
       onProgress?: (p: HandoffProgress) => void;
     } = {},
   ): Promise<HandoffOutcome> {
-    const { plan, prompt, ticket } = await this.prepareHandoff(runId, opts);
+    const { plan, prompt, ticket, checks } = await this.prepareHandoff(runId, opts);
     this.record(runId, 'handoff.launch', {
       agent: plan.agent,
       argv: plan.argv,
       ceilings: plan.ceilings,
       ticket,
+      checks,
     });
     const outcome = await launchHandoff(this.deps.handoff!.exec, plan, prompt, {
       logFile: path.join(this.deps.store.runDir(runId), 'logs', 'handoff.log'),

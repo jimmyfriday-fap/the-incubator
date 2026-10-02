@@ -6,8 +6,19 @@ import { cleanAgentText, type HandoffOutcome } from './handoff.js';
 /** What the agent's run amounts to, in the words the owner sees at the commit request. */
 export type AgentVerdict = 'ready' | 'parked' | 'ceiling' | 'failed';
 
+/**
+ * What the agent could run to check its work: the repository's own Incubator gate, the commands the
+ * owner approved, or nothing (edits only).
+ */
+export interface AgentChecks {
+  mode: 'gate' | 'approved' | 'none';
+  commands: string[];
+}
+
 export interface AgentReport {
   verdict: AgentVerdict;
+  /** Set by the engine for folder runs; absent in reports journaled before ADR-025. */
+  checks?: AgentChecks;
   /** The agent's own closing message, cleaned and capped. */
   summary: string | null;
   tripped: string | null;

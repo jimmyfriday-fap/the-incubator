@@ -19,6 +19,9 @@ export function Review(props: {
   runId: string;
   rev: number;
   onApprove(spec?: unknown): Promise<unknown>;
+  /** Set when the owner decides which commands the coding agent may run (ADR-025). */
+  checks?: { proposed: { command: string; why: string }[]; approved: string[] | null } | null;
+  onChecks?(commands: string[]): Promise<unknown>;
 }) {
   const [revs, setRevs] = useState<Revision[]>([]);
   const [from, setFrom] = useState<number | null>(null);
@@ -28,6 +31,10 @@ export function Review(props: {
   const [text, setText] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  // One command per line, starting from what was approved before, else from the proposals.
+  const [checksText, setChecksText] = useState(() =>
+    (props.checks?.approved ?? props.checks?.proposed.map((c) => c.command) ?? []).join('\n'),
+  );
 
   useEffect(() => {
     get<Revision[]>(`/api/runs/${props.runId}/revisions`)
@@ -83,8 +90,13 @@ export function Review(props: {
       }
     }
     setSending(true);
-    props
-      .onApprove(edited)
+    const commands = checksText
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    // The commands are decided first: a refused list stops the approval.
+    (props.checks && props.onChecks ? props.onChecks(commands) : Promise.resolve())
+      .then(() => props.onApprove(edited))
       .catch((e: unknown) => {
         const issues =
           e instanceof ApiError
@@ -182,6 +194,33 @@ export function Review(props: {
             <pre className="error" role="alert" data-testid="review-error">
               {problem}
             </pre>
+          )}
+          {props.checks && (
+            <div className="checks" data-testid="checks">
+              <h3>Commands the coding agent may run</h3>
+              <p className="muted">
+                This repository has no Incubator gate, so the agent can only run what you list here,
+                plus <code>git status</code> and <code>git diff</code>. One command per line. Leave
+                it empty and the agent edits files without running anything.
+              </p>
+              <textarea
+                data-testid="checks-editor"
+                rows={Math.max(3, checksText.split('\n').length + 1)}
+                value={checksText}
+                onChange={(e) => setChecksText(e.target.value)}
+                placeholder="flutter test"
+                spellCheck={false}
+              />
+              {props.checks.proposed.length > 0 && (
+                <ul className="muted" data-testid="checks-proposed">
+                  {props.checks.proposed.map((c) => (
+                    <li key={c.command}>
+                      <code>{c.command}</code>: suggested from {c.why}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
           {!owner?.login && <p className="warn">Set the GitHub owner: publishing needs it.</p>}
           <button

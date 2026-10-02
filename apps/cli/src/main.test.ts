@@ -253,7 +253,11 @@ describe('publish, handoff, auth, gc', () => {
       installed: true,
       path: process.execPath,
       version: '1',
-      flags: { printMode: [fakeAgent, '-p'], streamJson: ['--output-format', 'stream-json'] },
+      flags: {
+        printMode: [fakeAgent, '-p'],
+        streamJson: ['--output-format', 'stream-json'],
+        allowedTools: '--allowedTools',
+      },
       stdinPrompt: true,
       eligible: { discovery: false, analysis: false, handoff: true },
       reasons: [],
@@ -609,6 +613,59 @@ describe('publish, handoff, auth, gc', () => {
       expect(err).toContain('committing as Owner Person');
       expect(err).toContain('✔ opened https://github.com/octo/order-desk/pull/1');
       expect(h.github.repos.get('octo/order-desk')!.prs).toHaveLength(1);
+    });
+
+    it('lets the owner approve check commands with --check, refuses unsafe ones, and hints when none were', async () => {
+      // Named on the command line: approved, and they reach the agent's allowed-tool list.
+      const first = await setup();
+      const a = io();
+      await main(
+        ['enhance', first.dir, ...start, '--check', 'npm run test', '--check', 'npm run lint'],
+        a.io,
+        first.factory,
+      );
+      const runA = /run (\S+): the agent has stopped/.exec(a.err.join(''))![1]!;
+      const launchA = first.h.engine.entries(runA).findLast((e) => e.type === 'handoff.launch')!;
+      expect(launchA['checks']).toEqual({
+        mode: 'approved',
+        commands: ['npm run test', 'npm run lint'],
+      });
+      expect((launchA['argv'] as string[]).join(' ')).toContain('Bash(npm run test:*)');
+      expect(a.err.join('')).not.toContain('No check commands were approved');
+
+      // --yes approves nothing: the agent only edits, and the owner is told how to approve.
+      const second = await setup();
+      const b = io();
+      await main(['enhance', second.dir, ...start], b.io, second.factory);
+      expect(b.err.join('')).toContain('No check commands were approved for this repository');
+      expect(b.err.join('')).toContain('--in-place');
+
+      // --no-checks is a decision, so there is no hint.
+      const third = await setup();
+      const c = io();
+      await main(['enhance', third.dir, ...start, '--no-checks'], c.io, third.factory);
+      expect(c.err.join('')).not.toContain('No check commands were approved');
+
+      // An unsafe command is refused before anything runs; both flags together are a usage error.
+      const fourth = await setup();
+      const d = io();
+      expect(
+        await main(
+          ['enhance', fourth.dir, ...start, '--check', 'npm test; rm -rf .'],
+          d.io,
+          fourth.factory,
+        ),
+      ).toBe(2);
+      expect(d.err.join('')).toContain('check commands refused');
+      const e = io();
+      expect(
+        await main(
+          ['enhance', fourth.dir, ...start, '--check', 'npm run test', '--no-checks'],
+          e.io,
+          fourth.factory,
+        ),
+      ).toBe(2);
+      expect(e.err.join('')).toContain('either --check or --no-checks');
     });
 
     it('refuses a bad folder, a URL for --in-place, and a --dir with --spec-only', async () => {

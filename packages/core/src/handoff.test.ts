@@ -8,9 +8,11 @@ import {
   CeilingMonitor,
   buildHandoffArgv,
   cleanAgentText,
+  handoffPrompt,
   HANDOFF_ALLOWED_TOOLS,
   type HandoffProgress,
 } from './handoff.js';
+import { loadPrompt } from './prompts.js';
 import { fakePublishEngine } from './testing.js';
 
 const fakeAgent = path.resolve(import.meta.dirname, '../fixtures/handoff/fake-agent.mjs');
@@ -182,5 +184,46 @@ describe('handoff', () => {
       surface: 'test',
     });
     await expect(spend.h.engine.prepareHandoff(unfinished)).rejects.toThrow('is not finished');
+  });
+});
+
+describe('handoff on a repository the Incubator did not build (ADR-025)', () => {
+  const flags = {
+    printMode: ['-p'],
+    streamJson: ['--output-format', 'stream-json'],
+    allowedTools: '--allowedTools',
+  };
+  const ceilings = { turns: 10, toolCalls: 10, minutes: 1, usd: 1 };
+
+  it('passes the given tool list instead of the Incubator gate, and keeps the default otherwise', () => {
+    const argv = buildHandoffArgv(caps(flags), ceilings, ['Read', 'Bash(flutter test:*)']);
+    expect(argv.slice(-2)).toEqual(['--allowedTools', 'Read,Bash(flutter test:*)']);
+    expect(buildHandoffArgv(caps(flags), ceilings).slice(-1)).toEqual([
+      HANDOFF_ALLOWED_TOOLS.join(','),
+    ]);
+  });
+
+  it('ships the external prompt versioned and byte-pinned', () => {
+    const p = loadPrompt('handoff-external');
+    expect(p.name).toBe('handoff-external');
+    expect(p.version).toBe('1.0.0');
+    expect(p.body).toMatchSnapshot();
+  });
+
+  it('spells out the approved commands, or that there are none, and keeps the canonical prompt apart', () => {
+    const plan = '# Plan\n\n**Step 1:** do it';
+    const approved = handoffPrompt(plan, { checks: ['flutter analyze', 'flutter test'] });
+    expect(approved).toContain('an existing repository that the Incubator did not generate');
+    expect(approved).toContain(
+      '## Approved check commands\n\n- `flutter analyze`\n- `flutter test`\n\n## Executor plan\n\n# Plan',
+    );
+    for (const own of ['scripts/check.mjs', 'TODO(scaffold)', 'Stop hook'])
+      expect(approved).not.toContain(own);
+    expect(approved).toContain('Do not run `git commit`');
+    const none = handoffPrompt(plan, { checks: [] });
+    expect(none).toContain('## Approved check commands\n\n(none: run no commands)');
+    const canonical = handoffPrompt(plan);
+    expect(canonical).toContain('node scripts/check.mjs quick');
+    expect(canonical).not.toContain('Approved check commands');
   });
 });

@@ -4,6 +4,7 @@ import { PolicyError, fileSink } from '@incubator/runtime';
 import { isLlmAdapterId } from '@incubator/llm';
 import type { CliDeps } from '../deps.js';
 import type { Io } from '../io.js';
+import { applyChecks, type CheckOptions } from './checks.js';
 import { answerFinish, type FinishFlags } from './finish.js';
 import { choosePrompter, settleRun } from './new.js';
 
@@ -17,7 +18,8 @@ export async function runResume(
     out?: string;
     prompt?: string;
     promptFile?: string;
-  } & FinishFlags,
+  } & FinishFlags &
+    CheckOptions,
 ): Promise<number> {
   if (opts.adapter && !isLlmAdapterId(opts.adapter))
     throw new PolicyError(`unknown adapter ${opts.adapter}`, { code: 'usage' });
@@ -33,6 +35,8 @@ export async function runResume(
     : opts.prompt;
   // The answer to a parked "what do you want to change?" (enhance runs).
   if (request !== undefined) deps.engine.submitRequest(runId, request);
+  // What the coding agent may run is the owner's decision too, until it starts coding (ADR-025).
+  applyChecks(deps, runId, opts);
   // The commit and push requests are the owner's: --yes never answers them.
   await answerFinish(deps, runId, opts);
   const prompter = choosePrompter(io, opts.yes);

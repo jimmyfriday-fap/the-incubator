@@ -300,7 +300,11 @@ export function createApp(opts: ServerOptions): WebApp {
         adopt: s.input.kind === 'adopt' ? engine.adoptSummary(runId) : null,
         enhance:
           s.input.kind === 'enhance'
-            ? { ...engine.enhanceSummary(runId), request: engine.requestText(runId) }
+            ? {
+                ...engine.enhanceSummary(runId),
+                request: engine.requestText(runId),
+                checks: engine.checksDetail(runId),
+              }
             : null,
         finish: await engine.finishDetail(runId),
       };
@@ -415,6 +419,30 @@ export function createApp(opts: ServerOptions): WebApp {
       driver.request(runId, req.body.narrative);
       return { accepted: true };
     }),
+  );
+
+  // The owner's decision on what the coding agent may run (ADR-025). An empty list is a decision.
+  app.post<{ Body: { commands: string[] } }>(
+    '/api/runs/:id/checks',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['commands'],
+          properties: {
+            commands: {
+              type: 'array',
+              maxItems: 32,
+              items: { type: 'string', maxLength: 400 },
+            },
+          },
+        },
+      },
+    },
+    withRun((runId, req: { body: { commands: string[] } }) => ({
+      commands: engine.submitChecks(runId, req.body.commands),
+    })),
   );
 
   app.post<{ Body: { action: 'commit' | 'leave'; message?: string } }>(

@@ -50,7 +50,11 @@ export const HANDOFF_ALLOWED_TOOLS = [
 ];
 
 /** Headless argv from probed capabilities: print mode, streaming JSON, and max turns when offered. */
-export function buildHandoffArgv(caps: Capabilities, ceilings: Ceilings): string[] {
+export function buildHandoffArgv(
+  caps: Capabilities,
+  ceilings: Ceilings,
+  tools: readonly string[] = HANDOFF_ALLOWED_TOOLS,
+): string[] {
   const f = caps.flags;
   if (!f.printMode || !f.streamJson)
     throw new ParkError(
@@ -63,12 +67,20 @@ export function buildHandoffArgv(caps: Capabilities, ceilings: Ceilings): string
     ...(f.verbose ? [f.verbose] : []),
     ...(f.maxTurns ? [f.maxTurns, String(ceilings.turns)] : []),
     ...(f.acceptEdits ?? []),
-    ...(f.allowedTools ? [f.allowedTools, HANDOFF_ALLOWED_TOOLS.join(',')] : []),
+    ...(f.allowedTools ? [f.allowedTools, tools.join(',')] : []),
   ];
 }
 
-export function handoffPrompt(planText: string): string {
-  return `${loadPrompt('handoff').body}\n\n${planText.trim()}\n`;
+/**
+ * The agent's prompt. `external` is a repository the Incubator did not build (ADR-025): another
+ * prompt, with the check commands the owner approved (possibly none) spelled out.
+ */
+export function handoffPrompt(planText: string, external?: { checks: readonly string[] }): string {
+  if (!external) return `${loadPrompt('handoff').body}\n\n${planText.trim()}\n`;
+  const checks = external.checks.length
+    ? external.checks.map((c) => `- \`${c}\``).join('\n')
+    : '(none: run no commands)';
+  return `${loadPrompt('handoff-external').body}\n\n## Approved check commands\n\n${checks}\n\n## Executor plan\n\n${planText.trim()}\n`;
 }
 
 /**
