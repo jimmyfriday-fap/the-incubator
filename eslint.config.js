@@ -8,6 +8,8 @@ export default defineConfig(
     ignores: [
       '**/node_modules/**',
       '**/dist/**',
+      // Other agent sessions' worktrees: whole copies of this repository, linted in their own session.
+      '.claude/worktrees/**',
       'coverage/**',
       '.reports/**',
       '.tools/**',

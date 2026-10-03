@@ -33,6 +33,34 @@ export const CLI_AUTH_ENV: Record<CliAdapterOptions['id'], readonly string[]> = 
   'cursor-cli': ['CURSOR_API_KEY', 'XDG_CONFIG_HOME'],
 };
 
+/**
+ * Why a CLI call failed, in the CLI's own words. A JSON-mode CLI reports errors (for example
+ * "Failed to authenticate: OAuth session expired") in its stdout envelope, `{ "is_error": true,
+ * "result": "..." }`, and may write nothing to stderr. One line, capped.
+ */
+export function cliFailure(stdout: string, stderr: string): string {
+  const fromStderr = stderr.trim().split('\n').slice(-3).join(' | ');
+  let fromStdout = '';
+  for (const line of stdout.trim().split('\n').reverse()) {
+    let o: { is_error?: unknown; result?: unknown; error?: unknown };
+    try {
+      o = JSON.parse(line) as typeof o;
+    } catch {
+      continue;
+    }
+    if (o.is_error === true && typeof o.result === 'string' && o.result.trim()) {
+      fromStdout = o.result;
+      break;
+    }
+    if (typeof o.error === 'string' && o.error.trim()) {
+      fromStdout = o.error;
+      break;
+    }
+  }
+  const msg = [fromStdout, fromStderr].filter(Boolean).join(' | ').replace(/\s+/g, ' ').trim();
+  return (msg || 'no error message').slice(0, 500);
+}
+
 /** Unwraps CLI JSON envelopes such as `{ "type": "result", "result": "...", "total_cost_usd": 0.1 }`. */
 export function unwrapCliOutput(stdout: string): RawReply {
   const trimmed = stdout.trim();
@@ -113,7 +141,7 @@ export class CliAdapter implements LlmAdapter {
         });
       if (r.code !== 0) {
         throw new ToolError(
-          `${this.id} exited ${String(r.code)}: ${r.stderr.trim().split('\n').slice(-3).join(' | ')}`,
+          `${this.id} exited ${String(r.code)}: ${cliFailure(r.stdout, r.stderr)}`,
           {
             code: 'llm_exit',
           },

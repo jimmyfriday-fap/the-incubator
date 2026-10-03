@@ -34,6 +34,7 @@ import {
   isLlmAdapterId,
   toStructuredOutputSchema,
   unwrapCliOutput,
+  cliFailure,
   type AnthropicLike,
   type CompleteRequest,
 } from './index.js';
@@ -216,6 +217,29 @@ describe('CliAdapter (real subprocess)', () => {
     expect(call.envKeys).not.toContain('INCUBATOR_TEST_SECRET');
     expect(call.stdin).toContain('What is 6*7?');
     expect(call.stdin).toContain('"minimum":1');
+  });
+  it('says why a CLI failed when it puts the error in its JSON reply and nothing on stderr', () => {
+    // The reply claude-cli gave on the owner's machine when its login had expired.
+    const expired = JSON.stringify({
+      type: 'result',
+      is_error: true,
+      total_cost_usd: 0,
+      result: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+    });
+    expect(cliFailure(`${expired}\n`, '')).toBe(
+      'Failed to authenticate: OAuth session expired and could not be refreshed',
+    );
+    expect(cliFailure('{"is_error":true,"result":"bad"}', 'stack line\nboom')).toBe(
+      'bad | stack line | boom',
+    );
+    expect(cliFailure('{"error":"rate limited"}', '')).toBe('rate limited');
+    // A successful-looking reply, or text that is not JSON, says nothing of its own.
+    expect(cliFailure('{"is_error":false,"result":"fine"}', 'boom')).toBe('boom');
+    expect(cliFailure('plain text\n', '')).toBe('no error message');
+    expect(cliFailure('', ' \n ')).toBe('no error message');
+    expect(
+      cliFailure(JSON.stringify({ is_error: true, result: 'x'.repeat(900) }), ''),
+    ).toHaveLength(500);
   });
   it('reports exits, refuses ineligible CLIs and caches probes', async () => {
     const failing = fakeCliDir(CLAUDE_HELP, '', 'fail');

@@ -21,6 +21,9 @@ private/
 # agent runtime state (tickets stay tracked)
 .incubator/state/
 
+# other agent sessions' worktrees (Claude Code); they are whole copies of this repository
+.claude/worktrees/
+
 # OS/editor noise
 .DS_Store
 Thumbs.db
