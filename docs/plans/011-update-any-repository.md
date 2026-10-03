@@ -12,8 +12,8 @@ of four; each stage ships green on its own.
    canonical-pattern files are unavailable by rule, and `adopt` keeps refusing with a clearer message.
 2. Plan 012: on a repository the Incubator did not build, the coding agent may run only check commands the
    owner approved.
-3. Plan 013: real Dart/Flutter scanning (languages, pubspec dependencies, tests, conventions).
-4. Plan 014: a Flutter stack pack with canonical files.
+3. Plan 015 (was 013; renumbered by ADR-026): real Dart/Flutter scanning (languages, pubspec dependencies, tests, conventions).
+4. Plan 016 (was 014; renumbered by ADR-026): a Flutter stack pack with canonical files.
 
 Decisions (ADR-024):
 

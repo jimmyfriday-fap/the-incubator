@@ -1389,30 +1389,31 @@ flowchart LR
 
 ## Appendix A — ADR index
 
-| ADR                                                    | Title                                                                        |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| [001](adr/001-monorepo-toolchain.md)                   | Monorepo toolchain: pnpm 10, Node 22, TypeScript 6.0, ESM, source condition  |
-| [002](adr/002-runtime-kernel-package.md)               | A `packages/runtime` kernel shared by all adapters                           |
-| [003](adr/003-template-engine-eta.md)                  | Eta (not Handlebars) as the template engine, with a restricted-template lint |
-| [004](adr/004-deterministic-rendering-and-lockfile.md) | Deterministic rendering, normalization and the lockfile                      |
-| [005](adr/005-scaffold-markers-and-json-patches.md)    | Comment markers for text files, declarative JSON patches for JSON            |
-| [006](adr/006-spec-schema-source-of-truth.md)          | JSON Schema as the source of truth; generated types; Ajv                     |
-| [007](adr/007-llm-adapters-probing-and-sandboxing.md)  | LLM adapters: capability probing, schema gate, tool-less sandbox             |
-| [008](adr/008-subprocess-spawning.md)                  | Shell-less subprocesses and Windows shim resolution                          |
-| [009](adr/009-secrets-and-redaction.md)                | Token resolution, `SecretString`, env-based git auth, the Redactor           |
-| [010](adr/010-run-journal-and-resume.md)               | An append-only JSONL journal with a pure reducer for resume                  |
-| [011](adr/011-localhost-ui-security.md)                | Localhost UI: token → cookie, Host/Origin checks, synchronizer CSRF          |
-| [012](adr/012-electron-in-process-server.md)           | Electron runs the same Fastify server in-process                             |
-| [013](adr/013-guard-toolkit-in-node.md)                | A single Node guard toolkit for every generated stack                        |
-| [014](adr/014-security-scanner-pinning.md)             | Scanner pinning, gitleaks binary over the action, stable fingerprints        |
-| [015](adr/015-test-strategy-fakes-and-live-gating.md)  | Vitest, fakes by default, a bare-repo fake GitHub, `INCUBATOR_LIVE`          |
-| [016](adr/016-deploy-class-package-release.md)         | **Proposed:** a `package-release` deploy class for non-server projects       |
-| [017](adr/017-agent-hooks-and-tracker-loop.md)         | Agent hooks: a Stop-hook veto as the verification loop                       |
-| [018](adr/018-completeness-score.md)                   | Completeness score formula and default threshold                             |
-| [019](adr/019-toolchain-fetch-and-ci.md)               | Hash-pinned tool fetching and the CI layout                                  |
-| [020](adr/020-enhance-command-and-staged-contract.md)  | `enhance` command, additive delivery model, staged contract change           |
-| [021](adr/021-deep-scan-caps-and-skip-accounting.md)   | Deep scan: deterministic, capped, honest about skipped files                 |
-| [022](adr/022-host-capabilities-over-http.md)          | Native capabilities (folder dialog) reach the UI as HTTP routes              |
-| [023](adr/023-local-folder-workflow.md)                | Folder workflows; the owner approves every commit and push                   |
-| [024](adr/024-spec-value-other.md)                     | The spec value `other`: updating a repository with no stack pack             |
-| [025](adr/025-owner-approved-check-commands.md)        | The owner approves what a coding agent runs in an external repository        |
+| ADR                                                     | Title                                                                             |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [001](adr/001-monorepo-toolchain.md)                    | Monorepo toolchain: pnpm 10, Node 22, TypeScript 6.0, ESM, source condition       |
+| [002](adr/002-runtime-kernel-package.md)                | A `packages/runtime` kernel shared by all adapters                                |
+| [003](adr/003-template-engine-eta.md)                   | Eta (not Handlebars) as the template engine, with a restricted-template lint      |
+| [004](adr/004-deterministic-rendering-and-lockfile.md)  | Deterministic rendering, normalization and the lockfile                           |
+| [005](adr/005-scaffold-markers-and-json-patches.md)     | Comment markers for text files, declarative JSON patches for JSON                 |
+| [006](adr/006-spec-schema-source-of-truth.md)           | JSON Schema as the source of truth; generated types; Ajv                          |
+| [007](adr/007-llm-adapters-probing-and-sandboxing.md)   | LLM adapters: capability probing, schema gate, tool-less sandbox                  |
+| [008](adr/008-subprocess-spawning.md)                   | Shell-less subprocesses and Windows shim resolution                               |
+| [009](adr/009-secrets-and-redaction.md)                 | Token resolution, `SecretString`, env-based git auth, the Redactor                |
+| [010](adr/010-run-journal-and-resume.md)                | An append-only JSONL journal with a pure reducer for resume                       |
+| [011](adr/011-localhost-ui-security.md)                 | Localhost UI: token → cookie, Host/Origin checks, synchronizer CSRF               |
+| [012](adr/012-electron-in-process-server.md)            | Electron runs the same Fastify server in-process                                  |
+| [013](adr/013-guard-toolkit-in-node.md)                 | A single Node guard toolkit for every generated stack                             |
+| [014](adr/014-security-scanner-pinning.md)              | Scanner pinning, gitleaks binary over the action, stable fingerprints             |
+| [015](adr/015-test-strategy-fakes-and-live-gating.md)   | Vitest, fakes by default, a bare-repo fake GitHub, `INCUBATOR_LIVE`               |
+| [016](adr/016-deploy-class-package-release.md)          | **Proposed:** a `package-release` deploy class for non-server projects            |
+| [017](adr/017-agent-hooks-and-tracker-loop.md)          | Agent hooks: a Stop-hook veto as the verification loop                            |
+| [018](adr/018-completeness-score.md)                    | Completeness score formula and default threshold                                  |
+| [019](adr/019-toolchain-fetch-and-ci.md)                | Hash-pinned tool fetching and the CI layout                                       |
+| [020](adr/020-enhance-command-and-staged-contract.md)   | `enhance` command, additive delivery model, staged contract change                |
+| [021](adr/021-deep-scan-caps-and-skip-accounting.md)    | Deep scan: deterministic, capped, honest about skipped files                      |
+| [022](adr/022-host-capabilities-over-http.md)           | Native capabilities (folder dialog) reach the UI as HTTP routes                   |
+| [023](adr/023-local-folder-workflow.md)                 | Folder workflows; the owner approves every commit and push                        |
+| [024](adr/024-spec-value-other.md)                      | The spec value `other`: updating a repository with no stack pack                  |
+| [025](adr/025-owner-approved-check-commands.md)         | The owner approves what a coding agent runs in an external repository             |
+| [026](adr/026-stack-pack-catalog-and-recommendation.md) | A stack pack catalog in the manifests; the LLM recommends a stack, rules check it |
