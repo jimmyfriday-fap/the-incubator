@@ -97,6 +97,8 @@ export interface RunDetail {
     dir?: string;
   };
   parked: { state: string; reason: string; message: string; evidence?: unknown } | null;
+  /** The last attempt stopped on an error; Resume retries `state`. Survives a restart. */
+  failure: { state: string; message: string } | null;
   questions: Question[] | null;
   round: number;
   rev: number;

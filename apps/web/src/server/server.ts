@@ -283,7 +283,7 @@ export function createApp(opts: ServerOptions): WebApp {
         state: s.state,
         done: s.done,
         busy: st.busy,
-        error: st.error,
+        error: st.error ?? s.failure?.message ?? null,
         input: {
           ...(s.input.narrative !== undefined ? { narrative: s.input.narrative } : {}),
           ...(s.input.repo !== undefined ? { repo: s.input.repo } : {}),
@@ -291,6 +291,7 @@ export function createApp(opts: ServerOptions): WebApp {
           ...(s.input.dir !== undefined ? { dir: s.input.dir } : {}),
         },
         parked: s.parked,
+        failure: s.failure,
         questions:
           s.state === 'PARKED' && s.parked?.state === 'CLARIFY' ? s.pendingQuestions : null,
         round: s.round,

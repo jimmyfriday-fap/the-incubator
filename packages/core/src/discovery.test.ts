@@ -1,6 +1,7 @@
 import { appendFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { FakeLlmAdapter } from '@incubator/llm';
+import { ToolError } from '@incubator/runtime';
 import {
   covers,
   changedPaths,
@@ -241,6 +242,41 @@ describe('parking and resume', () => {
     expect(Journal.readFile(file).repaired).toBe(false);
     const done = await h.engine.advance(runId, new ScriptedPrompter());
     expect(done.state).toBe('DONE');
+  });
+
+  it('journals a failed attempt with its reason, then resumes from it', async () => {
+    const h = fakeEngine({ dir: discoveryFixtureDir('wp-plugin') });
+    const good = h.adapter;
+    h.setAdapter({
+      id: good.id,
+      probe: () => good.probe(),
+      invoke: () =>
+        Promise.reject(
+          new ToolError('claude-cli exited 1: Failed to authenticate', { code: 'llm_exit' }),
+        ),
+    });
+    const runId = h.engine.start({
+      kind: 'new',
+      narrative: narrative('wp-plugin'),
+      specOnly: true,
+      surface: 'test',
+    });
+    await expect(h.engine.advance(runId, new ScriptedPrompter())).rejects.toThrow(
+      /Failed to authenticate/,
+    );
+    // The journal, not memory, carries the failure, so it survives a restart.
+    expect(h.engine.entries(runId).at(-1)).toMatchObject({ type: 'failed', state: 'DRAFT_SPEC' });
+    expect(h.engine.state(runId).failure).toEqual({
+      state: 'DRAFT_SPEC',
+      message: 'ToolError [llm_exit]: claude-cli exited 1: Failed to authenticate',
+    });
+    h.setAdapter(good);
+    const done = await h.engine.resume(runId, new ScriptedPrompter());
+    expect(done.state).toBe('DONE');
+    expect(done.failure).toBeNull();
+    expect(h.engine.entries(runId).filter((e) => e.type === 'resume')).toEqual([
+      expect.objectContaining({ to: 'DRAFT_SPEC', from: 'failed' }),
+    ]);
   });
 
   it('journals interruptions and refuses unknown or invalid answers', async () => {

@@ -49,6 +49,8 @@ export interface RunState {
   rev: number;
   pendingQuestions: AskedQuestion[] | null;
   parked: { state: RunStateName; reason: string; message: string; evidence?: unknown } | null;
+  /** The last attempt stopped on an error (not a park); resume retries `state`. */
+  failure: { state: RunStateName; message: string } | null;
   approvedHash: string | null;
   llmCostUsd: number;
   done: boolean;
@@ -66,6 +68,7 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
     rev: 0,
     pendingQuestions: null,
     parked: null,
+    failure: null,
     approvedHash: null,
     llmCostUsd: 0,
     done: false,
@@ -91,6 +94,7 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
           state: e['state'] as RunStateName,
           round: typeof e['round'] === 'number' ? e['round'] : s.round,
           parked: null,
+          failure: null,
         };
         break;
       case 'spec.revision':
@@ -117,6 +121,7 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
             message: String(e['message']),
             evidence: e['evidence'],
           },
+          failure: null,
           state: 'PARKED',
         };
         break;
@@ -125,6 +130,16 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
           ...s,
           state: (e['to'] as RunStateName | undefined) ?? s.parked?.state ?? s.state,
           parked: null,
+          failure: null,
+        };
+        break;
+      case 'failed':
+        s = {
+          ...s,
+          failure: {
+            state: (e['state'] as RunStateName | undefined) ?? s.state,
+            message: String(e['message']),
+          },
         };
         break;
       case 'step.ok':
@@ -142,7 +157,7 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
         };
         break;
       case 'run.done':
-        s = { ...s, state: 'DONE', done: true };
+        s = { ...s, state: 'DONE', done: true, failure: null };
         break;
       default:
         break;

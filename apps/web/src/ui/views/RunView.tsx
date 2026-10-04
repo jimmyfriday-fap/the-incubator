@@ -56,7 +56,7 @@ export function RunView({ runId }: { runId: string }) {
   const requesting = run.state === 'PARKED' && run.parked?.reason === 'needs_request' && !run.busy;
   const committing = run.state === 'PARKED' && run.parked?.reason === 'needs_commit' && !run.busy;
   const pushing = run.state === 'PARKED' && run.parked?.reason === 'needs_push' && !run.busy;
-  const coding = run.state === 'CODE' || (run.busy && run.finish?.stage === 'coding');
+  const coding = run.busy && (run.state === 'CODE' || run.finish?.stage === 'coding');
   const stuck =
     run.state === 'PARKED' &&
     !reviewing &&
@@ -65,6 +65,9 @@ export function RunView({ runId }: { runId: string }) {
     !committing &&
     !pushing &&
     !run.busy;
+  // why: a run that failed (or was cut off) is neither parked nor working; without this it shows
+  // no way forward, and after a restart not even the error.
+  const stopped = !run.done && !run.busy && run.state !== 'PARKED';
   const act = (p: Promise<unknown>) => p.then(refresh).catch((e: Error) => setError(e.message));
 
   return (
@@ -107,6 +110,22 @@ export function RunView({ runId }: { runId: string }) {
             <p>
               Parked at <strong>{run.parked.state}</strong> ({run.parked.reason}):{' '}
               {run.parked.message}
+            </p>
+            <button
+              data-testid="resume"
+              onClick={() => void act(post(`/api/runs/${runId}/resume`))}
+            >
+              Resume
+            </button>
+          </div>
+        )}
+        {stopped && (
+          <div className="parked" data-testid="stopped">
+            <p>
+              Stopped at <strong>{run.failure?.state ?? run.state}</strong>
+              {run.failure
+                ? '. Fix the cause above, then resume to retry from there.'
+                : ". It isn't running; resume to continue from there."}
             </p>
             <button
               data-testid="resume"

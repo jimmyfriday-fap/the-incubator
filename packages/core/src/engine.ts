@@ -5,6 +5,7 @@ import {
   ParkError,
   PolicyError,
   ToolError,
+  formatError,
   type Clock,
   type Exec,
   type Logger,
@@ -1739,11 +1740,15 @@ export class Engine {
         return this.state(runId);
       }
       if (err instanceof InterruptedError) this.record(runId, 'interrupted', {});
+      // why: without a journal entry a failed run reads as still in progress after a restart,
+      // and the web UI offers no way to resume it.
+      else
+        this.record(runId, 'failed', { state: this.state(runId).state, message: formatError(err) });
       throw err;
     }
   }
 
-  /** Re-enters a parked (or interrupted) run from its journal. */
+  /** Re-enters a parked, interrupted or failed run from its journal. */
   async resume(
     runId: string,
     prompter: Prompter,
@@ -1757,6 +1762,7 @@ export class Engine {
         from: s.parked?.reason ?? null,
         ...overrides,
       });
+    else if (s.failure) this.record(runId, 'resume', { to: s.state, from: 'failed', ...overrides });
     if (overrides.adapter) this.record(runId, 'input.override', { adapter: overrides.adapter });
     return this.advance(runId, prompter);
   }
