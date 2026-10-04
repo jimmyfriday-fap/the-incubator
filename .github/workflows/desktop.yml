@@ -46,7 +46,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @incubator/web build:ui
+      # The desktop scripts build the web UI themselves (bundle), so a stale UI can't be packaged.
       - name: Test build (fakes behind the launch flag), unpacked
         run: pnpm --filter @incubator/desktop dist:test
         env:

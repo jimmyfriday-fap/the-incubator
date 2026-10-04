@@ -26,9 +26,9 @@
   },
   "main": "app/dist/main.mjs",
   "scripts": {
-    "bundle": "node scripts/build.mjs",
-    "dist": "node scripts/build.mjs && electron-builder --config electron-builder.yml --publish never",
-    "dist:dir": "node scripts/build.mjs && electron-builder --config electron-builder.yml --publish never --dir",
-    "dist:test": "node scripts/build.mjs && electron-builder --config electron-builder.yml --publish never --dir -c.directories.app=app-test -c.directories.output=release-test"
+    "bundle": "pnpm --filter @incubator/web build:ui && node scripts/build.mjs",
+    "dist": "pnpm run bundle && electron-builder --config electron-builder.yml --publish never",
+    "dist:dir": "pnpm run bundle && electron-builder --config electron-builder.yml --publish never --dir",
+    "dist:test": "pnpm run bundle && electron-builder --config electron-builder.yml --publish never --dir -c.directories.app=app-test -c.directories.output=release-test"
   }
 }
