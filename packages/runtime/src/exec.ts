@@ -190,7 +190,29 @@ export function liveChildren(): readonly number[] {
   return [...live];
 }
 
-function buildEnv(opts: ExecOptions): NodeJS.ProcessEnv {
+/**
+ * Variables git exports to a hook (pre-push, pre-commit) that pin it to one repository. A git child
+ * that inherits them ignores its own cwd: a plain `git init` in a scratch directory re-initialises the
+ * hooked repository instead, and from a linked worktree it writes `core.bare = true` into the config
+ * every worktree shares.
+ */
+const GIT_REPOSITORY_ENV = [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_COMMON_DIR',
+  'GIT_PREFIX',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_IMPLICIT_WORK_TREE',
+];
+
+function isGit(bin: string): boolean {
+  const name = (bin.split(/[\\/]/).pop() ?? '').toLowerCase();
+  return name === 'git' || name === 'git.exe';
+}
+
+function buildEnv(bin: string, opts: ExecOptions): NodeJS.ProcessEnv {
   const base: NodeJS.ProcessEnv = {};
   if (opts.inheritEnv === false) {
     for (const key of ENV_ALLOWLIST) {
@@ -200,6 +222,8 @@ function buildEnv(opts: ExecOptions): NodeJS.ProcessEnv {
   } else {
     Object.assign(base, process.env);
   }
+  // Only what was inherited is dropped; a caller that sets one of these in `opts.env` means it.
+  if (isGit(bin)) for (const key of GIT_REPOSITORY_ENV) delete base[key];
   for (const [k, v] of Object.entries(opts.env ?? {})) {
     if (v === undefined) delete base[k];
     else base[k] = v;
@@ -261,7 +285,7 @@ export async function runProcess(
       windowsHide: true,
       detached: process.platform !== 'win32',
       cwd: opts.cwd,
-      env: buildEnv(opts),
+      env: buildEnv(bin, opts),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let timedOut = false;

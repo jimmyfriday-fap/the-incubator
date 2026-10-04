@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { ToolError } from './errors.js';
 import { commandFor, nodeExec, parseCmdShim, runProcess, which } from './exec.js';
 import { Logger, MemorySink } from './log.js';
@@ -180,5 +180,48 @@ describe('runProcess', () => {
   it('resolves real binaries on PATH', async () => {
     const found = await nodeExec.which(path.basename(process.execPath).replace(/\.exe$/i, ''));
     expect(found).not.toBeNull();
+  });
+});
+
+describe('git repository variables', () => {
+  const resolveNode = () => Promise.resolve({ path: process.execPath, kind: 'native' as const });
+  const vars = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX'];
+  const saved = Object.fromEntries(vars.map((k) => [k, process.env[k]]));
+  const probe = `process.stdout.write(JSON.stringify(${JSON.stringify(vars)}.map((k) => process.env[k] ?? null)))`;
+
+  afterEach(() => {
+    for (const k of vars) {
+      const v = saved[k];
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  const hooked = () => {
+    for (const k of vars) process.env[k] = `inherited-${k}`;
+  };
+  const seen = async (bin: string, env?: Record<string, string>) =>
+    JSON.parse(
+      (
+        await runProcess(
+          bin,
+          ['-e', probe],
+          { timeoutMs: 10_000, ...(env ? { env } : {}) },
+          resolveNode,
+        )
+      ).stdout,
+    ) as (string | null)[];
+
+  it('are not passed on to git, which would otherwise ignore its cwd', async () => {
+    hooked();
+    expect(await seen('git')).toEqual(vars.map(() => null));
+    expect(await seen('C:\\Program Files\\Git\\cmd\\git.exe')).toEqual(vars.map(() => null));
+    expect(await seen('/usr/bin/git')).toEqual(vars.map(() => null));
+  });
+
+  it('still reach other programs, and a caller can set them for git on purpose', async () => {
+    hooked();
+    expect(await seen('node')).toEqual(vars.map((k) => `inherited-${k}`));
+    expect(await seen('git', { GIT_DIR: 'chosen' })).toEqual(['chosen', null, null, null, null]);
   });
 });
