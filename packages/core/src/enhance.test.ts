@@ -7,7 +7,7 @@ import { completeSpec } from '@incubator/spec';
 import { render, renderLanes, writeTree } from '@incubator/templates';
 import type { RepoScan } from '@incubator/analyzer';
 import { FakeLlmAdapter, type Capabilities } from '@incubator/llm';
-import { DefaultsPrompter, NonInteractivePrompter } from './prompter.js';
+import { DefaultsPrompter, NonInteractivePrompter, ScriptedPrompter } from './prompter.js';
 import { loadPrompt } from './prompts.js';
 import {
   EXTERNAL_LANE_WORDING,
@@ -388,6 +388,44 @@ describe('enhance', () => {
     expect(design).toContain('`enhancement/new`');
   });
 
+  it('keeps the feature list and the request when the owner answers scope questions', async () => {
+    const h = engineFor('dashboard-questions');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const runId = start(h, dir, ref, { noPublish: true });
+    const prompter = new ScriptedPrompter();
+    const s = await h.engine.advance(runId, prompter);
+    expect(s.state).toBe('DONE');
+    // The first attempt keyed its questions on structured fields; the gate sent it back for a second.
+    expect(prompter.asked[0]!.map((q) => q.key).sort()).toEqual([
+      'request.dashboardExtras',
+      'request.dashboardRecords',
+    ]);
+    const spec = h.engine.finalSpec(runId)!;
+    expect(spec.intent.narrative).toBe(REQUEST);
+    expect(spec.intent.coreFeatures).toEqual([
+      expect.objectContaining({ id: 'dashboard', lane: 'enhancement/new' }),
+    ]);
+    const answered = spec.decisions.filter((d) => d.key.startsWith('request.'));
+    expect(answered.map((d) => d.answer).sort()).toEqual(['Events and meets', 'Upcoming events']);
+  });
+
+  it('heals a run whose draft an earlier build corrupted with option slugs', async () => {
+    const h = engineFor('dashboard-questions');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const runId = start(h, dir, ref, { noPublish: true });
+    const parked = await h.engine.advance(runId, new NonInteractivePrompter());
+    expect(parked.parked).toMatchObject({ reason: 'needs_input' });
+    // What the old merge did: option slugs written over the structured intent fields.
+    const draft = h.engine.draft(runId) as { intent: Record<string, unknown> };
+    draft.intent = { ...draft.intent, coreFeatures: ['events-and-meets'], narrative: 'upcoming' };
+    h.store.writeSpecRevision(runId, h.engine.state(runId).rev, draft);
+    const s = await h.engine.resume(runId, new ScriptedPrompter());
+    expect(s.state).toBe('DONE');
+    const spec = h.engine.finalSpec(runId)!;
+    expect(spec.intent.narrative).toBe(REQUEST);
+    expect(spec.intent.coreFeatures).toEqual([expect.objectContaining({ id: 'dashboard' })]);
+  });
+
   it('parks when the model strays outside the enhancement lanes or outside intent', async () => {
     for (const fixture of ['bad-lane', 'outside-intent']) {
       const h = engineFor(fixture);
@@ -531,7 +569,7 @@ describe('enhance helpers', () => {
   it('ships the enhance prompt versioned and byte-pinned', () => {
     const p = loadPrompt('enhance');
     expect(p.name).toBe('enhance');
-    expect(p.version).toBe('1.1.0');
+    expect(p.version).toBe('1.2.0');
     expect(p.body).toMatchSnapshot();
   });
 

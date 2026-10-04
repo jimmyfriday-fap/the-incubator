@@ -12,7 +12,13 @@ import {
   type Issue,
 } from '@incubator/spec';
 import type { Answer } from '../state.js';
-import { coerceAnswer } from './questions.js';
+import { coerceAnswer, questionTarget } from './questions.js';
+
+/** What the journal recorded about a question: its text and each option's label by value. */
+export interface AskedInfo {
+  question: string;
+  labels: Readonly<Record<string, string>>;
+}
 
 export type Draft = Record<string, unknown> & { decisions?: Decision[] };
 
@@ -82,16 +88,20 @@ function upsert(list: Decision[], d: Decision): Decision[] {
 export function applyAnswers(
   draft: Draft,
   answers: readonly Answer[],
-  questions: ReadonlyMap<string, string>,
+  questions: ReadonlyMap<string, AskedInfo>,
 ): Draft {
   let out = structuredClone(draft);
   let decisions = out.decisions ?? [];
   for (const a of answers) {
-    out = setAt(out, a.key, coerceAnswer(a.key, a.value));
+    const info = questions.get(a.key);
+    // why: only a single-value path takes the answer itself. A scope answer (`request.*`), or a key from
+    // an older run that named a structured field, is context for the next turn and never overwrites the spec.
+    const target = questionTarget(a.key);
+    if (target === 'spec') out = setAt(out, a.key, coerceAnswer(a.key, a.value));
     decisions = upsert(decisions, {
       key: a.key,
-      question: questions.get(a.key) ?? a.key,
-      answer: a.value,
+      question: info?.question ?? a.key,
+      answer: target === 'spec' ? a.value : (info?.labels[a.value] ?? a.value),
       source: a.source,
     });
   }
@@ -109,7 +119,7 @@ export function mergeTurn(opts: {
   turn: DiscoveryTurn;
   narrative: string;
   answers: readonly Answer[];
-  questions: ReadonlyMap<string, string>;
+  questions: ReadonlyMap<string, AskedInfo>;
   untrustedSource: boolean;
 }): Draft {
   const proposed = withoutPackFixed(opts.turn.draftSpec);

@@ -37,6 +37,8 @@ export interface TurnContext {
   narrative: string;
   /** Heading for the narrative: "Change request" on enhance runs. */
   narrativeHeading?: string;
+  /** An update run: questions are keyed `request.<topic>` and their answers print with the question. */
+  enhance?: boolean;
   /** A ready-made fenced digest (a string, used as is), a value to print as JSON, or nothing. */
   analysis: unknown;
   draft: Record<string, unknown>;
@@ -46,7 +48,11 @@ export interface TurnContext {
 /** Deterministic user prompt for one discovery round (no clocks, no ids). */
 export function buildUserPrompt(ctx: TurnContext): string {
   const { decisions: _omit, ...draft } = ctx.draft;
-  const decided = ctx.decisions.map((d) => `- ${d.key} = ${d.answer} (${d.source})`);
+  const decided = ctx.decisions.map((d) =>
+    ctx.enhance && d.key.startsWith('request.')
+      ? `- ${d.key}: "${d.question}" -> ${d.answer} (${d.source})`
+      : `- ${d.key} = ${d.answer} (${d.source})`,
+  );
   const lines = [
     `# Discovery round ${ctx.round} of ${MAX_ROUNDS}`,
     '',
@@ -75,7 +81,9 @@ export function buildUserPrompt(ctx: TurnContext): string {
     FIXED_BY_PACKS.join(', '),
     '',
     '## Rules for this round',
-    `- Ask at most ${MAX_QUESTIONS_PER_ROUND} questions; question keys are dotted paths into incubator.json (for example "deploy.target").`,
+    ctx.enhance
+      ? `- Ask at most ${MAX_QUESTIONS_PER_ROUND} questions; key every question "request.<topic>" in camelCase (for example "request.dashboardRecords"), never a path in incubator.json. Fold the answers into intent.coreFeatures yourself.`
+      : `- Ask at most ${MAX_QUESTIONS_PER_ROUND} questions; question keys are dotted paths into incubator.json (for example "deploy.target").`,
     '- Each question has 2-4 options with exactly one marked recommended.',
     '- Record every value you set in draftSpec.decisions with source "inferred" and a one-line question/answer.',
     '- Answers the user already gave are final; do not ask about them again.',

@@ -31,6 +31,59 @@ export function schemaAt(key: string): Node | undefined {
   return resolve(node);
 }
 
+/** The only keys an update run may ask under: `request.<topic>`, answers kept as context (never written to the spec). */
+const REQUEST_KEY = /^request\.[a-z][a-zA-Z0-9]*$/;
+
+/**
+ * What an answer to a question keyed `key` does: `spec` writes one value at that path, `context` only
+ * informs the next turn, `null` means the key is not answerable (objects, lists of objects, the owner's
+ * own request text, free-form lists). A model that keys a scope question on `intent.coreFeatures` would
+ * otherwise overwrite the structured field with an option slug.
+ */
+export function questionTarget(key: string): 'spec' | 'context' | null {
+  if (REQUEST_KEY.test(key)) return 'context';
+  if (key === 'intent.narrative' || key === 'decisions' || key.startsWith('decisions.'))
+    return null;
+  const node = schemaAt(key);
+  const type = node?.['type'];
+  if (
+    Array.isArray(node?.['enum']) ||
+    type === 'string' ||
+    type === 'boolean' ||
+    type === 'integer' ||
+    type === 'number'
+  )
+    return 'spec';
+  if (type === 'array') return itemEnum(node) ? 'spec' : null;
+  return null;
+}
+
+function itemEnum(node: Node | undefined): unknown[] | undefined {
+  const items = resolve(node?.['items'] as Node | undefined);
+  const values = items?.['enum'];
+  return Array.isArray(values) ? values : undefined;
+}
+
+/** The option values a question may offer for `key`, or undefined when the schema does not restrict them. */
+function optionIssue(key: string, value: string): string | undefined {
+  const node = schemaAt(key);
+  const type = node?.['type'];
+  const enums = node?.['enum'];
+  if (Array.isArray(enums) && !enums.includes(value))
+    return `"${value}" is not one of ${enums.join(', ')}`;
+  if (type === 'boolean' && value !== 'true' && value !== 'false')
+    return `"${value}" is not true or false`;
+  if ((type === 'integer' || type === 'number') && !Number.isFinite(Number(value)))
+    return `"${value}" is not a number`;
+  if (type === 'array') {
+    const allowed = itemEnum(node);
+    const bad =
+      allowed && (coerceAnswer(key, value) as unknown[]).find((v) => !allowed.includes(v));
+    if (bad !== undefined) return `${JSON.stringify(bad)} is not one of ${allowed!.join(', ')}`;
+  }
+  return undefined;
+}
+
 /** Converts an answer string to the type the schema wants at that path. */
 export function coerceAnswer(key: string, value: string): unknown {
   const node = schemaAt(key);
@@ -53,7 +106,10 @@ export function coerceAnswer(key: string, value: string): unknown {
 }
 
 /** Semantic checks on a turn's questions; failures send the turn back through the schema gate. */
-export function questionIssues(questions: readonly Question[]): Issue[] {
+export function questionIssues(
+  questions: readonly Question[],
+  opts: { enhance?: boolean } = {},
+): Issue[] {
   const issues: Issue[] = [];
   questions.forEach((q, i) => {
     const rec = q.options.filter((o) => o.recommended).length;
@@ -63,12 +119,31 @@ export function questionIssues(questions: readonly Question[]): Issue[] {
         path: `/questions/${i}`,
         message: `question "${q.key}" must mark exactly one option recommended (has ${rec})`,
       });
-    if (!schemaAt(q.key))
-      issues.push({
-        code: 'question.key',
-        path: `/questions/${i}/key`,
-        message: `question key "${q.key}" is not a path in incubator.json`,
-      });
+    const keyIssue = (message: string): void => {
+      issues.push({ code: 'question.key', path: `/questions/${i}/key`, message });
+    };
+    const fixed = FIXED_BY_PACKS.some((k) => covers(k, q.key));
+    if (opts.enhance && !REQUEST_KEY.test(q.key))
+      keyIssue(
+        `question key "${q.key}" is not allowed on an update run: key every question "request.<topic>" (for example "request.dashboardRecords")`,
+      );
+    else if (fixed) {
+      // why: the engine drops pack-fixed questions, so only the key's existence is checked.
+      if (!schemaAt(q.key)) keyIssue(`question key "${q.key}" is not a path in incubator.json`);
+    } else if (!questionTarget(q.key))
+      keyIssue(
+        `question key "${q.key}" cannot be answered with one option: use a single-value path in incubator.json, or "request.<topic>" for scope and behaviour questions`,
+      );
+    else if (!REQUEST_KEY.test(q.key))
+      for (const o of q.options) {
+        const why = optionIssue(q.key, o.value);
+        if (why)
+          issues.push({
+            code: 'question.options',
+            path: `/questions/${i}/options`,
+            message: `option ${why} for "${q.key}"`,
+          });
+      }
     const values = q.options.map((o) => o.value);
     if (new Set(values).size !== values.length)
       issues.push({

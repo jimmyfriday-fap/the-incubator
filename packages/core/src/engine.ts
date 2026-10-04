@@ -24,7 +24,13 @@ import {
   type DiscoveryTurn,
   type IncubatorSpec,
 } from '@incubator/spec';
-import { attributionIssues, mergeTurn, otherIssues, type Draft } from './discovery/merge.js';
+import {
+  attributionIssues,
+  mergeTurn,
+  otherIssues,
+  type AskedInfo,
+  type Draft,
+} from './discovery/merge.js';
 import { buildUserPrompt } from './discovery/prompt-builder.js';
 import { MAX_ROUNDS, questionIssues, selectQuestions } from './discovery/questions.js';
 import type { JournalEntry } from './journal.js';
@@ -1493,15 +1499,24 @@ export class Engine {
     return (e?.['summary'] as PublishSummary | undefined) ?? null;
   }
 
-  private answers(runId: string): { answers: Answer[]; questions: Map<string, string> } {
+  private answers(runId: string): { answers: Answer[]; questions: Map<string, AskedInfo> } {
     const answers: Answer[] = [];
-    const questions = new Map<string, string>();
+    const questions = new Map<string, AskedInfo>();
     for (const e of this.entries(runId)) {
       if (e.type === 'answers') answers.push(...(e['answers'] as Answer[]));
       if (e.type === 'questions')
-        for (const q of e['questions'] as AskedQuestion[]) questions.set(q.key, q.question);
+        for (const q of e['questions'] as AskedQuestion[])
+          questions.set(q.key, {
+            question: q.question,
+            labels: Object.fromEntries(q.options.map((o) => [o.value, o.label])),
+          });
     }
     return { answers, questions };
+  }
+
+  /** The text `intent.narrative` carries: the owner's change request on an update run, else the idea. */
+  private narrativeFor(runId: string, s: RunState): string {
+    return s.input.kind === 'enhance' ? this.requestText(runId) : (s.input.narrative ?? '');
   }
 
   private async draftStep(runId: string, s: RunState): Promise<void> {
@@ -1512,12 +1527,12 @@ export class Engine {
     const enhance = s.input.kind === 'enhance';
     const prompt = loadPrompt(enhance ? 'enhance' : 'discovery');
     const before = this.draft(runId);
-    const narrative = enhance ? this.requestText(runId) : (s.input.narrative ?? '');
+    const narrative = this.narrativeFor(runId, s);
     const baseline = enhance ? this.enhanceBaseline(runId) : [];
     const user = buildUserPrompt({
       round: s.round,
       narrative,
-      ...(enhance ? { narrativeHeading: 'Change request' } : {}),
+      ...(enhance ? { narrativeHeading: 'Change request', enhance: true } : {}),
       analysis: enhance ? scanDigest(this.readScan(runId)) : null,
       draft: before,
       decisions: before.decisions ?? [],
@@ -1535,7 +1550,7 @@ export class Engine {
       {
         log: this.deps.log,
         extraCheck: (turn) => [
-          ...questionIssues(turn.questions),
+          ...questionIssues(turn.questions, { enhance }),
           ...attributionIssues(before, turn),
           ...(enhance
             ? [...featureIssues(turn.draftSpec, baseline), ...outsideIntentIssues(before, turn)]
@@ -1589,7 +1604,7 @@ export class Engine {
     const draft = mergeTurn({
       before: this.draft(runId),
       turn: { draftSpec: {}, questions: [], done: false },
-      narrative: s.input.narrative ?? '',
+      narrative: this.narrativeFor(runId, s),
       answers: all,
       questions: texts,
       untrustedSource: false,
@@ -1612,8 +1627,16 @@ export class Engine {
         ...spec,
         intent: {
           ...spec.intent,
+          // why: a malformed feature (not an object with an id) must reach validateSpec and park the run,
+          // not crash target resolution.
           coreFeatures: spec.intent.coreFeatures.map((f) =>
-            baseline.includes(f.id) || f.targets ? f : { ...f, targets: resolveTargets(scan, f) },
+            typeof f !== 'object' ||
+            f === null ||
+            typeof f.id !== 'string' ||
+            baseline.includes(f.id) ||
+            f.targets
+              ? f
+              : { ...f, targets: resolveTargets(scan, f) },
           ),
         },
       };
