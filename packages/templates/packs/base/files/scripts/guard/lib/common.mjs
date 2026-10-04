@@ -2,6 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { gitEnv } from './proc.mjs';
 
 /** Exit-code contract: 0 pass, 1 the tool broke, 2 a policy/gate finding, 130 interrupted. */
 export const EXIT = Object.freeze({ OK: 0, TOOL: 1, POLICY: 2, INTERRUPTED: 130 });
@@ -70,6 +71,8 @@ function walk(root, rel, out) {
 export function listFiles(root) {
   const res = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
     cwd: root,
+    // Inside a git hook an inherited GIT_DIR would list the hooked repository, not root.
+    env: gitEnv(),
     encoding: 'utf8',
     shell: false,
     windowsHide: true,

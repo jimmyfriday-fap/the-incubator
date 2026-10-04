@@ -1,5 +1,12 @@
 // Unit tests for the guard toolkit. Each guard is exercised against a throwaway repo tree.
-import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -11,7 +18,7 @@ import { checkBoundaries } from './deps-boundary.mjs';
 import { checkDrift, expandId } from './drift.mjs';
 import { findIsolationIssues } from './isolation.mjs';
 import { checkLanes } from './lane-contract.mjs';
-import { globToRegExp, parseArgs } from './lib/common.mjs';
+import { globToRegExp, listFiles, parseArgs } from './lib/common.mjs';
 import { parseEnrichOutput } from './lib/enrich-contract.mjs';
 import { gitleaksFindings, semgrepFindings, trivyFindings } from './lib/findings.mjs';
 import { regionBody, scanMarkers } from './lib/markers.mjs';
@@ -22,7 +29,7 @@ import {
   pinnedNodeMajor,
   runUnderPinnedNode,
 } from './lib/node-runtime.mjs';
-import { parseCmdShim } from './lib/proc.mjs';
+import { childEnv, parseCmdShim, run, which } from './lib/proc.mjs';
 import { evaluateAssertion, getPath, validateScenario } from './lib/scenario.mjs';
 import { lintPlan, lintPlans } from './plan-lint.mjs';
 import { gate, validateRegister } from './policy-gate.mjs';
@@ -610,5 +617,64 @@ describe('node runtime', () => {
     const left = await runUnderPinnedNode(root, argv, { current: other, env: {} });
     expect(left.code).toBeNull();
     expect(left.warning).toMatch(/set INCUBATOR_NODE/);
+  });
+});
+
+// The pre-push hook runs these tests with git's GIT_DIR exported. Scratch repositories only.
+describe('git children inside a git hook', () => {
+  const hookVars = ['GIT_DIR', 'GIT_COMMON_DIR'];
+  const saved = Object.fromEntries(hookVars.map((k) => [k, process.env[k]]));
+  const restore = () => {
+    for (const k of hookVars) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  };
+
+  it('drop the repository variables for git only, and an explicit env still wins', () => {
+    process.env.GIT_DIR = 'hooked';
+    try {
+      for (const git of ['git', 'C:\\Program Files\\Git\\cmd\\git.exe', '/usr/bin/git'])
+        expect(childEnv(git).GIT_DIR, git).toBeUndefined();
+      expect(childEnv('node').GIT_DIR).toBe('hooked');
+      expect(childEnv('git', { GIT_DIR: 'chosen' }).GIT_DIR).toBe('chosen');
+    } finally {
+      restore();
+    }
+  });
+
+  it('git init and listFiles in a scratch directory leave the hooked worktree alone', async () => {
+    const [gitCmd, gitPre] = which('git');
+    const git = async (cwd, ...args) => {
+      const r = await run(
+        gitCmd,
+        [...gitPre, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...args],
+        { cwd, capture: true, timeoutMs: 30_000 },
+      );
+      expect(r.code, `git ${args.join(' ')}: ${r.stderr}`).toBe(0);
+      return r.stdout.trim();
+    };
+    const root = mkdtempSync(path.join(tmpdir(), 'guard-hook-'));
+    const main = path.join(root, 'main');
+    mkdirSync(main);
+    await git(main, 'init', '-q', '-b', 'main');
+    writeFileSync(path.join(main, 'hooked.txt'), 'x');
+    await git(main, 'add', '-A');
+    await git(main, 'commit', '-q', '-m', 'base');
+    await git(main, 'worktree', 'add', '-q', path.join(root, 'wt'), '-b', 'wt-branch');
+    const config = path.join(main, '.git', 'config');
+    const before = readFileSync(config, 'utf8');
+    const other = mkdtempSync(path.join(tmpdir(), 'guard-other-'));
+    writeFileSync(path.join(other, 'a.txt'), 'a');
+    process.env.GIT_DIR = await git(path.join(root, 'wt'), 'rev-parse', '--absolute-git-dir');
+    process.env.GIT_COMMON_DIR = path.join(main, '.git');
+    try {
+      await git(other, 'init', '-q', '-b', 'main');
+      expect(readFileSync(config, 'utf8')).toBe(before);
+      expect(existsSync(path.join(other, '.git'))).toBe(true);
+      expect(listFiles(other)).toEqual(['a.txt']);
+    } finally {
+      restore();
+    }
   });
 });

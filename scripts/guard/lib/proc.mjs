@@ -56,6 +56,36 @@ export function packageManager(preferred = 'pnpm') {
   return which(preferred) ?? which('npm');
 }
 
+/**
+ * Variables git exports to a hook that pin it to one repository. A git child that inherits them
+ * ignores its cwd: `git init` in a scratch directory re-initialises the hooked repository and, from a
+ * linked worktree, writes core.bare = true into the shared config. Same list as @incubator/runtime.
+ */
+const GIT_REPOSITORY_ENV = [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_COMMON_DIR',
+  'GIT_PREFIX',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_IMPLICIT_WORK_TREE',
+];
+
+/** `env` without the repository-pinning git variables, for spawning git. */
+export function gitEnv(env = process.env) {
+  const out = { ...env };
+  for (const key of GIT_REPOSITORY_ENV) delete out[key];
+  return out;
+}
+
+/** The environment for a child: inherited (minus the git repository variables for git), then `env`. */
+export function childEnv(command, env) {
+  const name = (command.split(/[\\/]/).pop() ?? '').toLowerCase();
+  const base = name === 'git' || name === 'git.exe' ? gitEnv() : process.env;
+  return env ? { ...base, ...env } : base;
+}
+
 /** Spawns without a shell. Resolves {code, stdout, stderr}; stdio inherited unless capture. */
 export function run(
   command,
@@ -65,7 +95,7 @@ export function run(
   return new Promise((resolve) => {
     const child = spawn(command, args, {
       cwd,
-      env: env ? { ...process.env, ...env } : process.env,
+      env: childEnv(command, env),
       shell: false,
       windowsHide: true,
       stdio: [
