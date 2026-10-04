@@ -4,6 +4,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { isMain } from '../guard/lib/common.mjs';
+import { runUnderPinnedNode } from '../guard/lib/node-runtime.mjs';
 import { run, which } from '../guard/lib/proc.mjs';
 
 export function installCommand(root) {
@@ -18,7 +19,10 @@ export function installCommand(root) {
 
 async function main() {
   const root = process.cwd();
-  const lines = [];
+  // Under the pinned Node the child installs and checks; engine-strict refuses any other.
+  const pinned = await runUnderPinnedNode(root);
+  if (pinned.code !== null) return;
+  const lines = pinned.warning ? [`node: ${pinned.warning}`] : [];
   const install = installCommand(root);
   if (install) {
     const bin = which(install[0]);

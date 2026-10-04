@@ -319,6 +319,11 @@
       "role": "toolkit"
     },
     {
+      "src": "files/scripts/guard/lib/node-runtime.mjs",
+      "dest": "scripts/guard/lib/node-runtime.mjs",
+      "role": "toolkit"
+    },
+    {
       "src": "files/scripts/guard/lib/proc.mjs",
       "dest": "scripts/guard/lib/proc.mjs",
       "role": "toolkit"

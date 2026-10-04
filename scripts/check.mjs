@@ -2,6 +2,7 @@
 // Runs a check profile from config/checks.json. Every step runs (so every problem is reported),
 // then the result follows the exit-code contract: any tool breakage → 1, else any finding → 2, else 0.
 import { EXIT, isMain, parseArgs, readJson } from './guard/lib/common.mjs';
+import { runUnderPinnedNode } from './guard/lib/node-runtime.mjs';
 import { nodeBin, packageManager, run, which } from './guard/lib/proc.mjs';
 
 export function resolveStep(root, step) {
@@ -52,6 +53,9 @@ export function overall(results) {
 async function main() {
   const { flags, positional } = parseArgs(process.argv.slice(2));
   const root = process.cwd();
+  const pinned = await runUnderPinnedNode(root);
+  if (pinned.code !== null) return pinned.code;
+  if (pinned.warning) process.stdout.write(`⚠ ${pinned.warning}\n`);
   const cfg = readJson(root, 'config/checks.json');
   const profile = positional[0] ?? 'quick';
   let ids = cfg.profiles[profile];
@@ -94,6 +98,8 @@ async function main() {
     process.stdout.write(
       `${icon[r.status]} ${r.id.padEnd(20)} ${r.status.padEnd(11)} ${(r.ms / 1000).toFixed(1)}s ${r.note}\n`,
     );
+  // Repeated under the summary, which is all a hook shows.
+  if (pinned.warning) process.stdout.write(`⚠ ${pinned.warning}\n`);
   const code = overall(results);
   process.stdout.write(`exit ${code}\n`);
   return code;

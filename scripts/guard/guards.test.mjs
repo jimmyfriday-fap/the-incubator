@@ -15,6 +15,13 @@ import { globToRegExp, parseArgs } from './lib/common.mjs';
 import { parseEnrichOutput } from './lib/enrich-contract.mjs';
 import { gitleaksFindings, semgrepFindings, trivyFindings } from './lib/findings.mjs';
 import { regionBody, scanMarkers } from './lib/markers.mjs';
+import {
+  NODE_VAR,
+  nodeChoice,
+  pathFirst,
+  pinnedNodeMajor,
+  runUnderPinnedNode,
+} from './lib/node-runtime.mjs';
 import { parseCmdShim } from './lib/proc.mjs';
 import { evaluateAssertion, getPath, validateScenario } from './lib/scenario.mjs';
 import { lintPlan, lintPlans } from './plan-lint.mjs';
@@ -548,5 +555,60 @@ describe('language layouts', () => {
     expect(findings).toEqual([expect.stringMatching(/^pkg\/bad\.py:1: /)]);
     expect(existsSync(path.join(root, '__pycache__'))).toBe(false);
     expect(existsSync(path.join(root, 'pkg/__pycache__'))).toBe(false);
+  });
+});
+
+describe('node runtime', () => {
+  const thisMajor = Number(process.versions.node.split('.')[0]);
+  const other = `v${thisMajor + 1}.0.0`;
+
+  it('reads the major version .nvmrc pins', () => {
+    expect(pinnedNodeMajor(repo({ '.nvmrc': '22\n' }))).toBe(22);
+    expect(pinnedNodeMajor(repo({ '.nvmrc': 'v20.11.1' }))).toBe(20);
+    expect(pinnedNodeMajor(repo({ '.nvmrc': 'lts/*' }))).toBeNull();
+    expect(pinnedNodeMajor(repo({ 'a.txt': '' }))).toBeNull();
+  });
+
+  it('stays, switches to INCUBATOR_NODE, or warns', async () => {
+    const root = repo({ '.nvmrc': '22\n' });
+    const versionOf = (bin) => Promise.resolve({ n22: 'v22.23.3', n24: 'v24.1.0' }[bin] ?? null);
+    const choose = (current, env) => nodeChoice(root, { current, env, versionOf });
+    expect(await choose('v22.12.0', {})).toEqual({ action: 'stay' });
+    expect(await nodeChoice(repo({ 'a.txt': '' }), { current: 'v24.1.0', env: {} })).toEqual({
+      action: 'stay',
+    });
+    expect(await choose('v24.1.0', { [NODE_VAR]: 'n22' })).toEqual({
+      action: 'switch',
+      bin: 'n22',
+      version: 'v22.23.3',
+    });
+    const unset = await choose('v24.1.0', {});
+    expect(unset.action).toBe('warn');
+    expect(unset.message).toMatch(/v24\.1\.0 is running but \.nvmrc pins 22: set INCUBATOR_NODE/);
+    expect((await choose('v24.1.0', { [NODE_VAR]: 'n24' })).message).toMatch(/is v24\.1\.0/);
+    expect((await choose('v24.1.0', { [NODE_VAR]: 'missing' })).message).toMatch(/not runnable/);
+  });
+
+  it('puts a directory first on PATH under the spelling the environment uses', () => {
+    expect(pathFirst('d', { Path: 'a' })).toEqual({ Path: `d${path.delimiter}a` });
+    expect(pathFirst('d', { PATH: 'a' })).toEqual({ PATH: `d${path.delimiter}a` });
+    expect(pathFirst('d', {})).toEqual({ PATH: 'd' });
+  });
+
+  it('re-runs the script under the pinned Node and returns its exit code', async () => {
+    const root = repo({
+      '.nvmrc': `${thisMajor}\n`,
+      'probe.mjs': 'process.exitCode = process.argv[2] === "go" ? 3 : 4;',
+    });
+    const argv = ['node', path.join(root, 'probe.mjs'), 'go'];
+    const env = { ...process.env, [NODE_VAR]: process.execPath };
+    expect(await runUnderPinnedNode(root, argv, { current: other, env })).toEqual({
+      code: 3,
+      warning: null,
+    });
+    expect(await runUnderPinnedNode(root, argv, { env })).toEqual({ code: null, warning: null });
+    const left = await runUnderPinnedNode(root, argv, { current: other, env: {} });
+    expect(left.code).toBeNull();
+    expect(left.warning).toMatch(/set INCUBATOR_NODE/);
   });
 });
