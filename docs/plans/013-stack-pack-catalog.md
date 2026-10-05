@@ -2,6 +2,10 @@
 
 ## Executor preamble
 
+> Amended by ADR-027 (2026-10-04): the manifest catalog described here is how the four built-in packs
+> describe themselves. Stacks beyond them are retrieved from their own generator through a small catalog in
+> code (plan 016), so this plan no longer gates them.
+
 Stage 1 of "standard stack packs" (ADR-026). The list of stack packs, and the rules about which
 frameworks, package managers, databases and deploy targets go with each, are hardcoded in about a dozen
 places: the schema enums, `packages/spec/src/{constants,defaults,semantics}.ts`, the analyzer's

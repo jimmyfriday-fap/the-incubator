@@ -27,6 +27,9 @@ const SKIP = new Set([
   'DerivedData',
 ]);
 
+/** Other checkouts of the same project that agent tools keep inside it; not part of the project. */
+const SKIP_PATHS = ['.claude/worktrees'];
+
 /**
  * Read-only view of a repository for detectors (TDD §7.3): a sorted POSIX file list (at most 5,000
  * files, skipping dependency and build directories) and lazy reads capped at 1 MiB. Symlinks are
@@ -176,7 +179,7 @@ export function viewFromDir(root: string, opts: ViewOptions = {}): RepoView {
     for (const name of readdirSync(path.join(root, rel)).sort()) {
       const r = rel ? `${rel}/${name}` : name;
       if (lowerBound) return;
-      if (SKIP.has(name)) {
+      if (SKIP.has(name) || SKIP_PATHS.some((p) => r === p || r.endsWith(`/${p}`))) {
         // `lstat` decides whether it is a directory: an ignored *file* is simply not listed.
         if (lstat(path.join(root, r)).isDirectory()) skips.add('ignored-dir', r);
         continue;

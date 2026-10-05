@@ -1,0 +1,439 @@
+{
+  "coverage": {
+    "total": 19,
+    "totalIsLowerBound": false,
+    "listed": 19,
+    "scanned": 19,
+    "skipped": [],
+    "caps": {
+      "maxFiles": 5000,
+      "maxBytes": 1048576
+    }
+  },
+  "analysis": {
+    "name": null,
+    "description": null,
+    "stack": null,
+    "ecosystem": {
+      "id": "dart",
+      "label": "Dart/Flutter",
+      "evidence": [
+        {
+          "file": "pubspec.yaml",
+          "note": "root manifest"
+        }
+      ]
+    },
+    "tests": {
+      "runners": [
+        "flutter_test",
+        "dart_test"
+      ],
+      "files": 2,
+      "count": 4
+    },
+    "workflows": [],
+    "agents": [],
+    "deploy": {
+      "target": null,
+      "evidence": []
+    },
+    "security": {
+      "scanWorkflow": false,
+      "localRules": 0,
+      "secretScanConfig": false
+    },
+    "hasSpec": false,
+    "truncated": false
+  },
+  "entryPoints": [
+    {
+      "file": "cli/bin/club.dart",
+      "kind": "conventional",
+      "note": "Dart entry point"
+    },
+    {
+      "file": "lib/main.dart",
+      "kind": "conventional",
+      "note": "Dart entry point"
+    }
+  ],
+  "modules": [
+    {
+      "dir": "cli/bin",
+      "files": 1,
+      "languages": [
+        "Dart"
+      ]
+    },
+    {
+      "dir": "cli/lib",
+      "files": 1,
+      "languages": [
+        "Dart"
+      ]
+    },
+    {
+      "dir": "cli/lib/src/commands",
+      "files": 2,
+      "languages": [
+        "Dart"
+      ]
+    },
+    {
+      "dir": "cli/test",
+      "files": 1,
+      "languages": [
+        "Dart"
+      ]
+    },
+    {
+      "dir": "lib",
+      "files": 1,
+      "languages": [
+        "Dart"
+      ]
+    },
+    {
+      "dir": "lib/features/admin",
+      "files": 1,
+      "languages": [
+        "Dart"
+      ]
+    },
+    {
+      "dir": "lib/features/auth",
+      "files": 1,
+      "languages": [
+        "Dart"
+      ]
+    },
+    {
+      "dir": "lib/features/events",
+      "files": 2,
+      "languages": [
+        "Dart"
+      ]
+    },
+    {
+      "dir": "lib/models",
+      "files": 1,
+      "languages": [
+        "Dart"
+      ]
+    },
+    {
+      "dir": "lib/providers",
+      "files": 1,
+      "languages": [
+        "Dart"
+      ]
+    },
+    {
+      "dir": "lib/router",
+      "files": 1,
+      "languages": [
+        "Dart"
+      ]
+    },
+    {
+      "dir": "test",
+      "files": 2,
+      "languages": [
+        "Dart"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "cli/bin",
+      "to": "cli/lib",
+      "count": 1
+    },
+    {
+      "from": "cli/lib",
+      "to": "cli/lib/src/commands",
+      "count": 1
+    },
+    {
+      "from": "lib",
+      "to": "lib/router",
+      "count": 1
+    },
+    {
+      "from": "lib/features/events",
+      "to": "lib/models",
+      "count": 1
+    },
+    {
+      "from": "lib/features/events",
+      "to": "lib/providers",
+      "count": 1
+    },
+    {
+      "from": "lib/providers",
+      "to": "lib/models",
+      "count": 1
+    },
+    {
+      "from": "lib/router",
+      "to": "lib/features/admin",
+      "count": 1
+    },
+    {
+      "from": "lib/router",
+      "to": "lib/features/auth",
+      "count": 1
+    },
+    {
+      "from": "lib/router",
+      "to": "lib/features/events",
+      "count": 2
+    }
+  ],
+  "dependencies": [
+    {
+      "file": "cli/pubspec.yaml",
+      "manager": "pub",
+      "runtime": [
+        "args@^2.6.0"
+      ],
+      "dev": [
+        "test@^1.25.0"
+      ]
+    },
+    {
+      "file": "pubspec.yaml",
+      "manager": "pub",
+      "runtime": [
+        "flutter",
+        "flutter_riverpod@^2.6.1",
+        "go_router@^14.8.1",
+        "intl@any",
+        "supabase_flutter@^2.8.4"
+      ],
+      "dev": [
+        "flutter_lints@^6.0.0",
+        "flutter_test"
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "method": "ROUTE",
+      "path": "/login",
+      "file": "lib/features/auth/login_screen.dart",
+      "framework": "go_router"
+    },
+    {
+      "method": "ROUTE",
+      "path": "/events/:eventId",
+      "file": "lib/features/events/event_screen.dart",
+      "framework": "go_router"
+    },
+    {
+      "method": "ROUTE",
+      "path": "/",
+      "file": "lib/features/events/events_screen.dart",
+      "framework": "go_router"
+    }
+  ],
+  "commands": [
+    {
+      "name": "list",
+      "file": "cli/lib/src/commands/events_commands.dart",
+      "kind": "args"
+    },
+    {
+      "name": "show",
+      "file": "cli/lib/src/commands/events_commands.dart",
+      "kind": "args"
+    }
+  ],
+  "dataModel": [
+    {
+      "name": "currentRoleProvider",
+      "file": "lib/providers/events_provider.dart",
+      "kind": "riverpod"
+    },
+    {
+      "name": "eventsProvider",
+      "file": "lib/providers/events_provider.dart",
+      "kind": "riverpod"
+    },
+    {
+      "name": "events",
+      "file": "supabase/migrations/001_init.sql",
+      "kind": "sql-table"
+    },
+    {
+      "name": "profiles",
+      "file": "supabase/migrations/001_init.sql",
+      "kind": "sql-table"
+    }
+  ],
+  "screens": [
+    {
+      "path": null,
+      "widget": "AdminDashboard",
+      "file": "lib/features/admin/admin_dashboard.dart",
+      "area": "admin"
+    },
+    {
+      "path": null,
+      "widget": "ReportsPage",
+      "file": "lib/features/admin/admin_dashboard.dart",
+      "area": "admin"
+    },
+    {
+      "path": "/login",
+      "widget": "LoginScreen",
+      "file": "lib/features/auth/login_screen.dart",
+      "area": "auth"
+    },
+    {
+      "path": "/events/:eventId",
+      "widget": "EventScreen",
+      "file": "lib/features/events/event_screen.dart",
+      "area": "events"
+    },
+    {
+      "path": "/",
+      "widget": "EventsScreen",
+      "file": "lib/features/events/events_screen.dart",
+      "area": "events"
+    }
+  ],
+  "roles": [
+    {
+      "name": "UserRole",
+      "values": [
+        "admin",
+        "organizer",
+        "member"
+      ],
+      "file": "lib/models/profile.dart",
+      "kind": "dart-enum"
+    },
+    {
+      "name": "user_role",
+      "values": [
+        "admin",
+        "organizer",
+        "member"
+      ],
+      "file": "supabase/migrations/001_init.sql",
+      "kind": "sql-enum"
+    }
+  ],
+  "tests": {
+    "runners": [
+      "flutter_test",
+      "dart_test"
+    ],
+    "files": 2,
+    "count": 4,
+    "dirs": [
+      "cli/test",
+      "test"
+    ],
+    "coverageSignals": []
+  },
+  "ci": [],
+  "conventions": {
+    "lint": [
+      "flutter_lints"
+    ],
+    "format": [
+      "dart format"
+    ],
+    "typecheck": [
+      "dart analyzer (strict)"
+    ],
+    "hooks": [],
+    "fileNaming": "snake_case"
+  },
+  "inventory": {
+    "languages": [
+      {
+        "language": "Dart",
+        "files": 15
+      },
+      {
+        "language": "YAML",
+        "files": 3
+      },
+      {
+        "language": "SQL",
+        "files": 1
+      }
+    ],
+    "topDirs": [
+      {
+        "dir": "lib",
+        "files": 8
+      },
+      {
+        "dir": "cli",
+        "files": 6
+      },
+      {
+        "dir": ".",
+        "files": 2
+      },
+      {
+        "dir": "test",
+        "files": 2
+      },
+      {
+        "dir": "supabase",
+        "files": 1
+      }
+    ],
+    "largest": [
+      {
+        "file": "lib/router/app_router.dart",
+        "chars": 870
+      },
+      {
+        "file": "lib/features/events/events_screen.dart",
+        "chars": 503
+      },
+      {
+        "file": "lib/features/events/event_screen.dart",
+        "chars": 451
+      },
+      {
+        "file": "lib/features/admin/admin_dashboard.dart",
+        "chars": 358
+      },
+      {
+        "file": "lib/providers/events_provider.dart",
+        "chars": 301
+      },
+      {
+        "file": "cli/lib/src/commands/events_commands.dart",
+        "chars": 278
+      },
+      {
+        "file": "test/events_test.dart",
+        "chars": 268
+      },
+      {
+        "file": "lib/main.dart",
+        "chars": 245
+      },
+      {
+        "file": "lib/features/auth/login_screen.dart",
+        "chars": 197
+      },
+      {
+        "file": "test/router_test.dart",
+        "chars": 193
+      }
+    ]
+  },
+  "notes": [
+    "1 go_router routes use a non-literal path and are not listed"
+  ]
+}

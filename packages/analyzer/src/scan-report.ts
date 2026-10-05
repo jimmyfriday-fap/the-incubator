@@ -120,6 +120,24 @@ export function renderScanReport(scan: RepoScan): string {
       scan.routes.map((r) => [r.method, r.path, r.file, r.framework]),
     ),
   );
+  if (scan.screens?.length) {
+    out.push('## Screens', '');
+    out.push(
+      ...table(
+        ['Route', 'Screen', 'File', 'Area'],
+        scan.screens.map((x) => [x.path ?? '(no route found)', x.widget, x.file, x.area ?? '']),
+      ),
+    );
+  }
+  if (scan.roles?.length) {
+    out.push('## Roles', '');
+    out.push(
+      ...table(
+        ['Name', 'Values', 'File', 'Kind'],
+        scan.roles.map((r) => [r.name, r.values.join(', '), r.file, r.kind]),
+      ),
+    );
+  }
   out.push('## Commands', '');
   out.push(
     ...table(
@@ -188,6 +206,9 @@ const DIGEST_CAPS = {
   modules: 60,
   edges: 120,
   entryPoints: 20,
+  screens: 80,
+  roles: 10,
+  pubPackages: 60,
 };
 
 /**
@@ -213,6 +234,21 @@ export function scanDigest(scan: RepoScan): string {
     routes: scan.routes.slice(0, DIGEST_CAPS.routes),
     commands: scan.commands.slice(0, DIGEST_CAPS.commands),
     dataModel: scan.dataModel.slice(0, DIGEST_CAPS.dataModel),
+    // What the app shows and who it is for, and the Dart packages it builds on: only when found, so
+    // every other digest stays byte-identical.
+    ...(scan.screens?.length ? { screens: scan.screens.slice(0, DIGEST_CAPS.screens) } : {}),
+    ...(scan.roles?.length ? { roles: scan.roles.slice(0, DIGEST_CAPS.roles) } : {}),
+    ...(scan.dependencies.some((d) => d.manager === 'pub')
+      ? {
+          pubPackages: scan.dependencies
+            .filter((d) => d.manager === 'pub')
+            .map((d) => ({
+              file: d.file,
+              runtime: d.runtime.slice(0, DIGEST_CAPS.pubPackages),
+              dev: d.dev.slice(0, DIGEST_CAPS.pubPackages),
+            })),
+        }
+      : {}),
     tests: { runners: scan.tests.runners, files: scan.tests.files, dirs: scan.tests.dirs },
     ci: scan.ci.map((c) => ({ file: c.file, triggers: c.triggers })),
     deploy: a.deploy.target,

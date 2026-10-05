@@ -1,6 +1,7 @@
 # ADR-026: A stack pack catalog, and a recommended stack for a new tool
 
 - **Status:** Proposed
+- **Amended by:** [ADR-027](027-retrieved-stacks.md): stacks beyond the four packs are retrieved from their own generator; plans 016 to 018 are no longer one pack each
 - **Date:** 2026-10-02
 - **Context doc:** [`docs/TDD.md`](../TDD.md) §7, §9
 

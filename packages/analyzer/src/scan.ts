@@ -16,6 +16,8 @@ export const SCAN_CAPS = {
   routes: 200,
   commands: 100,
   models: 200,
+  screens: 200,
+  roles: 20,
   workflows: 50,
   topDirs: 30,
   largest: 10,
@@ -41,7 +43,7 @@ export interface ModuleEdge {
 }
 export interface DependencyList {
   file: string;
-  manager: 'npm' | 'pip' | 'composer';
+  manager: 'npm' | 'pip' | 'composer' | 'pub';
   runtime: string[];
   dev: string[];
 }
@@ -60,6 +62,20 @@ export interface ModelInfo {
   name: string;
   file: string;
   kind: string;
+}
+/** A screen of an app: the route that opens it, its widget, the file it lives in, and its feature area. */
+export interface ScreenInfo {
+  path: string | null;
+  widget: string;
+  file: string;
+  area: string | null;
+}
+/** A user-role enumeration the app declares (SQL enum or Dart enum), with its values. */
+export interface RoleInfo {
+  name: string;
+  values: string[];
+  file: string;
+  kind: 'sql-enum' | 'dart-enum';
 }
 export interface CiInfo {
   file: string;
@@ -90,6 +106,10 @@ export interface RepoScan {
   routes: RouteInfo[];
   commands: CommandInfo[];
   dataModel: ModelInfo[];
+  /** Present only when screens were found (Dart/Flutter today): what the app shows. */
+  screens?: ScreenInfo[];
+  /** Present only when role enumerations were found: who the app is for. */
+  roles?: RoleInfo[];
   tests: {
     runners: string[];
     files: number;
@@ -147,8 +167,9 @@ const LANGUAGES: Record<string, string> = {
   yaml: 'YAML',
   toml: 'TOML',
   prisma: 'Prisma',
+  dart: 'Dart',
 };
-const SOURCE_LANGS = new Set(['TypeScript', 'JavaScript', 'Python', 'PHP']);
+const SOURCE_LANGS = new Set(['TypeScript', 'JavaScript', 'Python', 'PHP', 'Dart']);
 
 /** Code-unit order: identical on every platform, unlike `localeCompare` (ICU-dependent). */
 export function cmp(a: string, b: string): number {
@@ -166,10 +187,25 @@ function dirOf(file: string): string {
   const i = file.lastIndexOf('/');
   return i < 0 ? '.' : file.slice(0, i);
 }
-/** A module is a source file's directory, cut at two levels (`src/routes/users.js` → `src/routes`). */
+/**
+ * A module is a source file's directory, cut at two levels (`src/routes/users.js` → `src/routes`).
+ * A Dart package keeps its code under `lib/`, and a feature there is a module of its own
+ * (`lib/features/meet/meet_screen.dart` → `lib/features/meet`, `cli/lib/src/commands/x.dart` →
+ * `cli/lib/src/commands`), which a two-level cut would collapse into one.
+ */
 function moduleOf(file: string): string {
   const d = dirOf(file);
-  return d === '.' ? '.' : d.split('/').slice(0, 2).join('/');
+  if (d === '.') return '.';
+  const parts = d.split('/');
+  if (file.endsWith('.dart')) {
+    const lib = parts.indexOf('lib');
+    if (lib >= 0) {
+      const rest = parts.slice(lib + 1);
+      const keep = rest[0] === 'features' || rest[0] === 'src' ? 2 : 1;
+      return parts.slice(0, lib + 1 + Math.min(keep, rest.length)).join('/');
+    }
+  }
+  return parts.slice(0, 2).join('/');
 }
 /** Joins a relative import onto a file's directory without touching the filesystem. */
 function resolveRel(from: string, rel: string): string {
@@ -239,6 +275,9 @@ function entryPoints(view: RepoView): EntryPoint[] {
   for (const f of view.files)
     if (conventional.test(f))
       out.push({ file: f, kind: 'conventional', note: 'conventional name' });
+  for (const f of view.files)
+    if (/(?:^|\/)lib\/main\.dart$/.test(f) || /(?:^|\/)bin\/[\w-]+\.dart$/.test(f))
+      out.push({ file: f, kind: 'conventional', note: 'Dart entry point' });
   for (const f of view.glob('**/Dockerfile*')) {
     const cmd = /^\s*(?:CMD|ENTRYPOINT)\s+(.+)$/m.exec(view.read(f) ?? '');
     if (cmd) out.push({ file: f, kind: 'docker', note: clean(cmd[0]) });
@@ -267,8 +306,44 @@ function pyRequirements(text: string): string[] {
     .map((l) => clean(l, 80));
 }
 
+/**
+ * The `dependencies:` and `dev_dependencies:` blocks of a pubspec, line by line (no YAML parser). An
+ * entry is `name@version` when the line carries a version, else just the name (`sdk: flutter`, `git:`
+ * and `path:` forms nest a deeper block, which is skipped).
+ */
+function pubDependencies(text: string): { runtime: string[]; dev: string[] } {
+  const lists: Record<'runtime' | 'dev', string[]> = { runtime: [], dev: [] };
+  let into: string[] | null = null;
+  let indent: number | null = null;
+  for (const raw of text.split(/\r?\n/)) {
+    if (!raw.trim() || /^\s*#/.test(raw)) continue;
+    const lead = raw.length - raw.trimStart().length;
+    if (lead === 0) {
+      const head = /^(dependencies|dev_dependencies):\s*(?:#.*)?$/.exec(raw);
+      into = head ? (head[1] === 'dependencies' ? lists.runtime : lists.dev) : null;
+      indent = null;
+      continue;
+    }
+    if (!into) continue;
+    indent ??= lead;
+    if (lead !== indent) continue;
+    const m = /^\s*([A-Za-z_][\w]*):\s*(.*)$/.exec(raw);
+    if (!m) continue;
+    const version = m[2]!
+      .replace(/\s+#.*$/, '')
+      .replace(/^['"]|['"]$/g, '')
+      .trim();
+    into.push(clean(version ? `${m[1]!}@${version}` : m[1]!, 80));
+  }
+  return { runtime: lists.runtime.sort(), dev: lists.dev.sort() };
+}
+
 function dependencies(view: RepoView): DependencyList[] {
   const out: DependencyList[] = [];
+  for (const file of view.glob('**/pubspec.yaml')) {
+    const text = view.read(file);
+    if (text !== null) out.push({ file, manager: 'pub', ...pubDependencies(text) });
+  }
   for (const file of view.glob('**/package.json')) {
     const pkg = json(view, file);
     if (!pkg) continue;
@@ -325,6 +400,20 @@ function dependencies(view: RepoView): DependencyList[] {
 
 const JS_EXT = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'];
 
+/** Classes a go_router builder wraps a screen in; the screen is the class inside them. */
+const DART_PAGE_WRAPPERS = new Set([
+  'MaterialPage',
+  'CupertinoPage',
+  'NoTransitionPage',
+  'CustomTransitionPage',
+  'Scaffold',
+  'Builder',
+  'Consumer',
+  'Material',
+  'Center',
+  'Container',
+]);
+
 function jsTargets(view: RepoView, from: string, spec: string): string | null {
   if (!spec.startsWith('.')) return null;
   const base = resolveRel(dirOf(from), spec);
@@ -358,11 +447,42 @@ function phpTargets(view: RepoView, from: string, spec: string): string | null {
   return [resolveRel(dirOf(from), s), s].find((c) => view.has(c)) ?? null;
 }
 
+/** Dart package names to the directory of the pubspec that declares them. */
+function dartPackages(view: RepoView): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const f of view.glob('**/pubspec.yaml')) {
+    const name = /^name:\s*['"]?([A-Za-z_]\w*)/m.exec(view.read(f) ?? '')?.[1];
+    if (name && !out.has(name)) out.set(name, dirOf(f));
+  }
+  return out;
+}
+
+/** A Dart import to the repository file it names: relative paths, and `package:<this repo's name>/…`. */
+function dartTargets(
+  view: RepoView,
+  from: string,
+  spec: string,
+  pkgs: ReadonlyMap<string, string>,
+): string | null {
+  if (spec.startsWith('dart:')) return null;
+  if (spec.startsWith('package:')) {
+    const m = /^package:(\w+)\/(.+)$/.exec(spec);
+    const dir = m ? pkgs.get(m[1]!) : undefined;
+    if (!m || dir === undefined) return null;
+    const target = dir === '.' ? `lib/${m[2]!}` : `${dir}/lib/${m[2]!}`;
+    return view.has(target) ? target : null;
+  }
+  const target = resolveRel(dirOf(from), spec);
+  return view.has(target) ? target : null;
+}
+
 interface Extracted {
   edges: Map<string, number>;
   routes: Capped<RouteInfo>;
   commands: Capped<CommandInfo>;
   models: Capped<ModelInfo>;
+  screens: Capped<ScreenInfo>;
+  roles: Capped<RoleInfo>;
 }
 
 function extract(view: RepoView, notes: string[]): Extracted {
@@ -370,6 +490,13 @@ function extract(view: RepoView, notes: string[]): Extracted {
   const routes = new Capped<RouteInfo>(SCAN_CAPS.routes);
   const commands = new Capped<CommandInfo>(SCAN_CAPS.commands);
   const models = new Capped<ModelInfo>(SCAN_CAPS.models);
+  const screens = new Capped<ScreenInfo>(SCAN_CAPS.screens);
+  const roles = new Capped<RoleInfo>(SCAN_CAPS.roles);
+  // Dart: widget classes by file, and the go_router routes found, resolved to screens once every file is read.
+  const dartPkgs = dartPackages(view);
+  const widgets = new Map<string, string>();
+  const dartRoutes: { path: string; widget: string | null; file: string }[] = [];
+  let goRoutes = 0;
   const source = view.files.filter(
     (f) => SOURCE_LANGS.has(language(f) ?? '') || ext(f) === 'sql' || ext(f) === 'prisma',
   );
@@ -452,17 +579,121 @@ function extract(view: RepoView, notes: string[]): Extracted {
         commands.add({ name: clean(m[1]!, 60), file, kind: 'wp-cli' });
       for (const m of text.matchAll(/\bregister_post_type\(\s*['"](\w+)['"]/g))
         models.add({ name: clean(m[1]!, 60), file, kind: 'post-type' });
+    } else if (lang === 'Dart') {
+      for (const m of text.matchAll(/^[ \t]*(?:import|export|part)\s+['"]([^'"\n]+)['"]/gm))
+        edge(dartTargets(view, file, m[1]!, dartPkgs));
+      // A widget class, so a route's builder can be traced to the file that holds the screen.
+      for (const m of text.matchAll(
+        /^(?:final\s+)?class\s+(\w+)\s+extends\s+(?:Consumer|HookConsumer|Hook)?(?:Stateful|Stateless)?Widget\b/gm,
+      )) {
+        const known = widgets.get(m[1]!);
+        if (known === undefined || cmp(file, known) < 0) widgets.set(m[1]!, file);
+      }
+      // go_router: literal paths only; the widget is the first screen class the builder constructs.
+      // Tests build mock routers of their own, so only app code counts.
+      const inTests = /(?:^|\/)test\//.test(file) || file.endsWith('_test.dart');
+      if (!inTests) goRoutes += text.match(/\bGoRoute\s*\(/g)?.length ?? 0;
+      const starts = [...text.matchAll(/\b(?:GoRoute|ShellRoute|StatefulShellRoute)\s*\(/g)].map(
+        (x) => x.index,
+      );
+      for (const m of inTests
+        ? []
+        : text.matchAll(/\bGoRoute\s*\(\s*(?:name:\s*[^,]+,\s*)?path:\s*(['"])([^'"\n]+)\1/g)) {
+        const from = m.index + m[0].length;
+        const next = starts.find((i) => i > m.index);
+        const body = text.slice(from, Math.min(next ?? Infinity, from + 800));
+        const builder = /\b(?:builder|pageBuilder)\s*:/.exec(body);
+        const widget = builder
+          ? [
+              ...body
+                .slice(builder.index)
+                .matchAll(/(?:=>|\breturn\b|\bchild:)\s*(?:const\s+)?([A-Z]\w*)\s*\(/g),
+            ]
+              .map((x) => x[1]!)
+              .find((w) => !DART_PAGE_WRAPPERS.has(w))
+          : undefined;
+        dartRoutes.push({ path: m[2]!, widget: widget ?? null, file });
+      }
+      // `args` commands: a project often wraps `Command` in a base class of its own (`extends RsCommand`).
+      if (/\bextends\s+\w*Command\b/.test(text))
+        for (const m of text.matchAll(
+          /^[ \t]*(?:@override\s+)?String get name\s*=>\s*['"]([^'"\n]+)['"]/gm,
+        ))
+          commands.add({ name: clean(m[1]!, 60), file, kind: 'args' });
+      for (const m of text.matchAll(/^final\s+(\w+Provider)\s*=\s*(\w+)/gm))
+        if (/Provider|Notifier/.test(m[2]!))
+          models.add({ name: clean(m[1]!, 60), file, kind: 'riverpod' });
+      for (const m of text.matchAll(/^enum\s+(\w*Role\w*)\b[^{]*\{([^}]*)\}/gm)) {
+        const values = [
+          ...new Set(
+            m[2]!
+              .split(';')[0]!
+              .split(',')
+              .map((v) => /^\s*(\w+)/.exec(v)?.[1])
+              .filter((v): v is string => v !== undefined),
+          ),
+        ];
+        roles.add({
+          name: clean(m[1]!, 60),
+          values: values.slice(0, 12).map((v) => clean(v, 40)),
+          file,
+          kind: 'dart-enum',
+        });
+      }
     }
+    if (lang === 'SQL')
+      for (const m of text.matchAll(
+        /\bcreate\s+type\s+(?:[\w"]+\.)?["`]?(\w*role\w*)["`]?\s+as\s+enum\s*\(([^)]*)\)/gi,
+      ))
+        roles.add({
+          name: clean(m[1]!, 60),
+          values: [...m[2]!.matchAll(/'([^'\n]*)'/g)].slice(0, 12).map((v) => clean(v[1]!, 40)),
+          file,
+          kind: 'sql-enum',
+        });
     if (lang === 'SQL' || lang === 'PHP')
       for (const m of text.matchAll(
         /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:\{\$\w+->prefix\}|\$\w+->prefix\s*\.\s*['"])?[`"[]?([\w.]+)/gi,
       ))
-        models.add({ name: clean(m[1]!, 60), file, kind: 'sql-table' });
+        models.add({ name: clean(m[1]!.replace(/^public\./i, ''), 60), file, kind: 'sql-table' });
     if (lang === 'Prisma')
       for (const m of text.matchAll(/^model\s+(\w+)\s*\{/gm))
         models.add({ name: clean(m[1]!, 60), file, kind: 'prisma' });
   }
-  return { edges, routes, commands, models };
+  // go_router routes, each traced to the screen's file when its builder names a widget the scan found.
+  const routed = new Set<string>();
+  const areaOf = (f: string): string | null =>
+    /(?:^|\/)lib\/features\/([^/]+)\//.exec(f)?.[1] ?? null;
+  for (const r of dartRoutes.sort((a, b) => cmp(a.file, b.file) || cmp(a.path, b.path))) {
+    const home = r.widget ? widgets.get(r.widget) : undefined;
+    routes.add({
+      method: 'ROUTE',
+      path: clean(r.path),
+      file: home ?? r.file,
+      framework: 'go_router',
+    });
+    if (r.widget && home) {
+      routed.add(r.widget);
+      screens.add({
+        path: clean(r.path),
+        widget: clean(r.widget, 60),
+        file: home,
+        area: areaOf(home),
+      });
+    }
+  }
+  const literal = dartRoutes.length;
+  if (goRoutes > literal)
+    notes.push(`${goRoutes - literal} go_router routes use a non-literal path and are not listed`);
+  // Screens no route points at (opened by navigation code, or by a route form the scan does not read).
+  for (const [widget, file] of [...widgets.entries()].sort(
+    (a, b) => cmp(a[1], b[1]) || cmp(a[0], b[0]),
+  ))
+    if (!routed.has(widget) && /(?:Screen|Dashboard|Page)$/.test(widget))
+      screens.add({ path: null, widget: clean(widget, 60), file, area: areaOf(file) });
+  screens.note('screens', notes);
+  roles.note('roles', notes);
+  return { edges, routes, commands, models, screens, roles };
 }
 
 // --- ci, conventions, tests ----------------------------------------------------------------
@@ -529,6 +760,21 @@ function conventions(view: RepoView): Conventions {
     typecheck.push(strict ? 'tsc (strict)' : 'tsc');
   }
   if (has('mypy.ini') || /\[tool\.mypy\]/.test(pyproject)) typecheck.push('mypy');
+  if (has('**/pubspec.yaml')) {
+    // Dart: the analyzer's rule set comes from the options file's `include:` (flutter_lints, lints, …).
+    const options =
+      view.read('analysis_options.yaml') ??
+      view.read(view.glob('**/analysis_options.yaml')[0] ?? '') ??
+      '';
+    const rules = /^include:\s*package:(\w+)\//m.exec(options)?.[1];
+    if (has('**/analysis_options.yaml')) lint.push(rules ? clean(rules, 40) : 'dart analyze');
+    format.push('dart format');
+    typecheck.push(
+      /strict-(?:casts|inference|raw-types):\s*true/.test(options)
+        ? 'dart analyzer (strict)'
+        : 'dart analyzer',
+    );
+  }
   if (has('phpstan.neon*')) typecheck.push('phpstan');
   if (has('lefthook.yml') || has('.lefthook.yml')) hooks.push('lefthook');
   if (has('.husky/*')) hooks.push('husky');
@@ -659,6 +905,22 @@ export function deepScan(view: RepoView): RepoScan {
     dataModel: [...extracted.models.items].sort(
       (a, b) => cmp(a.file, b.file) || cmp(a.name, b.name),
     ),
+    // Only when found, so a scan of a repository with none stays byte-identical to before.
+    ...(extracted.screens.items.length
+      ? {
+          screens: [...extracted.screens.items].sort(
+            (a, b) =>
+              cmp(a.file, b.file) || cmp(a.path ?? '', b.path ?? '') || cmp(a.widget, b.widget),
+          ),
+        }
+      : {}),
+    ...(extracted.roles.items.length
+      ? {
+          roles: [...extracted.roles.items].sort(
+            (a, b) => cmp(a.file, b.file) || cmp(a.name, b.name),
+          ),
+        }
+      : {}),
     tests: { ...analysis.tests, dirs: layout.dirs, coverageSignals: layout.coverageSignals },
     ci: workflows.slice(0, SCAN_CAPS.workflows),
     conventions: conventions(view),

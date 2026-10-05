@@ -51,8 +51,9 @@ not. The park existed because an update builds a spec, and the spec schema names
 
 - `deploy`, `testing` and `lanes` still carry default values for an `other` repository. They drive only
   canonical rendering, which is skipped; the review screen says so.
-- The scan still understands only TypeScript, JavaScript, Python and PHP sources. For another ecosystem
-  it reports the label, coverage and layout, and little else, until that language is added (plan 015).
+- The scan understands TypeScript, JavaScript, Python, PHP and, since plan 015, Dart/Flutter sources.
+  For another ecosystem it reports the label, coverage and layout, and little else, until that language
+  is added.
 - The coding agent's prompt and allowed tools still assume an Incubator-built repository (plan 012).
 - Adding a real pack later (plan 016, Flutter) turns those repositories from `other` into that pack with
   no further contract change beyond the new enum value.

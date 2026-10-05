@@ -5,7 +5,7 @@ import type { GitHubMethod, GitOps } from '@incubator/git';
 import { ToolError, nodeExec } from '@incubator/runtime';
 import { completeSpec } from '@incubator/spec';
 import { render, renderLanes, writeTree } from '@incubator/templates';
-import type { RepoScan } from '@incubator/analyzer';
+import { deepScan, viewFromDir, type RepoScan } from '@incubator/analyzer';
 import { FakeLlmAdapter, type Capabilities } from '@incubator/llm';
 import { DefaultsPrompter, NonInteractivePrompter, ScriptedPrompter } from './prompter.js';
 import { loadPrompt } from './prompts.js';
@@ -710,6 +710,23 @@ describe('enhance helpers', () => {
       'db/001.sql',
     ]);
     expect(resolveTargets(scan, { id: 'zzz', summary: 'unrelated' })).toEqual([]);
+  });
+
+  it('points a Flutter request at the feature module, its screens and its providers', () => {
+    const scan = deepScan(viewFromDir(path.join(fixtures, 'flutter-supabase')));
+    const targets = resolveTargets(scan, {
+      id: 'events-dashboard',
+      summary: 'A Dashboard that lists the events and lets organizers create one',
+    });
+    // Before the scan read Dart, a Flutter repository gave no targets at all.
+    expect(targets).toEqual(
+      expect.arrayContaining([
+        'lib/features/events/',
+        'lib/features/events/events_screen.dart',
+        'lib/providers/events_provider.dart',
+      ]),
+    );
+    expect(targets.some((t) => t.startsWith('test/'))).toBe(false);
   });
 });
 

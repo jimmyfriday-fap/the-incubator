@@ -2,6 +2,9 @@
 
 ## Executor preamble
 
+> Amended by ADR-027 (2026-10-04): the recommender is first delivered over the small code catalog of plan
+> 016, which can later read this catalog. The rules below still describe a recommendation for a built-in pack.
+
 Stage 2 of "standard stack packs" (ADR-026). It needs plan 013 (the catalog) merged first.
 
 For a **new** tool, discovery today shows the model bare enum values and the stack is chosen without

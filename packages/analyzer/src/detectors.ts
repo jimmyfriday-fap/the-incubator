@@ -168,7 +168,7 @@ export function detectStack(view: RepoView): {
 }
 
 const TEST_FILE =
-  /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)test_[^/]+\.py$|Test\.php$/;
+  /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)test_[^/]+\.py$|Test\.php$|_test\.dart$/;
 
 export function detectTests(view: RepoView): Analysis['tests'] {
   const runners: string[] = [];
@@ -186,15 +186,20 @@ export function detectTests(view: RepoView): Analysis['tests'] {
   )
     runners.push('pytest');
   if (view.glob('phpunit.xml*').length) runners.push('phpunit');
+  // Dart: `flutter_test` ships with the Flutter SDK, `package:test` is declared as a dev dependency.
+  const pubspecs = view.glob('**/pubspec.yaml').map((f) => view.read(f) ?? '');
+  if (pubspecs.some((t) => /^\s+flutter_test:/m.test(t))) runners.push('flutter_test');
+  if (pubspecs.some((t) => /^\s+test:\s*\S/m.test(t))) runners.push('dart_test');
   let files = 0;
   let count = 0;
   for (const f of view.files) {
-    if (!TEST_FILE.test(f) || !/\.(m?[jt]sx?|py|php)$/.test(f)) continue;
+    if (!TEST_FILE.test(f) || !/\.(m?[jt]sx?|py|php|dart)$/.test(f)) continue;
     const t = view.read(f) ?? '';
     const n =
       (t.match(/\b(?:it|test)(?:\.each\([^)]*\))?\s*\(/g)?.length ?? 0) +
       (t.match(/^\s*(?:async\s+)?def test_/gm)?.length ?? 0) +
-      (t.match(/function\s+test[A-Z_]\w*\s*\(/g)?.length ?? 0);
+      (t.match(/function\s+test[A-Z_]\w*\s*\(/g)?.length ?? 0) +
+      (t.match(/\btestWidgets\s*\(/g)?.length ?? 0);
     if (n) files++;
     count += n;
   }

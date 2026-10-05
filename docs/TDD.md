@@ -1002,10 +1002,14 @@ flowchart LR
 - **Deep scan** (`packages/analyzer/src/scan.ts`). Pure and deterministic: manifest parsing and
   regexes, no model, no execution of repository code. It reports the stack, entry points, a module
   map with import edges, dependencies, public routes and commands (Express/Fastify, Flask/FastAPI/
-  Django, WordPress REST and AJAX, commander/argparse/WP-CLI), the data model (SQL tables, Prisma,
-  ORM classes, post types), the test layout and coverage signals, CI files and triggers, conventions
-  (lint, format, type checking, hooks, file naming) and a bounded inventory. The same tree gives a
-  byte-identical report.
+  Django, WordPress REST and AJAX, Flutter go_router, commander/argparse/args/WP-CLI), the data model
+  (SQL tables, Prisma, ORM classes, post types, Riverpod providers), the test layout and coverage
+  signals, CI files and triggers, conventions (lint, format, type checking, hooks, file naming) and a
+  bounded inventory. For a Dart/Flutter app it also reads the pubspec dependencies, the screens (each
+  route traced to its widget's file, with the feature area) and the user roles the app declares (SQL
+  and Dart enums), so a change request can be matched to the code and to who uses it (plan 015). The
+  same tree gives a byte-identical report. A directory of other checkouts kept by agent tools
+  (`.claude/worktrees`) is not part of the project and is skipped.
 - **What was skipped is stated** (ADR-021). `RepoView` stays read-only and capped (5,000 listed files,
   1 MiB per read, 50,000 entries walked) and gains `stats()`. The first line of every report is
   `Scanned N of M files; skipped K files because …`, naming binaries, symbolic links (listed, never
@@ -1417,3 +1421,4 @@ flowchart LR
 | [024](adr/024-spec-value-other.md)                      | The spec value `other`: updating a repository with no stack pack                  |
 | [025](adr/025-owner-approved-check-commands.md)         | The owner approves what a coding agent runs in an external repository             |
 | [026](adr/026-stack-pack-catalog-and-recommendation.md) | A stack pack catalog in the manifests; the LLM recommends a stack, rules check it |
+| [027](adr/027-retrieved-stacks.md)                      | Larger stacks are retrieved from their own generator, not built in as packs       |
