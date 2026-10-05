@@ -1,10 +1,40 @@
 import type { Analysis } from './detectors.js';
 import type { RepoView } from './repo-view.js';
 
-/** A check command the coding agent could be allowed to run, and why it is offered. */
+/** A check command the coding agent could be allowed to run, what it does, and why it is offered. */
 export interface CheckProposal {
   command: string;
+  /** What the command does, in plain words. A built-in constant, never repository text. */
+  what: string;
   why: string;
+}
+
+/** Plain-words descriptions of the built-in commands, matched by shape (the tool name varies). */
+const WHAT: readonly (readonly [RegExp, string])[] = [
+  [
+    /^(flutter|dart) analyze$/,
+    'Scans the Dart code for errors and style problems. It changes nothing.',
+  ],
+  [/^(flutter|dart) test$/, "Runs the project's automated tests."],
+  [/^(npm|pnpm|yarn) run test$/, "Runs the project's automated tests."],
+  [/^(npm|pnpm|yarn) run lint$/, 'Checks the code for style problems and likely mistakes.'],
+  [/^(npm|pnpm|yarn) run typecheck$/, 'Checks that the code type-checks, without running it.'],
+  [/^(npm|pnpm|yarn) run check$/, "Runs the project's own combined check script."],
+  [/^pytest$/, "Runs the project's automated tests."],
+  [/^cargo test$/, "Runs the project's automated tests."],
+  [/^go vet \.\/\.\.\.$/, 'Checks the Go code for likely mistakes.'],
+  [/^go test \.\/\.\.\.$/, "Runs the project's automated tests."],
+  [/^dotnet test$/, "Runs the project's automated tests."],
+  [/^(\.\/gradlew|mvn) test$/, "Runs the project's automated tests."],
+  [/^bundle exec rspec$/, "Runs the project's automated tests."],
+  [/^composer test$/, "Runs the project's automated tests."],
+  [/^mix test$/, "Runs the project's automated tests."],
+  [/^swift test$/, "Runs the project's automated tests."],
+];
+
+/** The plain-words description of a built-in check command (also fills in older journal entries). */
+export function whatItDoes(command: string): string {
+  return WHAT.find(([re]) => re.test(command))?.[1] ?? 'Checks the project, using its own tooling.';
 }
 
 /** `package.json` script names worth offering. A name outside this list is never proposed. */
@@ -32,7 +62,8 @@ function json(view: RepoView, file: string): Record<string, unknown> | null {
  */
 export function proposeChecks(view: RepoView, a: Analysis): CheckProposal[] {
   const out: CheckProposal[] = [];
-  const add = (command: string, why: string): void => void out.push({ command, why });
+  const add = (command: string, why: string): void =>
+    void out.push({ command, what: whatItDoes(command), why });
   switch (a.ecosystem?.id ?? '') {
     case 'dart': {
       // Flutter projects declare the SDK in pubspec.yaml; plain Dart packages do not.

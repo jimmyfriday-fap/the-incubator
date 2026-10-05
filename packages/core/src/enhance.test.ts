@@ -426,6 +426,82 @@ describe('enhance', () => {
     expect(spec.intent.coreFeatures).toEqual([expect.objectContaining({ id: 'dashboard' })]);
   });
 
+  it('writes a plain-English review summary once per plan, and only advises', async () => {
+    const h = engineFor('review-summary');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const runId = start(h, dir, ref, { noPublish: true });
+    const waiting = new ScriptedPrompter({}, { approve: false, reason: 'owner is reading' });
+    const s = await h.engine.advance(runId, waiting);
+    expect(s.parked).toMatchObject({ state: 'REVIEW' });
+    const first = h.engine.reviewSummary(runId);
+    expect(first.status).toBe('pending');
+    // Asking again while it is being written does not start a second call.
+    expect(h.engine.reviewSummary(runId).status).toBe('pending');
+    let ready = h.engine.reviewSummary(runId);
+    for (let i = 0; i < 100 && ready.status === 'pending'; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      ready = h.engine.reviewSummary(runId);
+    }
+    expect(ready).toMatchObject({
+      status: 'ready',
+      summary: { headline: 'Buyers will be able to add a gift note when they check out.' },
+    });
+    const calls = (h.llm as FakeLlmAdapter).calls.filter((c) => c.schemaName === 'ReviewSummary');
+    expect(calls).toHaveLength(1);
+    // The model sees the request and the drafted feature, with repository text fenced as data.
+    expect(calls[0]!.user).toContain(REQUEST);
+    expect(calls[0]!.user).toContain('gift-notes');
+    expect(calls[0]!.user).toContain('<<<UNTRUSTED REPOSITORY DATA');
+    // A second ask reads the cached file instead of asking the model again.
+    expect(h.engine.reviewSummary(runId).status).toBe('ready');
+    expect(
+      (h.llm as FakeLlmAdapter).calls.filter((c) => c.schemaName === 'ReviewSummary'),
+    ).toHaveLength(1);
+    expect(readFileSync(path.join(h.store.runDir(runId), 'journal.jsonl'), 'utf8')).toContain(
+      '"type":"review.summary"',
+    );
+  });
+
+  it('treats a missing review summary as a warning, never a failure', async () => {
+    const h = engineFor('gift-notes');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const runId = start(h, dir, ref, { noPublish: true });
+    await h.engine.advance(runId, new ScriptedPrompter({}, { approve: false, reason: 'reading' }));
+    h.engine.reviewSummary(runId);
+    let res = h.engine.reviewSummary(runId);
+    for (let i = 0; i < 100 && res.status === 'pending'; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      res = h.engine.reviewSummary(runId);
+    }
+    expect(res.status).toBe('failed');
+    expect(readFileSync(path.join(h.store.runDir(runId), 'journal.jsonl'), 'utf8')).toContain(
+      '"step":"review.summary"',
+    );
+    // The review itself is untouched: the owner can still approve.
+    const done = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(done.state).toBe('DONE');
+  });
+
+  it('names what the scan recognised, and says whether the Incubator has a pack', async () => {
+    const h = engineFor('export-orders');
+    const flutter = await seed(h, 'order-desk', path.join(fixtures, 'flutter-app'));
+    const runId = start(h, flutter.dir, flutter.ref, { noPublish: true });
+    await h.engine.advance(runId, new DefaultsPrompter());
+    expect(h.engine.enhanceSummary(runId).stack).toEqual({
+      label: 'Dart/Flutter',
+      evidence: ['pubspec.yaml'],
+      packed: false,
+    });
+    const [analyze] = h.engine.proposedChecks(runId);
+    expect(analyze?.command).toBe('flutter analyze');
+    expect(analyze?.what).toContain('Dart code');
+    const node = engineFor('export-orders');
+    const bare = await seed(node, 'bare-node', path.join(fixtures, 'bare-node'));
+    const nodeRun = start(node, bare.dir, bare.ref, { noPublish: true });
+    await node.engine.advance(nodeRun, new DefaultsPrompter());
+    expect(node.engine.enhanceSummary(nodeRun).stack).toMatchObject({ packed: true });
+  });
+
   it('parks when the model strays outside the enhancement lanes or outside intent', async () => {
     for (const fixture of ['bad-lane', 'outside-intent']) {
       const h = engineFor(fixture);
@@ -570,6 +646,13 @@ describe('enhance helpers', () => {
     const p = loadPrompt('enhance');
     expect(p.name).toBe('enhance');
     expect(p.version).toBe('1.2.0');
+    expect(p.body).toMatchSnapshot();
+  });
+
+  it('ships the review-summary prompt versioned and byte-pinned', () => {
+    const p = loadPrompt('review-summary');
+    expect(p.name).toBe('review-summary');
+    expect(p.version).toBe('1.0.0');
     expect(p.body).toMatchSnapshot();
   });
 

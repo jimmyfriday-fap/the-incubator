@@ -5,6 +5,7 @@ import {
   fakeAgentHandoff,
   fakePublishEngine,
   seedExistingRepo,
+  turnsWithReviewSummary,
 } from '@incubator/core/testing';
 import { startServer, type HostCapabilities, type RunningServer } from '../server/server.js';
 
@@ -32,11 +33,11 @@ export async function startFakeServer(
   // One fake model per server: recorded turns for a new project, or for an enhancement request.
   const h = fakePublishEngine({
     handoff: fakeAgentHandoff(),
-    llm: {
-      dir: opts.enhance
+    llm: turnsWithReviewSummary(
+      opts.enhance
         ? enhanceFixtureDir(opts.enhance)
         : discoveryFixtureDir(opts.discovery ?? 'saas-web'),
-    },
+    ),
   });
   const server = await startServer({
     engine: h.engine,

@@ -290,6 +290,50 @@ describe('enhance over the API', () => {
     expect(d.adopt).toBeNull();
   });
 
+  it('serves a plain-English review summary at REVIEW, and says what the scan found', async () => {
+    const { api, h } = await boot({ enhance: 'review-summary' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        repo: dir,
+        repoRef: 'octo/bare-node',
+        request: REQUEST,
+        noPublish: true,
+      })
+    ).body;
+    const d = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    expect(d.parked?.state).toBe('REVIEW');
+    expect(d.enhance?.stack).toMatchObject({ packed: true });
+    type Res = { status: string; summary?: { headline: string; changes: string[] } };
+    let res = (await api.get<Res>(`/api/runs/${runId}/review-summary`)).body;
+    for (let i = 0; i < 100 && res.status === 'pending'; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      res = (await api.get<Res>(`/api/runs/${runId}/review-summary`)).body;
+    }
+    expect(res.status).toBe('ready');
+    expect(res.summary?.headline).toBe(
+      'Buyers will be able to add a gift note when they check out.',
+    );
+    expect(res.summary?.changes).toHaveLength(1);
+  });
+
+  it('says the summary is unavailable before the plan is complete', async () => {
+    const { api, h } = await boot({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        repo: dir,
+        repoRef: 'octo/bare-node',
+      })
+    ).body;
+    await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    expect((await api.get<{ status: string }>(`/api/runs/${runId}/review-summary`)).body).toEqual({
+      status: 'unavailable',
+    });
+  });
+
   it('takes the request with the start call, and lists the repository for "Enhance"', async () => {
     const { api, h } = await boot({ enhance: 'export-orders' });
     const { dir } = await seedAdoptRepo(h, 'bare-node');

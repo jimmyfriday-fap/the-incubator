@@ -13,7 +13,7 @@ import {
 } from '@incubator/runtime';
 import { FakeGitHub, createGitOps, type GitOps } from '@incubator/git';
 import { FakeTracker } from '@incubator/tracker';
-import { FakeLlmAdapter, type FixtureTurn, type LlmAdapter } from '@incubator/llm';
+import { FakeLlmAdapter, loadFixtures, type FixtureTurn, type LlmAdapter } from '@incubator/llm';
 import { Engine, type EngineDeps } from './engine.js';
 import { RunStore } from './store.js';
 import type { VerifyResult } from './publish.js';
@@ -40,6 +40,30 @@ export function fakeEngine(llm: LlmAdapter | FixtureTurn[] | { dir: string }) {
       adapter = a;
     },
   };
+}
+
+/**
+ * The fixture turns of `dir`, plus a stock ReviewSummary turn when the fixtures have none: the review
+ * screen asks for a plain-English brief, and a run's warnings should stay the ones a test expects.
+ */
+export function turnsWithReviewSummary(dir: string): FixtureTurn[] {
+  const turns = loadFixtures(dir);
+  if (turns.some((t) => t.schemaName === 'ReviewSummary')) return turns;
+  return [
+    ...turns,
+    {
+      schemaName: 'ReviewSummary',
+      note: 'stock brief, so the review screen has one',
+      response: {
+        headline: 'This run will carry out the plan below.',
+        changes: ['Carry out the planned changes.'],
+        approach:
+          'A coding assistant makes the edits in a working copy. Nothing changes in your repository until you approve and later choose to commit.',
+        notIncluded: [],
+        watchFor: [],
+      },
+    },
+  ];
 }
 
 export function enhanceFixtureDir(name: string): string {
@@ -209,6 +233,8 @@ export function fakePublishEngine(
     gitFaults,
     verifyFaults,
     tracker,
+    /** The LLM adapter the run uses (a FakeLlmAdapter when built from fixtures). */
+    llm,
     verifyCalls: () => verifyCalls,
   };
 }

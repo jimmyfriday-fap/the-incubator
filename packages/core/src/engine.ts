@@ -53,6 +53,12 @@ import {
   summaryUserPrompt,
   type AnalysisSummary,
 } from './analysis-summary.js';
+import {
+  cleanReviewSummary,
+  reviewSummarySchema,
+  reviewSummaryUserPrompt,
+  type ReviewSummary,
+} from './review-summary.js';
 import type { Prompter } from './prompter.js';
 import {
   reduce,
@@ -79,6 +85,7 @@ import {
   scanDigest,
   scanHash,
   proposeChecks,
+  whatItDoes,
   summarizeGaps,
   unsupportedStackLabel,
   viewFromDir,
@@ -151,6 +158,14 @@ export interface RunEvent {
 }
 
 /** The single engine behind the CLI, web server and desktop app (TDD §4.2). */
+/** What the scan recognised a repository as, for the review screen. */
+export interface DetectedStack {
+  label: string;
+  evidence: string[];
+  /** The Incubator has a stack pack for it. */
+  packed: boolean;
+}
+
 export class Engine {
   readonly #listeners = new Set<(e: RunEvent) => void>();
   constructor(private readonly deps: EngineDeps) {}
@@ -436,7 +451,12 @@ export class Engine {
   /** Check commands proposed at the scan: built-in constants chosen by the repository's manifests. */
   proposedChecks(runId: string): CheckProposal[] {
     const e = this.entries(runId).find((x) => x.type === 'enhance.scan');
-    return (e?.['checks'] as CheckProposal[] | undefined) ?? [];
+    // why: runs journaled before `what` existed carry only the command and the reason.
+    return ((e?.['checks'] as Partial<CheckProposal>[] | undefined) ?? []).map((c) => ({
+      command: c.command ?? '',
+      what: c.what ?? whatItDoes(c.command ?? ''),
+      why: c.why ?? '',
+    }));
   }
 
   /** What the owner approved: a list (possibly empty), or null while they have not decided. */
@@ -849,6 +869,7 @@ export class Engine {
     pr?: { number: number; url: string };
     plan: EnhancePlanRecord | null;
     scanReport: string | null;
+    stack: DetectedStack | null;
   } {
     const entries = this.entries(runId);
     const pr = entries.findLast((e) => e.type === 'enhance.summary')?.['pr'] as
@@ -861,7 +882,138 @@ export class Engine {
       ...(pr ? { pr } : {}),
       plan: plan ?? null,
       scanReport: existsSync(report) ? readFileSync(report, 'utf8') : null,
+      stack: this.detectedStack(runId),
     };
+  }
+
+  /**
+   * What the scan recognised the repository as ("Dart/Flutter"), with the files that say so, and
+   * whether the Incubator has a stack pack for it. Null before the scan or on a run with no scan.
+   */
+  detectedStack(runId: string): DetectedStack | null {
+    if (this.state(runId).input.kind !== 'enhance') return null;
+    if (!existsSync(this.enhanceFile(runId, 'scan.json'))) return null;
+    const eco = this.readScan(runId).analysis.ecosystem;
+    const pack = this.finalSpec(runId)?.stack.pack ?? this.draftPack(runId);
+    return eco
+      ? { label: eco.label, evidence: eco.evidence.map((e) => e.file), packed: pack !== OTHER }
+      : null;
+  }
+
+  private draftPack(runId: string): string | undefined {
+    return (this.draft(runId)['stack'] as { pack?: string } | undefined)?.pack;
+  }
+
+  readonly #reviewSummaries = new Map<
+    string,
+    { promise?: Promise<void> | undefined; failed?: string | undefined }
+  >();
+
+  /**
+   * The plain-English brief for the spec at REVIEW. Generated on first ask (so a run already parked
+   * at review gets one too), cached on disk per spec hash, and advisory: a failure is a warning and
+   * never blocks approval.
+   */
+  reviewSummary(
+    runId: string,
+    opts: { retry?: boolean } = {},
+  ):
+    | { status: 'ready'; summary: ReviewSummary }
+    | { status: 'pending' }
+    | {
+        status: 'failed';
+        message: string;
+      }
+    | { status: 'unavailable' } {
+    const spec = this.finalSpec(runId);
+    if (!spec) return { status: 'unavailable' };
+    const hash = specHash(spec);
+    const file = path.join(
+      this.deps.store.runDir(runId),
+      'review',
+      `summary-${hash.slice(7, 23)}.json`,
+    );
+    if (existsSync(file))
+      return {
+        status: 'ready',
+        summary: JSON.parse(readFileSync(file, 'utf8')) as ReviewSummary,
+      };
+    // why: a summary is only written while the owner is at the review, never for the edited spec an
+    // approval writes next, or for a run that has moved on.
+    const st = this.state(runId);
+    if (st.state !== 'REVIEW' && !(st.state === 'PARKED' && st.parked?.state === 'REVIEW'))
+      return { status: 'unavailable' };
+    const key = `${runId}:${hash}`;
+    let slot = this.#reviewSummaries.get(key);
+    if (slot?.failed !== undefined && opts.retry) slot = undefined;
+    if (slot?.failed !== undefined) return { status: 'failed', message: slot.failed };
+    if (!slot?.promise) {
+      slot = {};
+      this.#reviewSummaries.set(key, slot);
+      const s = this.state(runId);
+      const cell = slot;
+      cell.promise = this.writeReviewSummary(runId, s, spec, hash, file)
+        .catch((e: unknown) => {
+          if (e instanceof InterruptedError) return;
+          const message = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+          cell.failed = message;
+          this.record(runId, 'step.warn', { step: 'review.summary', data: { reason: message } });
+        })
+        .finally(() => {
+          cell.promise = undefined;
+        });
+    }
+    return { status: 'pending' };
+  }
+
+  private async writeReviewSummary(
+    runId: string,
+    s: RunState,
+    spec: IncubatorSpec,
+    hash: string,
+    file: string,
+  ): Promise<void> {
+    const adapter = await this.deps.llm.select(
+      'analysis',
+      s.input.adapter as LlmAdapterId | undefined,
+    );
+    const prompt = loadPrompt('review-summary');
+    const enhance = s.input.kind === 'enhance';
+    const gate = await complete<ReviewSummary>(
+      adapter,
+      {
+        schemaName: 'ReviewSummary',
+        schema: reviewSummarySchema,
+        system: prompt.body,
+        user: reviewSummaryUserPrompt({
+          kind: s.input.kind,
+          request: enhance ? this.requestText(runId) : (s.input.narrative ?? spec.intent.narrative),
+          spec,
+          detected: enhance ? this.detectedStack(runId) : null,
+          digest: enhance ? scanDigest(this.readScan(runId)) : null,
+        }),
+        promptVersion: prompt.version,
+        timeoutMs: this.deps.llmTimeoutMs ?? 180_000,
+      },
+      { log: this.deps.log },
+    );
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(
+      file,
+      `${JSON.stringify(cleanReviewSummary(gate.value), null, 2)}
+`,
+      {
+        mode: 0o600,
+      },
+    );
+    this.record(runId, 'llm.turn', {
+      purpose: 'review-summary',
+      adapter: adapter.id,
+      model: gate.model ?? null,
+      attempts: gate.attempts,
+      costUsd: gate.costUsd,
+    });
+    this.record(runId, 'review.summary', { hash });
   }
 
   private async scaffoldStep(runId: string, s: RunState): Promise<void> {

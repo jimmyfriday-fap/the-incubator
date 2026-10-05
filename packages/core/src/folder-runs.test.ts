@@ -504,8 +504,16 @@ describe('check commands on a repository the Incubator did not build (ADR-025)',
     const s = await h.engine.advance(runId, new DefaultsPrompter());
     expect(s.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
     expect(h.engine.proposedChecks(runId)).toEqual([
-      { command: 'flutter analyze', why: 'pubspec.yaml: static analysis' },
-      { command: 'flutter test', why: 'test/: *_test.dart files' },
+      {
+        command: 'flutter analyze',
+        what: 'Scans the Dart code for errors and style problems. It changes nothing.',
+        why: 'pubspec.yaml: static analysis',
+      },
+      {
+        command: 'flutter test',
+        what: "Runs the project's automated tests.",
+        why: 'test/: *_test.dart files',
+      },
     ]);
     // `yes` is not an approval: the agent gets edit tools and read-only git, and nothing else.
     expect(h.engine.approvedChecks(runId)).toBeNull();

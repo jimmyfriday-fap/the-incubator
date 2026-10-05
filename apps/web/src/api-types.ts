@@ -135,10 +135,30 @@ export interface EnhanceDetail {
    * Folder runs on a repository with no Incubator gate: the check commands proposed for the coding
    * agent, and what the owner approved (null until they decide). Null when it does not apply.
    */
-  checks: { proposed: { command: string; why: string }[]; approved: string[] | null } | null;
+  checks: {
+    /** `what` is absent from nothing the server sends: older runs are filled in server-side. */
+    proposed: { command: string; what: string; why: string }[];
+    approved: string[] | null;
+  } | null;
+  /** What the scan recognised the repository as, and whether the Incubator has a pack for it. */
+  stack: { label: string; evidence: string[]; packed: boolean } | null;
   /** The deterministic scan report (first line: scanned N of M files). */
   scanReport: string | null;
 }
+
+/** The plain-English brief above the spec at REVIEW (GET /api/runs/:id/review-summary). */
+export interface ReviewSummary {
+  headline: string;
+  changes: string[];
+  approach: string;
+  notIncluded: string[];
+  watchFor: string[];
+}
+export type ReviewSummaryResponse =
+  | { status: 'ready'; summary: ReviewSummary }
+  | { status: 'pending' }
+  | { status: 'failed'; message: string }
+  | { status: 'unavailable' };
 
 export interface Revision {
   rev: number;

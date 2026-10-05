@@ -200,7 +200,10 @@ describe('web UI (Playwright, fakes)', () => {
     await page.getByTestId('log-filter').selectOption('warn');
     const warned = await page.getByTestId('run-log').locator('li').allTextContents();
     expect(warned.length).toBeGreaterThan(0);
-    expect(warned.every((t) => t.includes('parked'))).toBe(true);
+    expect(
+      warned.every((t) => t.includes('parked')),
+      warned.join('\n'),
+    ).toBe(true);
 
     // Back home, the run is listed.
     await page.getByRole('link', { name: 'The Incubator' }).click();
@@ -291,9 +294,24 @@ describe('web UI (Playwright, fakes)', () => {
 
     // Review says the stack values are placeholders, and previews the plan without a canonical tree.
     await page.getByTestId('review').waitFor({ timeout: 30_000 });
-    expect(await page.getByTestId('no-pack-note').textContent()).toContain(
-      'no Incubator stack pack',
+    const note = (await page.getByTestId('no-pack-note').textContent()) ?? '';
+    expect(note).toContain('Detected: Dart/Flutter');
+    expect(note).toContain('pubspec.yaml');
+    expect(note).toContain("doesn't have a stack pack");
+    // A plain-English brief sits above the spec, so the owner can read what is proposed.
+    await expect
+      .poll(() => page.getByTestId('brief-headline').textContent(), UI)
+      .toContain("export the day's orders as a CSV file");
+    expect(await page.getByTestId('brief-changes').textContent()).toContain('export button');
+    expect(await page.getByTestId('brief-approach').textContent()).toContain(
+      'Nothing in your repository changes until you approve',
     );
+    const above = await page.evaluate(() => {
+      const brief = document.querySelector('[data-testid=review-brief]')!.getBoundingClientRect();
+      const review = document.querySelector('[data-testid=review]')!.getBoundingClientRect();
+      return brief.bottom <= review.top;
+    });
+    expect(above).toBe(true);
     const tree = page.getByTestId('tree');
     await expect.poll(() => tree.textContent(), UI).toContain('docs/plans/001-enhance-20260501.md');
     expect(await tree.textContent()).not.toContain('CLAUDE.md');
@@ -302,7 +320,12 @@ describe('web UI (Playwright, fakes)', () => {
     // on their own. An unsafe line is refused and nothing is approved.
     const editor = page.getByTestId('checks-editor');
     expect(await editor.inputValue()).toBe('flutter analyze\nflutter test');
-    expect(await page.getByTestId('checks-proposed').textContent()).toContain('pubspec.yaml');
+    const proposed = (await page.getByTestId('checks-proposed').textContent()) ?? '';
+    expect(proposed).toContain('pubspec.yaml');
+    expect(proposed).toContain('Scans the Dart code for errors and style problems');
+    expect(await page.getByTestId('checks').textContent()).toContain(
+      'the only commands it is allowed to run',
+    );
     await shot(page, 'enhance-other-review');
     await editor.fill('flutter test; rm -rf .');
     await page.getByTestId('approve').click();

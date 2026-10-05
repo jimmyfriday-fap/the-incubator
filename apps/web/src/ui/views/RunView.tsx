@@ -175,6 +175,7 @@ export function RunView({ runId }: { runId: string }) {
             post(`/api/runs/${runId}/approve`, spec ? { spec } : {}).then(refresh)
           }
           checks={run.enhance?.checks ?? null}
+          stack={run.enhance?.stack ?? null}
           onChecks={(commands) => post(`/api/runs/${runId}/checks`, { commands })}
         />
       )}

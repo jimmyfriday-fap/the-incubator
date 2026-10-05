@@ -1,0 +1,11 @@
+{
+  "schemaName": "ReviewSummary",
+  "note": "a plain-English brief of the gift-notes plan",
+  "response": {
+    "headline": "Buyers will be able to add a gift note when they check out.",
+    "changes": ["Add a gift note box to the checkout page, saved with the order."],
+    "approach": "A coding assistant makes the edits in a working copy of your repository. Nothing in your repository changes until you approve and later choose to commit; pushing to GitHub is a separate question.",
+    "notIncluded": ["Printing the note on packing slips."],
+    "watchFor": ["The checkout page is the only place the digest shows orders being taken."]
+  }
+}

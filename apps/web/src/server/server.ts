@@ -335,6 +335,13 @@ export function createApp(opts: ServerOptions): WebApp {
     }),
   );
 
+  app.get<{ Querystring: { retry?: string } }>(
+    '/api/runs/:id/review-summary',
+    withRun((runId, req: { query: { retry?: string } }) =>
+      engine.reviewSummary(runId, { retry: req.query.retry === '1' }),
+    ),
+  );
+
   app.get(
     '/api/runs/:id/tree',
     withRun(async (runId) => {

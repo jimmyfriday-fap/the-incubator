@@ -273,8 +273,16 @@ describe('check command proposals (ADR-025)', () => {
   it('offers the commands of the ecosystem, chosen by which files exist', () => {
     const flutter = viewFromDir(path.join(fixtures, 'flutter-app'));
     expect(proposeChecks(flutter, analyze(flutter))).toEqual([
-      { command: 'flutter analyze', why: 'pubspec.yaml: static analysis' },
-      { command: 'flutter test', why: 'test/: *_test.dart files' },
+      {
+        command: 'flutter analyze',
+        what: 'Scans the Dart code for errors and style problems. It changes nothing.',
+        why: 'pubspec.yaml: static analysis',
+      },
+      {
+        command: 'flutter test',
+        what: "Runs the project's automated tests.",
+        why: 'test/: *_test.dart files',
+      },
     ]);
     expect(propose({ 'pubspec.yaml': 'name: x\n', 'test/a_test.dart': '' })).toEqual([
       'dart analyze',

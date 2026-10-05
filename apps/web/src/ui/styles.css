@@ -108,6 +108,22 @@ textarea.code {
   grid-column: 1 / -1;
 }
 
+.brief h3 {
+  margin: 12px 0 4px;
+  font-size: 14px;
+}
+
+.brief ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.brief-headline {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
 .card h2 {
   margin-top: 0;
   font-size: 17px;

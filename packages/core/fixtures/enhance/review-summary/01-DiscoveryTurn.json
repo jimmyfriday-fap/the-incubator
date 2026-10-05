@@ -1,0 +1,27 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "one request on a repository that already has features",
+  "response": {
+    "draftSpec": {
+      "intent": {
+        "coreFeatures": [
+          {
+            "id": "gift-notes",
+            "summary": "Let buyers add a gift note at checkout",
+            "lane": "enhancement/new"
+          }
+        ]
+      },
+      "decisions": [
+        {
+          "key": "intent.coreFeatures",
+          "question": "Scope",
+          "answer": "gift notes",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [],
+    "done": true
+  }
+}
