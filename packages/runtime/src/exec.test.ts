@@ -1,7 +1,17 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ToolError } from './errors.js';
-import { commandFor, nodeExec, parseCmdShim, runProcess, which } from './exec.js';
+import {
+  SAFE_BATCH_ARG,
+  batchCommand,
+  commandFor,
+  nodeExec,
+  parseCmdShim,
+  runProcess,
+  which,
+} from './exec.js';
 import { Logger, MemorySink } from './log.js';
 
 const NPM_SHIM = `@ECHO off
@@ -224,4 +234,51 @@ describe('git repository variables', () => {
     expect(await seen('node')).toEqual(vars.map((k) => `inherited-${k}`));
     expect(await seen('git', { GIT_DIR: 'chosen' })).toEqual(['chosen', null, null, null, null]);
   });
+});
+
+describe('batch launchers (flutter.bat and friends)', () => {
+  const bat = {
+    path: 'C:\\Users\\a b\\flutter\\bin\\flutter.bat',
+    kind: 'cmd-shim' as const,
+  };
+
+  it('quotes the launcher and passes only arguments from the safe alphabet', () => {
+    const { command, argv } = batchCommand(bat, [
+      'create',
+      '--org',
+      'com.example',
+      '--platforms=web,android',
+      '.',
+    ]);
+    expect(command).toBe('cmd.exe');
+    expect(argv.slice(0, 3)).toEqual(['/d', '/s', '/c']);
+    expect(argv[3]).toBe(`""${bat.path}" create --org com.example --platforms=web,android ."`);
+  });
+
+  it('refuses anything that could reach the shell', () => {
+    for (const bad of ['a b', 'x&calc', 'x|y', '%PATH%', 'x"y', 'x^y', 'x!y', '<x', 'x>y', ''])
+      expect(() => batchCommand(bat, ['create', bad]), JSON.stringify(bad)).toThrow(ToolError);
+    expect(() => batchCommand({ ...bat, path: 'C:\\x&y\\flutter.bat' }, ['create'])).toThrow(
+      ToolError,
+    );
+    expect(SAFE_BATCH_ARG.test('com.example')).toBe(true);
+  });
+
+  it.runIf(process.platform === 'win32')(
+    'runs a .bat that is not an npm shim, with a space in its path',
+    async () => {
+      const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'bat ')), 'bin');
+      mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, 'tool.bat');
+      writeFileSync(file, '@echo off\r\necho args=%*\r\nexit /b 3\r\n');
+      const r = await runProcess(file, ['create', '--org=com.example'], {
+        timeoutMs: 20_000,
+        allowBatch: true,
+      });
+      expect(r.code).toBe(3);
+      expect(r.stdout.trim()).toBe('args=create --org=com.example');
+      // Without the opt-in it still refuses to use a shell.
+      await expect(runProcess(file, ['x'], { timeoutMs: 5000 })).rejects.toThrow(ToolError);
+    },
+  );
 });

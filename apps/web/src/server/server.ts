@@ -14,8 +14,8 @@ import {
   type JournalEntry,
   type RunStore,
 } from '@incubator/core';
-import type { IncubatorSpec } from '@incubator/spec';
-import type { RunDetail, RunListItem, StartRunBody } from '../api-types.js';
+import { STACK_CATALOG, type IncubatorSpec } from '@incubator/spec';
+import type { RunDetail, RunListItem, StackInfo, StartRunBody } from '../api-types.js';
 import { ConflictError, RunDriver } from './driver.js';
 import { expectedOrigin } from './origin.js';
 import { CSRF_HEADER, Guard, SECURITY_HEADERS } from './security.js';
@@ -159,6 +159,87 @@ export function createApp(opts: ServerOptions): WebApp {
     async (req, reply) => {
       try {
         return await engine.inspectFolder(req.body.path, req.body.purpose);
+      } catch (err) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  // Retrieved stacks (ADR-027): the catalog, a recommendation for an idea, whether the stack's tool is
+  // installed, and creating the project with the stack's own generator.
+  app.get('/api/stacks', (): StackInfo[] =>
+    STACK_CATALOG.map((s) => ({
+      id: s.id,
+      label: s.label,
+      kind: s.kind,
+      summary: s.summary,
+      platforms: [...s.platforms],
+      ...(s.prerequisites?.[0] ? { install: s.prerequisites[0].install } : {}),
+    })),
+  );
+
+  app.post<{ Body: { idea: string } }>(
+    '/api/stacks/recommend',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['idea'],
+          properties: { idea: { type: 'string', minLength: 1, maxLength: 4000 } },
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        return await engine.stackRecommend(req.body.idea);
+      } catch (err) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  app.post<{ Body: { stack: string } }>(
+    '/api/stacks/probe',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['stack'],
+          properties: { stack: { type: 'string', maxLength: 60 } },
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        return await engine.stackProbe(req.body.stack);
+      } catch (err) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  app.post<{ Body: { stack: string; dir: string; name: string; org?: string } }>(
+    '/api/stacks/create',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['stack', 'dir', 'name'],
+          properties: {
+            stack: { type: 'string', maxLength: 60 },
+            dir: { type: 'string', maxLength: 2000 },
+            name: { type: 'string', minLength: 1, maxLength: 100 },
+            org: { type: 'string', maxLength: 64 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        return await engine.stackCreate({ ...req.body, org: req.body.org ?? 'com.example' });
       } catch (err) {
         return sendError(reply, err);
       }

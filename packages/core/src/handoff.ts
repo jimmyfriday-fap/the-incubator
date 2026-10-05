@@ -27,6 +27,8 @@ export interface HandoffPlan {
   cwd: string;
   planPath: string;
   ceilings: Ceilings;
+  /** Added to the agent's environment: the directory of a tool the owner approved but PATH lacks. */
+  env?: Record<string, string>;
   /** Ceilings this adapter cannot enforce from its stream (reported, never silently dropped). */
   unenforceable: (keyof Ceilings)[];
 }
@@ -241,6 +243,7 @@ export async function launchHandoff(
   let reported = -1;
   const r = await exec.run(plan.bin, plan.argv, {
     cwd: plan.cwd,
+    ...(plan.env ? { env: plan.env } : {}),
     stdin: prompt,
     timeoutMs: plan.ceilings.minutes * 60_000,
     signal: abort.signal,

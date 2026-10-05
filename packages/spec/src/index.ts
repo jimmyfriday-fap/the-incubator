@@ -6,6 +6,7 @@ export * from './paths.js';
 export * from './defaults.js';
 export * from './semantics.js';
 export * from './serialize.js';
+export * from './stacks.js';
 
 import { ENHANCEMENT_SPEC_VERSION, INCUBATOR_SPEC_VERSION } from './constants.js';
 

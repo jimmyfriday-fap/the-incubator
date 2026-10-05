@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -592,6 +599,53 @@ describe('check commands on a repository the Incubator did not build (ADR-025)',
     await h.engine.advance(runId, new DefaultsPrompter());
     expect(tools(h, runId)).toContain('Bash(npm run test:*)');
     expect(tools(h, runId).some((t) => t.includes('scripts/check.mjs'))).toBe(false);
+  });
+
+  it("puts the directory of an approved tool that PATH lacks in front of the agent's PATH", async () => {
+    // Flutter is often unpacked under the home directory and never added to PATH.
+    const home = mkdtempSync(path.join(os.tmpdir(), 'tools home '));
+    const bin = path.join(home, 'flutter', 'bin');
+    mkdirSync(bin, { recursive: true });
+    const win = process.platform === 'win32';
+    const file = path.join(bin, win ? 'flutter.bat' : 'flutter');
+    writeFileSync(file, win ? '@echo off\r\n' : '#!/bin/sh\n');
+    if (!win) chmodSync(file, 0o755);
+    const seen: (Record<string, string | undefined> | undefined)[] = [];
+    const h = fakePublishEngine({
+      handoff: {
+        exec: {
+          ...nodeExec,
+          run: (b, a, o) => {
+            if (b === process.execPath) seen.push(o.env);
+            return nodeExec.run(b, a, o);
+          },
+        },
+        probe: () => Promise.resolve(agentCaps),
+      },
+      tools: { exec: { ...nodeExec, which: () => Promise.resolve(null) }, userHome: home },
+      llm: { dir: enhanceFixtureDir('export-orders') },
+    });
+    const { ref, dir } = await seedExistingRepo(
+      h.github,
+      'flutter-app',
+      path.join(analyzerFixtures, 'flutter-app'),
+    );
+    await setOwner(dir);
+    const runId = h.engine.start({
+      kind: 'enhance',
+      repo: dir,
+      repoRef: ref,
+      dir,
+      request: REQUEST,
+      yes: true,
+      surface: 'test',
+    });
+    h.engine.submitChecks(runId, ['flutter analyze', 'flutter test']);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    const env = seen.find((e) => e !== undefined)!;
+    const key = Object.keys(env).find((k) => k.toLowerCase() === 'path')!;
+    expect(env[key]!.split(path.delimiter)[0]!.toLowerCase()).toBe(bin.toLowerCase());
+    expect(Object.keys(env).filter((k) => k.toLowerCase() === 'path')).toHaveLength(1);
   });
 
   it('leaves an Incubator-built repository on its own gate, whatever was approved', async () => {

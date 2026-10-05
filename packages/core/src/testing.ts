@@ -1,4 +1,12 @@
-import { cpSync, mkdtempSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +17,7 @@ import {
   SecretString,
   ToolError,
   nodeExec,
+  type Exec,
   sha256Hex,
 } from '@incubator/runtime';
 import { FakeGitHub, createGitOps, type GitOps } from '@incubator/git';
@@ -181,6 +190,8 @@ export function fakePublishEngine(
     verify?: () => VerifyResult;
     github?: ConstructorParameters<typeof FakeGitHub>[1];
     handoff?: EngineDeps['handoff'];
+    /** Stand-ins for a stack's own tool (retrieved stacks, ADR-027). */
+    tools?: EngineDeps['tools'];
     /** Discovery turns for greenfield runs (default: no LLM). */
     llm?: LlmAdapter | FixtureTurn[] | { dir: string };
   } = {},
@@ -206,6 +217,7 @@ export function fakePublishEngine(
         llm ? Promise.resolve(llm) : Promise.reject(new ToolError('no LLM in publish tests')),
     },
     ...(opts.handoff ? { handoff: opts.handoff } : {}),
+    ...(opts.tools ? { tools: opts.tools } : {}),
     publish: {
       resolveToken: () =>
         Promise.resolve({ token: new SecretString(FAKE_GITHUB_TOKEN), source: 'env' as const }),
@@ -291,4 +303,55 @@ export async function seedExistingRepo(
   await git(['remote', 'add', 'origin', github.remoteUrl(ref)]);
   await git(['push', '-q', 'origin', 'HEAD:refs/heads/main']);
   return { ref, dir };
+}
+
+/**
+ * A stand-in for a stack's own tool (`flutter`), so no test needs the real one: it answers `--version` and
+ * `create` in-process, writes what `flutter create` writes, and records every call. `installed: false`
+ * makes the tool missing; `fail` makes the generator fail, or leave the project incomplete.
+ */
+export function fakeStackTools(
+  opts: { installed?: boolean; fail?: 'create' | 'version' | 'incomplete' } = {},
+): {
+  tools: NonNullable<EngineDeps['tools']>;
+  calls: { bin: string; args: string[]; cwd?: string }[];
+} {
+  const calls: { bin: string; args: string[]; cwd?: string }[] = [];
+  const exec: Exec = {
+    which: (name) =>
+      Promise.resolve(
+        name === 'flutter' && opts.installed !== false
+          ? { path: path.join(tmpdir(), 'fake-sdk', 'flutter'), kind: 'native' as const }
+          : null,
+      ),
+    run: (bin, args, o) => {
+      calls.push({ bin, args: [...args], ...(o.cwd ? { cwd: o.cwd } : {}) });
+      const done = (code: number, stdout = '', stderr = '') =>
+        Promise.resolve({ code, signal: null, stdout, stderr, timedOut: false });
+      if (args[0] === '--version')
+        return opts.fail === 'version'
+          ? done(1, '', 'Flutter SDK is broken')
+          : done(0, 'Flutter 3.99.0 • channel stable\nFramework • fake\n');
+      if (args[0] === 'create' && o.cwd) {
+        if (opts.fail === 'create') return done(1, '', 'cannot create here');
+        const files: Record<string, string> = {
+          'pubspec.yaml':
+            'name: fake_app\ndependencies:\n  flutter:\n    sdk: flutter\ndev_dependencies:\n  flutter_test:\n    sdk: flutter\n',
+          'analysis_options.yaml': 'include: package:flutter_lints/flutter.yaml\n',
+          'lib/main.dart': 'void main() {}\n',
+          'test/widget_test.dart': 'void main() {}\n',
+          '.gitignore': 'build/\n.dart_tool/\n',
+        };
+        for (const [rel, body] of Object.entries(files)) {
+          if (opts.fail === 'incomplete' && rel === 'lib/main.dart') continue;
+          const abs = path.join(o.cwd, ...rel.split('/'));
+          mkdirSync(path.dirname(abs), { recursive: true });
+          writeFileSync(abs, body);
+        }
+        return done(0, 'All done!\n');
+      }
+      return done(1, '', `unexpected call: ${args.join(' ')}`);
+    },
+  };
+  return { tools: { exec, userHome: mkdtempSync(path.join(tmpdir(), 'home-')) }, calls };
 }

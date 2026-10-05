@@ -1,0 +1,9 @@
+{
+  "schemaName": "StackRecommendation",
+  "note": "fixed: no repeated alternative",
+  "response": {
+    "stack": "node-web",
+    "reasons": ["A website with a database."],
+    "alternatives": []
+  }
+}

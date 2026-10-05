@@ -4,6 +4,7 @@ import {
   enhanceFixtureDir,
   fakeAgentHandoff,
   fakePublishEngine,
+  fakeStackTools,
   seedExistingRepo,
   turnsWithReviewSummary,
 } from '@incubator/core/testing';
@@ -25,18 +26,29 @@ export async function startFakeServer(
   opts: {
     discovery?: string;
     enhance?: string;
+    /** An absolute fixture directory, for flows that mix kinds of turns (a recommendation, then an update). */
+    fixtureDir?: string;
+    /** Stand-ins for a stack's own tool: installed or not, and how the generator fails. */
+    stacks?: Parameters<typeof fakeStackTools>[0];
     uiDir?: string;
     heartbeatMs?: number;
     host?: HostCapabilities;
   } = {},
-): Promise<{ server: RunningServer; h: FakeHarness }> {
+): Promise<{
+  server: RunningServer;
+  h: FakeHarness;
+  stackCalls: ReturnType<typeof fakeStackTools>['calls'];
+}> {
+  const stacks = fakeStackTools(opts.stacks ?? {});
   // One fake model per server: recorded turns for a new project, or for an enhancement request.
   const h = fakePublishEngine({
     handoff: fakeAgentHandoff(),
+    tools: stacks.tools,
     llm: turnsWithReviewSummary(
-      opts.enhance
-        ? enhanceFixtureDir(opts.enhance)
-        : discoveryFixtureDir(opts.discovery ?? 'saas-web'),
+      opts.fixtureDir ??
+        (opts.enhance
+          ? enhanceFixtureDir(opts.enhance)
+          : discoveryFixtureDir(opts.discovery ?? 'saas-web')),
     ),
   });
   const server = await startServer({
@@ -46,7 +58,7 @@ export async function startFakeServer(
     ...(opts.uiDir ? { uiDir: opts.uiDir } : {}),
     ...(opts.heartbeatMs ? { heartbeatMs: opts.heartbeatMs } : {}),
   });
-  return { server, h };
+  return { server, h, stackCalls: stacks.calls };
 }
 
 /** An existing project in a local git repository whose origin is a repository on the fake GitHub. */

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -606,5 +606,130 @@ describe('helpers', () => {
     expect(readAsset(root, '/runs/abc')?.type).toBe('text/html; charset=utf-8');
     expect(readAsset(root, '/assets/missing.js')).toBeNull();
     expect(readAsset(path.join(root, 'none'), '/')).toBeNull();
+  });
+});
+
+describe('retrieved stacks over the API (ADR-027)', () => {
+  const stackFixtures = path.resolve(
+    import.meta.dirname,
+    '../../../../packages/core/fixtures/stacks/flutter-create',
+  );
+  const emptyDir = () => path.join(mkdtempSync(path.join(os.tmpdir(), 'stack ')), 'club');
+
+  beforeEach(() => {
+    const cfg = path.join(mkdtempSync(path.join(os.tmpdir(), 'webcfg ')), 'gitconfig');
+    writeFileSync(cfg, '');
+    vi.stubEnv('GIT_CONFIG_GLOBAL', cfg);
+    vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('lists the catalog and says whether the stack’s tool is installed', async () => {
+    const { api } = await boot();
+    const list = (await api.get<{ id: string; kind: string; install?: string }[]>('/api/stacks'))
+      .body;
+    expect(
+      list
+        .filter((s) => s.kind === 'built-in')
+        .map((s) => s.id)
+        .sort(),
+    ).toEqual(['node-lib', 'node-web', 'python-service', 'wordpress']);
+    expect(list.find((s) => s.id === 'flutter')).toMatchObject({
+      kind: 'retrieved',
+      install: 'https://docs.flutter.dev/get-started/install',
+    });
+    expect(
+      (await api.post<{ ok: boolean; version: string }>('/api/stacks/probe', { stack: 'flutter' }))
+        .body,
+    ).toMatchObject({ ok: true, version: 'Flutter 3.99.0 • channel stable' });
+    // A built-in stack has no generator to probe.
+    expect(
+      (await api.post('/api/stacks/probe', { stack: 'node-web' })).status,
+    ).toBeGreaterThanOrEqual(400);
+    const missing = await boot({ stacks: { installed: false } });
+    expect(
+      (
+        await missing.api.post<{ ok: boolean; reason: string }>('/api/stacks/probe', {
+          stack: 'flutter',
+        })
+      ).body,
+    ).toMatchObject({ ok: false, reason: 'missing' });
+  });
+
+  it('recommends a stack from the catalog for an idea', async () => {
+    const { api } = await boot({ fixtureDir: stackFixtures });
+    const r = (
+      await api.post<{ status: string; recommendation: { stack: string; reasons: string[] } }>(
+        '/api/stacks/recommend',
+        { idea: 'A club event sign-up app for phones and the web' },
+      )
+    ).body;
+    expect(r.status).toBe('ready');
+    expect(r.recommendation.stack).toBe('flutter');
+    expect((await api.post('/api/stacks/recommend', { idea: '' })).status).toBe(400);
+  });
+
+  it('creates the project with the generator, commits it, then plans the idea as an update', async () => {
+    const { api, stackCalls } = await boot({ fixtureDir: stackFixtures });
+    const dir = emptyDir();
+    // The wizard asks for a recommendation first (the first recorded turn).
+    await api.post('/api/stacks/recommend', { idea: 'A club event sign-up app' });
+    const made = (
+      await api.post<{ status: string; commit: string; files: number }>('/api/stacks/create', {
+        stack: 'flutter',
+        dir,
+        name: 'Club Events',
+      })
+    ).body;
+    expect(made).toMatchObject({ status: 'created', files: 5 });
+    expect(stackCalls.find((c) => c.args[0] === 'create')?.args).toContain('club_events');
+    expect(stackCalls.find((c) => c.args[0] === 'create')?.args).toContain('com.example');
+    const git = await nodeExec.run('git', ['log', '--format=%s'], { cwd: dir, timeoutMs: 30_000 });
+    expect(git.stdout.trim()).toBe('chore: flutter create');
+
+    // The owner's idea is the change request; the existing update workflow takes over.
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        dir,
+        request: 'A club event sign-up app: list events, sign up, and see who is coming.',
+      })
+    ).body;
+    const d = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    expect(d.parked?.state).toBe('REVIEW');
+    expect(d.enhance?.stack).toMatchObject({ label: 'Dart/Flutter', packed: false });
+    expect(d.enhance?.checks?.proposed.map((c) => c.command)).toEqual([
+      'flutter analyze',
+      'flutter test',
+    ]);
+  });
+
+  it('refuses a folder that already holds files, and says when the tool is missing', async () => {
+    const { api, stackCalls } = await boot({ stacks: { installed: false } });
+    const dir = emptyDir();
+    const r = (
+      await api.post<{ status: string; probe: { install: string } }>('/api/stacks/create', {
+        stack: 'flutter',
+        dir,
+        name: 'Club',
+      })
+    ).body;
+    expect(r.status).toBe('missing');
+    expect(r.probe.install).toBe('https://docs.flutter.dev/get-started/install');
+    expect(existsSync(dir)).toBe(false);
+    expect(stackCalls).toEqual([]);
+
+    const full = emptyDir();
+    mkdirSync(full, { recursive: true });
+    writeFileSync(path.join(full, 'mine.txt'), 'mine');
+    const refused = await api.post('/api/stacks/create', {
+      stack: 'flutter',
+      dir: full,
+      name: 'Club',
+    });
+    expect(refused.status).toBeGreaterThanOrEqual(400);
+    expect(readFileSync(path.join(full, 'mine.txt'), 'utf8')).toBe('mine');
   });
 });

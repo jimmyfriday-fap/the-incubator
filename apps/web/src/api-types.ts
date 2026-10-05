@@ -160,6 +160,47 @@ export type ReviewSummaryResponse =
   | { status: 'failed'; message: string }
   | { status: 'unavailable' };
 
+/** A stack the Incubator knows (ADR-027). */
+export interface StackInfo {
+  id: string;
+  label: string;
+  kind: 'built-in' | 'retrieved';
+  summary: string;
+  platforms: string[];
+  /** Retrieved stacks: where the owner gets the tool. */
+  install?: string;
+}
+export type StackRecommendResponse =
+  | {
+      status: 'ready';
+      recommendation: {
+        stack: string;
+        reasons: string[];
+        alternatives: { stack: string; tradeoff: string }[];
+      };
+    }
+  | { status: 'failed'; message: string };
+export type StackProbeResponse =
+  | { ok: true; stack: string; tool: string; version: string }
+  | {
+      ok: false;
+      stack: string;
+      tool: string;
+      install: string;
+      reason: 'missing' | 'failed';
+      detail?: string;
+    };
+export type StackCreateResponse =
+  | { status: 'missing'; probe: Extract<StackProbeResponse, { ok: false }> }
+  | {
+      status: 'created';
+      stack: string;
+      dir: string;
+      commit: string;
+      files: number;
+      version: string;
+    };
+
 export interface Revision {
   rev: number;
   final: boolean;

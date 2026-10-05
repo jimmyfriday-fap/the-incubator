@@ -1,3 +1,4 @@
+import os from 'node:os';
 import path from 'node:path';
 import {
   OctokitGitHub,
@@ -105,6 +106,11 @@ export function createLiveEngine(opts: {
           eligible: { discovery: false, analysis: false, handoff: false },
           reasons: ['unknown adapter'],
         },
+    },
+    tools: {
+      exec,
+      userHome: os.homedir(),
+      ...(config.toolPaths ? { toolPaths: config.toolPaths } : {}),
     },
     store,
     clock,

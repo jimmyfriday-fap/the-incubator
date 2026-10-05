@@ -17,5 +17,7 @@ export * from './adopt.js';
 export * from './folders.js';
 export * from './preview.js';
 export * from './config.js';
+export * from './stacks.js';
+export * from './stack-recommendation.js';
 export * from './live.js';
 export type { FinishDetail } from './finish.js';

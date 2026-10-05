@@ -42,11 +42,20 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => s.close()));
 });
 
-async function open(opts: { enhance?: string; pick?: string[] } = {}) {
+async function open(
+  opts: {
+    enhance?: string;
+    pick?: string[];
+    fixtureDir?: string;
+    stacks?: NonNullable<Parameters<typeof startFakeServer>[0]>['stacks'];
+  } = {},
+) {
   const picks = [...(opts.pick ?? [])];
-  const { server, h } = await startFakeServer({
+  const { server, h, stackCalls } = await startFakeServer({
     uiDir: UI_DIR,
     ...(opts.enhance ? { enhance: opts.enhance } : {}),
+    ...(opts.fixtureDir ? { fixtureDir: opts.fixtureDir } : {}),
+    ...(opts.stacks ? { stacks: opts.stacks } : {}),
     // The native folder dialog cannot be driven from a test; the host hands back the queued choices.
     host: { pickFolder: () => Promise.resolve(picks.shift() ?? null) },
   });
@@ -59,7 +68,7 @@ async function open(opts: { enhance?: string; pick?: string[] } = {}) {
     if (m.type() === 'error') errors.push(m.text());
   });
   await page.goto(server.url);
-  return { server, h, page, errors };
+  return { server, h, page, errors, stackCalls };
 }
 
 const state = (page: Page) => page.getByTestId('run-state');
@@ -116,6 +125,81 @@ describe('web UI (Playwright, fakes)', () => {
     await page.getByTestId('narrative').fill('Anything');
     expect(await page.getByTestId('start-new').isDisabled()).toBe(true);
     expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  it('new: a Flutter project made by its own tool: suggest → create → the idea is planned as an update', async () => {
+    const STACK_FIXTURES = path.resolve(
+      import.meta.dirname,
+      '../../../packages/core/fixtures/stacks/flutter-create',
+    );
+    const folder = newFolder();
+    const { page, errors, stackCalls } = await open({ pick: [folder], fixtureDir: STACK_FIXTURES });
+    await intent(page).selectOption({ label: 'New solution' });
+    await page.getByTestId('pick-folder').click();
+    await expect.poll(() => page.getByTestId('folder-path').inputValue(), UI).toBe(folder);
+    await expect
+      .poll(() => page.getByTestId('folder-ok').textContent(), UI)
+      .toContain('will be created and become the repository');
+    await page
+      .getByTestId('narrative')
+      .fill(
+        'A club event sign-up app for phones and the web: list events, sign up, see who is coming.',
+      );
+
+    // The stack: asked for, explained, and the owner's choice.
+    await page.getByTestId('suggest-stack').click();
+    await page.getByTestId('stack-rec').waitFor({ timeout: 15_000 });
+    expect(await page.getByTestId('stack-rec').textContent()).toContain('Suggested: Flutter app');
+    expect(await page.getByTestId('stack-rec').textContent()).toContain('one codebase');
+    expect(await page.getByTestId('stack-rec').textContent()).toContain('Node web app');
+    await page.getByTestId('use-suggested').click();
+    await expect
+      .poll(() => page.getByTestId('stack-ready').textContent(), UI)
+      .toContain('Flutter 3.99.0');
+    expect(await page.getByTestId('stack-details').textContent()).toContain(
+      'never installs the tool for you',
+    );
+    // The folder name is the project name unless the owner changes it.
+    expect(await page.getByTestId('stack-name').inputValue()).toBe('my solution');
+    await page.getByTestId('stack-name').fill('Club Events');
+    await shot(page, 'stack-1-choice');
+    await page.getByTestId('start-create').click();
+    await page.waitForURL(/\/runs\/[\w-]+$/);
+
+    // Created by the generator, committed, and then planned like any update, with the idea as the request.
+    expect(stackCalls.find((c) => c.args[0] === 'create')?.args).toContain('club_events');
+    await page.getByTestId('review').waitFor({ timeout: 60_000 });
+    const note = (await page.getByTestId('no-pack-note').textContent()) ?? '';
+    expect(note).toContain('Detected: Dart/Flutter');
+    expect(await page.getByTestId('checks-editor').inputValue()).toBe(
+      'flutter analyze\nflutter test',
+    );
+    await shot(page, 'stack-2-review');
+    expect(
+      errors.filter((e) => !/Failed to load resource/.test(e)),
+      errors.join('\n'),
+    ).toEqual([]);
+  });
+
+  it('new: a stack whose tool is missing says where to get it and does not start', async () => {
+    const folder = newFolder();
+    const { page, stackCalls } = await open({ pick: [folder], stacks: { installed: false } });
+    await intent(page).selectOption({ label: 'New solution' });
+    await page.getByTestId('pick-folder').click();
+    await expect.poll(() => page.getByTestId('folder-path').inputValue(), UI).toBe(folder);
+    await page.getByTestId('narrative').fill('A phone app for club events');
+    await page.getByTestId('stack').selectOption('flutter');
+    const missing = page.getByTestId('stack-missing');
+    await missing.waitFor({ timeout: 15_000 });
+    expect(await missing.textContent()).toContain('flutter isn');
+    expect(await missing.locator('a').getAttribute('href')).toBe(
+      'https://docs.flutter.dev/get-started/install',
+    );
+    expect(await page.getByTestId('start-create').isDisabled()).toBe(true);
+    // Back to the built-in stacks: the usual button returns.
+    await page.getByTestId('stack').selectOption('');
+    await page.getByTestId('start-new').waitFor();
+    expect(stackCalls.filter((c) => c.args[0] === 'create')).toEqual([]);
   });
 
   it('new solution: folder → describe → questions → review → publish → coding → commit → push → DONE', async () => {

@@ -1,0 +1,9 @@
+{
+  "schemaName": "StackRecommendation",
+  "note": "attempt 1: a stack the catalog does not hold; the gate sends it back",
+  "response": {
+    "stack": "react-native",
+    "reasons": ["It runs on phones."],
+    "alternatives": []
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "schemaName": "StackRecommendation",
+  "note": "an alternative that repeats the pick",
+  "response": {
+    "stack": "node-web",
+    "reasons": ["A website with a database."],
+    "alternatives": [{ "stack": "node-web", "tradeoff": "The same thing." }]
+  }
+}

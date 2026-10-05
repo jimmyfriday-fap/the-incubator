@@ -19,10 +19,12 @@ import {
   completeSpec,
   discoveryTurnWireSchema,
   specHash,
+  stackById,
   validateSemantics,
   validateSpec,
   type DiscoveryTurn,
   type IncubatorSpec,
+  type StackEntry,
 } from '@incubator/spec';
 import {
   attributionIssues,
@@ -59,6 +61,20 @@ import {
   reviewSummaryUserPrompt,
   type ReviewSummary,
 } from './review-summary.js';
+import {
+  createStackProject,
+  probeStack,
+  toolPathEnv,
+  type StackCreateResult,
+  type StackProbe,
+  type ToolsDeps,
+} from './stacks.js';
+import {
+  recommendationIssues,
+  stackRecommendationSchema,
+  stackRecommendationUserPrompt,
+  type StackRecommendation,
+} from './stack-recommendation.js';
 import type { Prompter } from './prompter.js';
 import {
   reduce,
@@ -150,6 +166,8 @@ export interface EngineDeps {
   publish?: PublishDeps;
   /** Handoff: probes an agent CLI and runs processes. */
   handoff?: { exec: Exec; probe(adapter: LlmAdapterId): Promise<Capabilities> };
+  /** Retrieved stacks (ADR-027): finds and runs a stack's own generator. */
+  tools?: ToolsDeps;
 }
 
 export interface RunEvent {
@@ -863,6 +881,73 @@ export class Engine {
     this.enter(runId, 'HANDOFF');
   }
 
+  /**
+   * Advisory: which stack fits a new idea, from the catalog only. A failure is a warning, never an
+   * error, and the owner then picks from the list themselves.
+   */
+  async stackRecommend(
+    idea: string,
+    opts: { adapter?: LlmAdapterId } = {},
+  ): Promise<
+    { status: 'ready'; recommendation: StackRecommendation } | { status: 'failed'; message: string }
+  > {
+    try {
+      const adapter = await this.deps.llm.select('analysis', opts.adapter);
+      const prompt = loadPrompt('stack-recommendation');
+      const gate = await complete<StackRecommendation>(
+        adapter,
+        {
+          schemaName: 'StackRecommendation',
+          schema: stackRecommendationSchema,
+          system: prompt.body,
+          user: stackRecommendationUserPrompt(idea),
+          promptVersion: prompt.version,
+          timeoutMs: this.deps.llmTimeoutMs ?? 180_000,
+        },
+        { log: this.deps.log, extraCheck: (rec) => recommendationIssues(rec) },
+      );
+      return { status: 'ready', recommendation: gate.value };
+    } catch (e) {
+      if (e instanceof InterruptedError) throw e;
+      const message = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+      this.deps.log.warn(`stack recommendation failed: ${message}`);
+      return { status: 'failed', message };
+    }
+  }
+
+  private retrievedStack(id: string): StackEntry {
+    const entry = stackById(id);
+    if (!entry || entry.kind !== 'retrieved')
+      throw new PolicyError(`${id} is not a stack that is created by its own generator`, {
+        code: 'not_retrieved',
+      });
+    if (!this.deps.tools)
+      throw new PolicyError('this build cannot run a stack generator', { code: 'no_tools' });
+    return entry;
+  }
+
+  /** Is the tool for a retrieved stack installed (ADR-027)? */
+  stackProbe(id: string): Promise<StackProbe> {
+    return probeStack(this.retrievedStack(id), this.deps.tools!);
+  }
+
+  /** Creates a new project in an empty folder with the stack's own generator, then commits it. */
+  stackCreate(input: {
+    stack: string;
+    dir: string;
+    name: string;
+    org: string;
+  }): Promise<StackCreateResult> {
+    const entry = this.retrievedStack(input.stack);
+    const publish = this.deps.publish;
+    if (!publish) throw new PolicyError('this build cannot run git', { code: 'no_git' });
+    return createStackProject(entry, input, {
+      ...this.deps.tools!,
+      git: publish.git,
+      ...(publish.identity ? { identity: () => publish.identity!() } : {}),
+    });
+  }
+
   /** The enhance outcome: nothing to change, the local branch, or the pull request. */
   enhanceSummary(runId: string): {
     noop: string | null;
@@ -1498,6 +1583,8 @@ export class Engine {
         'checks_unenforceable',
         `${AGENT_ADAPTERS[agent]} cannot restrict which commands an agent runs, so it cannot code in a repository the Incubator did not build`,
       );
+    const env =
+      external && this.deps.tools ? await toolPathEnv(checks.commands, this.deps.tools) : null;
     const plan: HandoffPlan = {
       agent,
       bin: caps.path,
@@ -1505,6 +1592,7 @@ export class Engine {
       cwd: repo,
       planPath,
       ceilings,
+      ...(env ? { env } : {}),
       unenforceable: [],
     };
     return {

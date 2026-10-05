@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { FolderCheck, StartRunBody } from '../../api-types.js';
-import { getSession } from '../api.js';
+import type {
+  FolderCheck,
+  StackCreateResponse,
+  StackProbeResponse,
+  StartRunBody,
+} from '../../api-types.js';
+import { getSession, post } from '../api.js';
 import { FolderField } from './FolderField.js';
+import { StackChoice } from './StackChoice.js';
 
 type Intent = '' | 'new' | 'update';
 
@@ -18,6 +24,12 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
   const [repoRef, setRepoRef] = useState('');
   const [gaps, setGaps] = useState(false);
   const [starting, setStarting] = useState(false);
+  // A stack the Incubator creates with its own tool (ADR-027), instead of one of its built-in stacks.
+  const [stack, setStack] = useState('');
+  const [stackOrg, setStackOrg] = useState('com.example');
+  const [stackName, setStackName] = useState('');
+  const [probe, setProbe] = useState<StackProbeResponse | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     getSession()
@@ -43,6 +55,27 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
   const go = (body: StartRunBody) => {
     setStarting(true);
     void start(body).finally(() => setStarting(false));
+  };
+  const folderName = (check?.path ?? '').split(/[\\/]/).filter(Boolean).pop() ?? '';
+  // The project is created first; then the owner's idea is planned and coded on top of it as an update.
+  const createAndStart = () => {
+    setStarting(true);
+    setCreateError(null);
+    post<StackCreateResponse>('/api/stacks/create', {
+      stack,
+      dir: check!.path,
+      name: stackName.trim() || folderName,
+      org: stackOrg,
+    })
+      .then((r) => {
+        if (r.status === 'missing') {
+          setProbe(r.probe);
+          return undefined;
+        }
+        return start({ kind: 'enhance', dir: check!.path, request: narrative });
+      })
+      .catch((e: Error) => setCreateError(e.message))
+      .finally(() => setStarting(false));
   };
   const usable = check?.ok === true;
   const needsRef = intent === 'update' && usable && check?.git?.origin === null;
@@ -90,13 +123,38 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
               placeholder="Stockroom: a web app for independent cafés to track stock…"
             />
           </label>
-          <button
-            data-testid="start-new"
-            disabled={!usable || !narrative.trim() || starting}
-            onClick={() => go({ kind: 'new', narrative, dir: check!.path })}
-          >
-            Start discovery
-          </button>
+          <StackChoice
+            idea={narrative}
+            value={stack}
+            onChange={setStack}
+            org={stackOrg}
+            onOrg={setStackOrg}
+            name={stackName || folderName}
+            onName={setStackName}
+            onProbe={setProbe}
+          />
+          {createError && (
+            <p className="error" role="alert" data-testid="stack-create-error">
+              {createError}
+            </p>
+          )}
+          {stack ? (
+            <button
+              data-testid="start-create"
+              disabled={!usable || !narrative.trim() || starting || probe?.ok !== true}
+              onClick={createAndStart}
+            >
+              {starting ? 'Creating the project…' : 'Create the project and plan it'}
+            </button>
+          ) : (
+            <button
+              data-testid="start-new"
+              disabled={!usable || !narrative.trim() || starting}
+              onClick={() => go({ kind: 'new', narrative, dir: check!.path })}
+            >
+              Start discovery
+            </button>
+          )}
         </div>
       )}
 

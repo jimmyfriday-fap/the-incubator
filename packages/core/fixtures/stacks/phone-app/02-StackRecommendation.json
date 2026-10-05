@@ -1,0 +1,17 @@
+{
+  "schemaName": "StackRecommendation",
+  "note": "attempt 2: Flutter, with an alternative",
+  "response": {
+    "stack": "flutter",
+    "reasons": [
+      "You want one app that works on phones and in a browser.",
+      "Flutter builds the web, Android and iOS versions from one codebase."
+    ],
+    "alternatives": [
+      {
+        "stack": "node-web",
+        "tradeoff": "A website only: it would not be a phone app you install."
+      }
+    ]
+  }
+}

@@ -34,6 +34,12 @@ export interface ExecOptions {
   /** Never log output (e.g. `gh auth token`). */
   secretOutput?: boolean;
   signal?: AbortSignal;
+  /**
+   * Windows: run a `.bat`/`.cmd` launcher that is not an npm shim (`flutter.bat`, `dart.bat`) through
+   * `cmd.exe /d /s /c`. Only for a caller that built `args` itself from a validated alphabet: every
+   * argument must match `SAFE_BATCH_ARG`, so no repository or user text can reach the shell.
+   */
+  allowBatch?: boolean;
 }
 
 export interface ExecResult {
@@ -154,6 +160,32 @@ export function commandFor(resolved: ResolvedBin, args: readonly string[]): [str
   return [process.execPath, [resolved.target, ...args]];
 }
 
+/** What an argument of an `allowBatch` launcher may contain: no space, quote, `%`, `&`, `|`, `<`, `>`, `^`, `!`. */
+export const SAFE_BATCH_ARG = /^[A-Za-z0-9_.:=+,@/-]+$/;
+const UNSAFE_BATCH_PATH = /["%&^!|<>]/;
+
+/** The `cmd.exe` argv that runs a batch launcher. Throws unless every argument is within the safe alphabet. */
+export function batchCommand(
+  resolved: ResolvedBin,
+  args: readonly string[],
+): { command: string; argv: string[] } {
+  const bad = args.find((a) => !SAFE_BATCH_ARG.test(a));
+  if (bad !== undefined || UNSAFE_BATCH_PATH.test(resolved.path))
+    throw new ToolError(
+      `refusing to run ${resolved.path} through cmd.exe: ${
+        bad !== undefined
+          ? 'an argument is outside the safe alphabet'
+          : 'the launcher path has shell characters'
+      }`,
+      { code: 'batch_arg_unsafe', details: { launcher: resolved.path } },
+    );
+  // `/s` strips the outer quotes; the launcher path is quoted because it may contain spaces.
+  return {
+    command: 'cmd.exe',
+    argv: ['/d', '/s', '/c', `""${resolved.path}" ${args.join(' ')}"`],
+  };
+}
+
 /** Kills a process and its children. Windows: taskkill /T /F (spawned shell-less). */
 export function killTree(pid: number): void {
   if (process.platform === 'win32') {
@@ -271,7 +303,17 @@ export async function runProcess(
       details: { bin },
     });
   }
-  const [command, argv] = commandFor(resolved, args);
+  const batch =
+    opts.allowBatch === true &&
+    process.platform === 'win32' &&
+    resolved.kind === 'cmd-shim' &&
+    resolved.target === undefined;
+  const { command, argv } = batch
+    ? batchCommand(resolved, args)
+    : ((): { command: string; argv: string[] } => {
+        const [c, a] = commandFor(resolved, args);
+        return { command: c, argv: a };
+      })();
   const max = opts.maxBuffer ?? 16 * 1024 * 1024;
   const log = opts.secretOutput ? undefined : opts.log;
   const outLine = log ? (l: string) => log.debug(l, { stream: 'stdout', bin }) : undefined;
@@ -283,6 +325,7 @@ export async function runProcess(
     const child = spawn(command, argv, {
       shell: false,
       windowsHide: true,
+      windowsVerbatimArguments: batch,
       detached: process.platform !== 'win32',
       cwd: opts.cwd,
       env: buildEnv(bin, opts),
