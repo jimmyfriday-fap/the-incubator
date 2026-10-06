@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Question } from '@incubator/spec';
-import { applyAnswers, type AskedInfo, type Draft } from './merge.js';
+import type { DiscoveryTurn, Question } from '@incubator/spec';
+import { applyAnswers, attributionIssues, type AskedInfo, type Draft } from './merge.js';
 import { buildUserPrompt } from './prompt-builder.js';
 import { questionIssues, questionTarget } from './questions.js';
 
@@ -178,5 +178,78 @@ describe('buildUserPrompt on an update run', () => {
     const text = buildUserPrompt(base);
     expect(text).toContain('- request.dashboardRecords = Events and meets (user)');
     expect(text).toContain('question keys are dotted paths into incubator.json');
+  });
+});
+
+describe('attribution on an update run (plan 020)', () => {
+  const before = { intent: { coreFeatures: [] } } as unknown as Draft;
+  const turn = (decisionKeys: string[]): DiscoveryTurn => ({
+    draftSpec: {
+      intent: {
+        coreFeatures: [{ id: 'dashboard', summary: 'A dashboard', lane: 'enhancement/new' }],
+        personas: ['coach'],
+      },
+      decisions: decisionKeys.map((key) => ({
+        key,
+        question: 'q',
+        answer: 'a',
+        source: 'inferred',
+      })),
+    },
+    questions: [],
+    done: true,
+  });
+
+  it('names the key to add when a decision does not cover the field', () => {
+    const messages = attributionIssues(before, turn(['dashboard']), { nameKey: true }).map(
+      (i) => i.message,
+    );
+    expect(messages).toContain(
+      'draftSpec sets intent.coreFeatures without a matching decisions[] entry: add one with key "intent.coreFeatures"',
+    );
+    expect(messages).toContain(
+      'draftSpec sets intent.personas without a matching decisions[] entry: add one with key "intent.personas"',
+    );
+  });
+
+  it('keeps the greenfield message exactly as it was', () => {
+    const messages = attributionIssues(before, turn(['dashboard'])).map((i) => i.message);
+    expect(messages).toContain(
+      'draftSpec sets intent.coreFeatures without a matching decisions[] entry',
+    );
+    expect(messages.join('\n')).not.toContain('add one with key');
+  });
+
+  it('accepts decisions keyed by the field paths, and not by a path below the field', () => {
+    expect(attributionIssues(before, turn(['intent.coreFeatures', 'intent.personas']))).toEqual([]);
+    expect(
+      attributionIssues(before, turn(['intent.coreFeatures.dashboard', 'intent.personas'])).map(
+        (i) => i.path,
+      ),
+    ).toEqual(['/draftSpec/intent/coreFeatures']);
+  });
+});
+
+describe('the decision rule in the user prompt (plan 020)', () => {
+  const ctx = {
+    round: 1,
+    narrative: 'A landing page called Dashboard.',
+    analysis: null,
+    draft: { intent: { coreFeatures: [] } },
+    decisions: [],
+  };
+
+  it('tells an update run the exact keys', () => {
+    const text = buildUserPrompt({ ...ctx, enhance: true });
+    expect(text).toContain('keyed by its path: "intent.coreFeatures" whenever you set features');
+    expect(text).not.toContain('- Record every value you set in draftSpec.decisions');
+  });
+
+  it('leaves the greenfield rule as it was', () => {
+    const text = buildUserPrompt(ctx);
+    expect(text).toContain(
+      '- Record every value you set in draftSpec.decisions with source "inferred" and a one-line question/answer.',
+    );
+    expect(text).not.toContain('keyed by its path');
   });
 });

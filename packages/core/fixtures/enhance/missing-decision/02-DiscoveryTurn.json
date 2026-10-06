@@ -1,0 +1,34 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "plan 020: the corrected reply keys its decisions by the field paths",
+  "response": {
+    "draftSpec": {
+      "intent": {
+        "coreFeatures": [
+          {
+            "id": "export-orders",
+            "summary": "Export the day's orders as CSV from the existing /orders route",
+            "lane": "enhancement/existing"
+          }
+        ],
+        "personas": ["kitchen staff"]
+      },
+      "decisions": [
+        {
+          "key": "intent.coreFeatures",
+          "question": "Which existing behaviour changes",
+          "answer": "GET /orders gains a CSV export",
+          "source": "inferred"
+        },
+        {
+          "key": "intent.personas",
+          "question": "Who uses it",
+          "answer": "kitchen staff",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [],
+    "done": true
+  }
+}

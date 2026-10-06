@@ -2219,7 +2219,7 @@ export class Engine {
         log: this.deps.log,
         extraCheck: (turn) => [
           ...questionIssues(turn.questions, { enhance }),
-          ...attributionIssues(before, turn),
+          ...attributionIssues(before, turn, { nameKey: enhance }),
           ...(enhance
             ? [...featureIssues(turn.draftSpec, baseline), ...outsideIntentIssues(before, turn)]
             : otherIssues(turn)),

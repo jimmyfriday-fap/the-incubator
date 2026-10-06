@@ -45,8 +45,16 @@ export function withoutPackFixed(draft: Draft): Draft {
   return out;
 }
 
-/** Every value the model changed must be attributed by a decision (TDD §5.2 rule 4). */
-export function attributionIssues(before: Draft, turn: DiscoveryTurn): Issue[] {
+/**
+ * Every value the model changed must be attributed by a decision (TDD §5.2 rule 4). `nameKey` (update runs,
+ * plan 020) adds the key to use to each message, so the model can correct itself on the retry; greenfield
+ * messages stay as they were, because recorded fixtures are keyed by their exact text.
+ */
+export function attributionIssues(
+  before: Draft,
+  turn: DiscoveryTurn,
+  opts: { nameKey?: boolean } = {},
+): Issue[] {
   const proposed = withoutPackFixed(turn.draftSpec);
   const after = deepMerge(withoutMeta(before), withoutMeta(proposed));
   const keys = [...(before.decisions ?? []), ...(proposed.decisions ?? [])].map((d) => d.key);
@@ -55,7 +63,9 @@ export function attributionIssues(before: Draft, turn: DiscoveryTurn): Issue[] {
     .map((p) => ({
       code: 'decision.missing',
       path: `/draftSpec/${p.replaceAll('.', '/')}`,
-      message: `draftSpec sets ${p} without a matching decisions[] entry`,
+      message: opts.nameKey
+        ? `draftSpec sets ${p} without a matching decisions[] entry: add one with key "${p}"`
+        : `draftSpec sets ${p} without a matching decisions[] entry`,
     }));
 }
 

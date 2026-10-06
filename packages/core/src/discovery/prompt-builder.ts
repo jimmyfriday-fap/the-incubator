@@ -85,7 +85,9 @@ export function buildUserPrompt(ctx: TurnContext): string {
       ? `- Ask at most ${MAX_QUESTIONS_PER_ROUND} questions; key every question "request.<topic>" in camelCase (for example "request.dashboardRecords"), never a path in incubator.json. Fold the answers into intent.coreFeatures yourself.`
       : `- Ask at most ${MAX_QUESTIONS_PER_ROUND} questions; question keys are dotted paths into incubator.json (for example "deploy.target").`,
     '- Each question has 2-4 options with exactly one marked recommended.',
-    '- Record every value you set in draftSpec.decisions with source "inferred" and a one-line question/answer.',
+    ctx.enhance
+      ? '- Record each intent field you set or change in draftSpec.decisions, keyed by its path: "intent.coreFeatures" whenever you set features, and "intent.personas" (or any other intent field) if you change it; source "inferred", with a one-line question/answer. A decision keyed by a feature id, by a request.<topic> key, or by a path below the field (such as intent.coreFeatures.exportOrders) does not count.'
+      : '- Record every value you set in draftSpec.decisions with source "inferred" and a one-line question/answer.',
     '- Answers the user already gave are final; do not ask about them again.',
     ctx.round >= MAX_ROUNDS
       ? '- This is the last round: ask only what would still change the generated files; unanswered questions take their recommended option.'

@@ -1,0 +1,28 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "plan 020: decisions keyed by the feature, not the field; the gate must send it back naming intent.coreFeatures",
+  "response": {
+    "draftSpec": {
+      "intent": {
+        "coreFeatures": [
+          {
+            "id": "export-orders",
+            "summary": "Export the day's orders as CSV from the existing /orders route",
+            "lane": "enhancement/existing"
+          }
+        ],
+        "personas": ["kitchen staff"]
+      },
+      "decisions": [
+        {
+          "key": "exportOrders",
+          "question": "Which existing behaviour changes",
+          "answer": "GET /orders gains a CSV export",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [],
+    "done": true
+  }
+}

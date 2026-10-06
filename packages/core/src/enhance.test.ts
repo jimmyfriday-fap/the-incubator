@@ -409,6 +409,20 @@ describe('enhance', () => {
     expect(answered.map((d) => d.answer).sort()).toEqual(['Events and meets', 'Upcoming events']);
   });
 
+  it('names the missing decision key in the retry, so the model can fix it (plan 020)', async () => {
+    const h = engineFor('missing-decision');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const runId = start(h, dir, ref, { noPublish: true });
+    const s = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(s.state).toBe('DONE');
+    const turns = (h.llm as FakeLlmAdapter).calls.filter((c) => c.schemaName === 'DiscoveryTurn');
+    expect(turns).toHaveLength(2);
+    expect(turns[0]!.user).toContain('keyed by its path: "intent.coreFeatures"');
+    expect(turns[1]!.user).toContain('add one with key "intent.coreFeatures"');
+    expect(turns[1]!.user).toContain('add one with key "intent.personas"');
+    expect(h.engine.finalSpec(runId)!.intent.personas).toEqual(['kitchen staff']);
+  });
+
   it('heals a run whose draft an earlier build corrupted with option slugs', async () => {
     const h = engineFor('dashboard-questions');
     const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
@@ -645,7 +659,7 @@ describe('enhance helpers', () => {
   it('ships the enhance prompt versioned and byte-pinned', () => {
     const p = loadPrompt('enhance');
     expect(p.name).toBe('enhance');
-    expect(p.version).toBe('1.2.0');
+    expect(p.version).toBe('1.3.0');
     expect(p.body).toMatchSnapshot();
   });
 
