@@ -1121,6 +1121,27 @@ is where the coding agent works and who commits.
   (a 14-point crash matrix in `folder-runs.test.ts`; scenarios `local-folder`).
 - **Consent.** `--yes` accepts defaults; it is never consent to commit or push.
 
+### 7.6 The project portfolio (ADR-028)
+
+`~/.incubator/portfolio.json` keeps one entry per project the Incubator has worked on: name, summary,
+repository (folder, remote, GitHub address), a stack label, how it was first met (`created`, `adopted`,
+`existing`) and the runs that worked on it, each with its request, state and outcome. It sits beside
+`config.json`, outside `runs/`, so `incubator gc` never removes it; writes are atomic and a damaged file is set
+aside.
+
+- **Recognition.** `advance` matches a run's folder by the marker `.incubator/project.json` (its project id),
+  then the normalised git remote, then the folder path, and never by name; anything else is a new project
+  (`origin: existing` when the Incubator did not make it). An update run delivers the marker with its plan, so it
+  lands in the commit the owner approves.
+- **Kept current from the journal.** State changes, parking, failure, completion, the request, the commit, the
+  pull request, the final spec and the analysis summary update the project and its run. A portfolio write that
+  fails is a warning, never a failed run. The first start with the portfolio on files the runs already on disk.
+- **Surfaces.** `GET /api/portfolio`, `GET /api/portfolio/:id`, `RunDetail.project`, the folder check's
+  `project`; the home page shows a card per project, `/projects/:id` its history, the run page its project at
+  the top; `incubator portfolio [project] [--json]`.
+- **Not yet.** A new solution and an adopt pull request do not deliver the marker; their projects are matched by
+  remote and folder until the first update.
+
 ---
 
 ## 8. Handoff (brief §8)
@@ -1195,6 +1216,7 @@ is where the coding agent works and who commits.
   | POST   | `/folders/pick`                          | the host's native folder dialog (`{purpose}` → `{path \| null}`)     |
   | POST   | `/folders/inspect`                       | `{path, purpose}` → a verdict: problems, warnings, branch, origin    |
   | POST   | `/runs/:id/commit`, `/runs/:id/push`     | the owner's answers at COMMIT and PUSH (§7.5)                        |
+  | GET    | `/portfolio`, `/portfolio/:id`           | the project cards, and one project with its runs (§7.6)              |
   | GET    | `/runs/:id/events`                       | SSE `RunEvent` stream; `Last-Event-ID` = journal seq, for reconnects |
 
 - **Host capabilities** (ADR-022). `ServerOptions.host.pickFolder` is how the embedding process
@@ -1422,3 +1444,4 @@ flowchart LR
 | [025](adr/025-owner-approved-check-commands.md)         | The owner approves what a coding agent runs in an external repository             |
 | [026](adr/026-stack-pack-catalog-and-recommendation.md) | A stack pack catalog in the manifests; the LLM recommends a stack, rules check it |
 | [027](adr/027-retrieved-stacks.md)                      | Larger stacks are retrieved from their own generator, not built in as packs       |
+| [028](adr/028-project-portfolio-and-repo-marker.md)     | A project portfolio, and a marker in the repository that ties a folder to it      |

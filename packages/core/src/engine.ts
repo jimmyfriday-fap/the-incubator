@@ -75,6 +75,14 @@ import {
   stackRecommendationUserPrompt,
   type StackRecommendation,
 } from './stack-recommendation.js';
+import {
+  MARKER_PATH,
+  markerText,
+  readMarker,
+  type Portfolio,
+  type PortfolioProject,
+  type PortfolioRun,
+} from './portfolio.js';
 import type { Prompter } from './prompter.js';
 import {
   reduce,
@@ -168,7 +176,21 @@ export interface EngineDeps {
   handoff?: { exec: Exec; probe(adapter: LlmAdapterId): Promise<Capabilities> };
   /** Retrieved stacks (ADR-027): finds and runs a stack's own generator. */
   tools?: ToolsDeps;
+  /** The portfolio of projects the Incubator has worked on (ADR-028). */
+  portfolio?: Portfolio;
 }
+
+/** The journal entries that change what the portfolio shows about a run or its project. */
+const PORTFOLIO_EVENTS = new Set([
+  'state.enter',
+  'park',
+  'failed',
+  'run.done',
+  'enhance.request',
+  'step.ok',
+  'finish.summary',
+  'spec.revision',
+]);
 
 export interface RunEvent {
   runId: string;
@@ -186,7 +208,9 @@ export interface DetectedStack {
 
 export class Engine {
   readonly #listeners = new Set<(e: RunEvent) => void>();
-  constructor(private readonly deps: EngineDeps) {}
+  constructor(private readonly deps: EngineDeps) {
+    if (deps.portfolio) this.on((e) => this.syncPortfolio(e));
+  }
 
   on(listener: (e: RunEvent) => void): () => void {
     this.#listeners.add(listener);
@@ -730,6 +754,9 @@ export class Engine {
         !isCanonicalRepo(dir) &&
         !(this.state(runId).input.withGaps === true && spec.stack.pack !== OTHER),
     });
+    // The project's marker travels with the plan, so the repository is recognised next time (ADR-028).
+    const marker = this.markerFor(runId);
+    if (marker) files.set(marker.path, marker);
     const delivery: RenderResult = { ...base, files };
     return { dir, features, base, date, planPath, targets, files, delivery };
   }
@@ -879,6 +906,214 @@ export class Engine {
       });
     });
     this.enter(runId, 'HANDOFF');
+  }
+
+  // --- portfolio (ADR-028) -----------------------------------------------------------------------
+
+  /** Every project the Incubator has worked on, most recently touched first. */
+  portfolioList(): PortfolioProject[] {
+    return this.deps.portfolio?.list() ?? [];
+  }
+
+  portfolioGet(id: string): PortfolioProject | undefined {
+    return this.deps.portfolio?.get(id);
+  }
+
+  /** The project a run belongs to. */
+  portfolioForRun(runId: string): PortfolioProject | undefined {
+    return this.deps.portfolio?.forRun(runId);
+  }
+
+  /** The project a folder is, by its marker, its git remote or its path (for the wizard and a new run). */
+  async portfolioFor(dir: string): Promise<PortfolioProject | undefined> {
+    const pf = this.deps.portfolio;
+    if (!pf || !path.isAbsolute(dir)) return undefined;
+    return pf.match({
+      markerId: readMarker(dir),
+      remote: await this.remoteOf(dir),
+      dir,
+    });
+  }
+
+  private async remoteOf(dir: string): Promise<string | null> {
+    try {
+      return existsSync(path.join(dir, '.git'))
+        ? ((await this.deps.publish?.git.remoteGetUrl(dir)) ?? null)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Puts a run under a project: the one its folder already is (marker, remote, path), or a new one. Best
+   * effort: the portfolio is a record, never a reason for a run to fail.
+   */
+  private async linkPortfolio(runId: string): Promise<void> {
+    const pf = this.deps.portfolio;
+    if (!pf || pf.forRun(runId)) return;
+    try {
+      const s = this.state(runId);
+      const input = s.input;
+      const dir =
+        input.dir ??
+        (input.repo && path.isAbsolute(input.repo) && existsSync(input.repo) ? input.repo : null);
+      const ref = input.repoRef ?? null;
+      const remote =
+        (dir ? await this.remoteOf(dir) : null) ??
+        (ref ? `https://github.com/${ref.owner}/${ref.name}` : null);
+      let project = pf.match({ markerId: dir ? readMarker(dir) : null, remote, dir });
+      if (!project) {
+        const base = dir ? path.basename(dir) : (ref?.name ?? '');
+        project = pf.create({
+          name: base || 'New project',
+          summary: input.kind === 'new' ? sanitizeRequest(input.narrative ?? '', 240) : '',
+          origin:
+            input.kind === 'new' ? 'created' : input.kind === 'adopt' ? 'adopted' : 'existing',
+          repo: {
+            dir,
+            remote,
+            ref,
+            url: ref ? `https://github.com/${ref.owner}/${ref.name}` : null,
+          },
+          stack: null,
+        });
+      }
+      pf.attachRun(project.id, {
+        runId,
+        kind: input.kind,
+        request: this.portfolioRequest(runId),
+        startedAt: this.entries(runId)[0]?.ts ?? this.deps.clock.now().toISOString(),
+        state: s.state,
+        done: s.done,
+        outcome: null,
+      });
+    } catch (e) {
+      this.deps.log.warn(
+        `portfolio: could not link run ${runId}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  private portfolioRequest(runId: string): string | null {
+    const s = this.state(runId);
+    const text = s.input.kind === 'enhance' ? this.requestText(runId) : (s.input.narrative ?? '');
+    return text ? sanitizeRequest(text, 600) : null;
+  }
+
+  /** Keeps the portfolio in step with a run from the journal entries it writes. Never throws. */
+  private syncPortfolio(e: RunEvent): void {
+    const pf = this.deps.portfolio;
+    if (!pf) return;
+    const t = e.entry.type;
+    if (!PORTFOLIO_EVENTS.has(t)) return;
+    try {
+      const project = pf.forRun(e.runId);
+      if (!project) return;
+      const run = (p: PortfolioProject): PortfolioRun | undefined =>
+        p.runs.find((r) => r.runId === e.runId);
+      const x = e.entry as Record<string, unknown>;
+      pf.update(project.id, (p) => {
+        const r = run(p);
+        if (!r) return;
+        switch (t) {
+          case 'state.enter':
+            r.state = String(x['state']);
+            break;
+          case 'park':
+            r.state = 'PARKED';
+            break;
+          case 'failed':
+            r.state = 'FAILED';
+            break;
+          case 'run.done':
+            r.state = 'DONE';
+            r.done = true;
+            if (typeof x['local'] === 'string')
+              r.outcome = { ...(r.outcome ?? {}), local: x['local'] };
+            break;
+          case 'enhance.request':
+            r.request = typeof x['text'] === 'string' ? sanitizeRequest(x['text'], 600) : r.request;
+            break;
+          case 'step.ok': {
+            const data = (x['data'] ?? {}) as { sha?: string | null; branch?: string };
+            if (x['step'] === 'finish.commit' && data.sha)
+              r.outcome = {
+                ...(r.outcome ?? {}),
+                commit: data.sha,
+                ...(data.branch ? { branch: data.branch } : {}),
+              };
+            if (x['step'] === 'enhance.summary' && !p.summary)
+              p.summary = this.analysisSummaryLine(e.runId);
+            break;
+          }
+          case 'finish.summary': {
+            const pr = x['pr'] as { number: number; url: string } | undefined;
+            if (pr) r.outcome = { ...(r.outcome ?? {}), pr };
+            if (typeof x['repo'] === 'string') p.repo.url = x['repo'];
+            break;
+          }
+          case 'spec.revision':
+            if (x['final'] === true) this.portfolioFromSpec(e.runId, p);
+            break;
+        }
+      });
+    } catch (err) {
+      this.deps.log.warn(
+        `portfolio: could not record ${t}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /** The name, summary and stack the complete spec gives a project this run made; a stack label for an update. */
+  private portfolioFromSpec(runId: string, p: PortfolioProject): void {
+    const spec = this.finalSpec(runId);
+    if (!spec) return;
+    const kind = this.state(runId).input.kind;
+    if (kind === 'new') {
+      p.name = spec.project.name;
+      p.summary = sanitizeRequest(spec.project.description || spec.intent.narrative, 240);
+      p.stack = stackById(spec.stack.pack)?.label ?? spec.stack.pack;
+    } else if (!p.stack) {
+      p.stack = this.detectedStack(runId)?.label ?? stackById(spec.stack.pack)?.label ?? null;
+    }
+  }
+
+  /** The first paragraph of the model's analysis summary ("what this repository is"), one line. */
+  private analysisSummaryLine(runId: string): string {
+    const file = this.enhanceFile(runId, 'analysis-summary.md');
+    if (!existsSync(file)) return '';
+    const m = /## What this repository is\s+([\s\S]*?)(?:\n## |$)/.exec(readFileSync(file, 'utf8'));
+    return m ? sanitizeRequest(m[1]!, 240) : '';
+  }
+
+  /**
+   * First use: builds the portfolio from the runs already on disk, so earlier work appears at once. Runs
+   * are replayed oldest first through the same code that follows a live run.
+   */
+  async portfolioBackfill(): Promise<void> {
+    const pf = this.deps.portfolio;
+    if (!pf || pf.exists()) return;
+    for (const runId of this.deps.store.list()) {
+      try {
+        await this.linkPortfolio(runId);
+        for (const entry of this.entries(runId)) this.syncPortfolio({ runId, entry });
+      } catch {
+        // a run that cannot be read is skipped
+      }
+    }
+  }
+
+  /** The marker file a project's repository carries, as a delivered file. */
+  private markerFor(runId: string): RenderedFile | null {
+    const project = this.deps.portfolio?.forRun(runId);
+    if (!project) return null;
+    return {
+      path: MARKER_PATH,
+      bytes: Buffer.from(markerText(project)),
+      mode: '0644',
+      pack: 'incubator',
+    };
   }
 
   /**
@@ -1185,7 +1420,10 @@ export class Engine {
   /** Explains a folder the owner chose before a run starts (the wizard, the CLI). Changes nothing. */
   async inspectFolder(folder: string, purpose: FolderPurpose): Promise<FolderVerdict> {
     if (!this.deps.publish) throw new ToolError('folders need git dependencies');
-    return inspectFolder(this.deps.publish.git, folder, purpose);
+    const v = await inspectFolder(this.deps.publish.git, folder, purpose);
+    if (!this.deps.portfolio || purpose !== 'existing' || !v.path) return v;
+    const project = await this.portfolioFor(v.path);
+    return { ...v, project: project ? { id: project.id, name: project.name } : null };
   }
 
   /** In-place enhance and new-solution runs both name a folder; everything below works on it. */
@@ -1934,6 +2172,7 @@ export class Engine {
    * A ParkError is journaled and the parked state returned (exit 2 at the CLI).
    */
   async advance(runId: string, prompter: Prompter): Promise<RunState> {
+    await this.linkPortfolio(runId);
     try {
       for (;;) {
         const s = this.state(runId);

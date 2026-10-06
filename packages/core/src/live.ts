@@ -8,6 +8,7 @@ import {
 } from '@incubator/git';
 import { LeantimeTracker } from '@incubator/tracker';
 import type { IncubatorSpec } from '@incubator/spec';
+import { Portfolio } from './portfolio.js';
 import { createLlmRegistry, type LlmRegistry } from '@incubator/llm';
 import {
   OsKeychain,
@@ -107,6 +108,7 @@ export function createLiveEngine(opts: {
           reasons: ['unknown adapter'],
         },
     },
+    portfolio: new Portfolio(home),
     tools: {
       exec,
       userHome: os.homedir(),

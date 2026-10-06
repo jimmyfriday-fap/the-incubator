@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { getSession } from './api.js';
 import { navigate } from './nav.js';
 import { Home } from './views/Home.js';
+import { ProjectView } from './views/ProjectView.js';
 import { RunView } from './views/RunView.js';
 
 const runPath = /^\/runs\/([A-Za-z0-9-]+)$/;
+const projectPath = /^\/projects\/([A-Za-z0-9-]+)$/;
 
 export function App() {
   const [path, setPath] = useState(window.location.pathname);
@@ -18,6 +20,7 @@ export function App() {
     return () => window.removeEventListener('popstate', on);
   }, []);
   const m = runPath.exec(path);
+  const p = projectPath.exec(path);
   return (
     <div className="app">
       <header className="top">
@@ -33,7 +36,15 @@ export function App() {
         </a>
         <span className="muted">{version}</span>
       </header>
-      <main>{m ? <RunView runId={m[1]!} key={m[1]} /> : <Home />}</main>
+      <main>
+        {m ? (
+          <RunView runId={m[1]!} key={m[1]} />
+        ) : p ? (
+          <ProjectView id={p[1]!} key={p[1]} />
+        ) : (
+          <Home />
+        )}
+      </main>
     </div>
   );
 }

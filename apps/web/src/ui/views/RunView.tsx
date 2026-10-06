@@ -4,6 +4,7 @@ import { get, post } from '../api.js';
 import { ChangeRequest } from './ChangeRequest.js';
 import { Coding } from './Coding.js';
 import { CommitRequest, PushRequest } from './FinishChanges.js';
+import { ProjectBanner } from './Projects.js';
 import { Questions } from './Questions.js';
 import { Review } from './Review.js';
 import { RunLog } from './RunLog.js';
@@ -72,6 +73,14 @@ export function RunView({ runId }: { runId: string }) {
 
   return (
     <div className="run">
+      {run.project && (
+        <ProjectBanner
+          project={run.project}
+          request={
+            run.kind === 'enhance' ? (run.enhance?.request ?? '') : (run.input.narrative ?? '')
+          }
+        />
+      )}
       <section className="card wide">
         <h2>
           {run.kind === 'adopt'

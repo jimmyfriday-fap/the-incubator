@@ -357,3 +357,54 @@ blockquote {
   font-family: ui-monospace, monospace;
   font-size: 13px;
 }
+
+.projects {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.project-card {
+  display: grid;
+  gap: 6px;
+  height: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  align-content: start;
+}
+
+.project-card:hover,
+.project-card:focus-visible {
+  border-color: var(--text);
+}
+
+.project-summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.project-where {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.project-banner h2 {
+  margin-bottom: 4px;
+}
+
+.project-banner p {
+  margin: 4px 0;
+}
+
+.run-request {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}

@@ -30,6 +30,8 @@ export interface FolderVerdict {
    * canonical-pattern files are unavailable (ADR-024). `label` is a built-in constant.
    */
   stack: { supported: boolean; label: string } | null;
+  /** `existing`: the portfolio project this folder already is (ADR-028), when the portfolio is on. */
+  project?: { id: string; name: string } | null;
   /** Reasons the folder cannot be used. Empty when `ok`. */
   problems: string[];
   /** Things worth knowing that do not block (for example, "no GitHub origin: push will be unavailable"). */

@@ -291,7 +291,7 @@ describe('web UI (Playwright, fakes)', () => {
 
     // Back home, the run is listed.
     await page.getByRole('link', { name: 'The Incubator' }).click();
-    await expect.poll(() => page.getByTestId('runs').textContent(), UI).toContain('DONE');
+    await expect.poll(() => page.getByTestId('projects').textContent(), UI).toContain('DONE');
     expect(errors, errors.join('\n')).toEqual([]);
   });
 
@@ -452,6 +452,10 @@ describe('web UI (Playwright, fakes)', () => {
 
     // The scan is done; the owner says what to change.
     await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
+    // The run is filed under a project, shown at the top of the page.
+    await expect
+      .poll(() => page.getByTestId('project-banner').textContent(), UI)
+      .toContain(path.basename(dir));
     expect(await page.getByTestId('scan-coverage').textContent()).toMatch(
       /^Scanned \d+ of \d+ files/,
     );
@@ -505,16 +509,31 @@ describe('web UI (Playwright, fakes)', () => {
     );
     expect(h.github.repos.get('octo/bare-node')!.prs).toHaveLength(1);
 
-    // Recent runs offers "Update again"; it starts again at the scan, in the same folder.
+    // The portfolio lists the project with this run in its history; "Update again" starts again at the
+    // scan, in the same folder, and the new run joins the same project.
     await page.getByRole('link', { name: 'The Incubator' }).click();
-    await page.locator('[data-testid^="enhance-2"]').first().click();
+    await page.locator('.project-card').first().click();
+    await page.waitForURL(/\/projects\/[\w-]+$/);
+    await expect.poll(() => page.getByTestId('project-runs').textContent(), UI).toContain('DONE');
+    await shot(page, 'enhance-6-project');
+    await page.getByTestId('project-update').click();
     await page.waitForURL(/\/runs\/[\w-]+$/);
+    await expect
+      .poll(() => page.getByTestId('project-banner').textContent(), UI)
+      .toContain('2 runs so far');
     await expect
       .poll(
         () => page.locator('[data-testid="change-request"], [data-testid="parked"]').count(),
         UI,
       )
       .toBeGreaterThan(0);
+    // Choosing the same folder in the wizard again says the Incubator knows it.
+    await page.getByRole('link', { name: 'The Incubator' }).click();
+    await intent(page).selectOption({ label: 'Update an existing solution' });
+    await page.getByTestId('folder-path').fill(dir);
+    await expect
+      .poll(() => page.getByTestId('recognised').textContent(), UI)
+      .toContain(path.basename(dir));
     expect(errors, errors.join('\n')).toEqual([]);
   });
 

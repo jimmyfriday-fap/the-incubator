@@ -27,6 +27,8 @@ export interface FolderCheck {
   } | null;
   /** Whether a stack pack fits the repository; without one the canonical files are unavailable. */
   stack: { supported: boolean; label: string } | null;
+  /** The portfolio project this folder already is (ADR-028); absent when the portfolio is off. */
+  project?: { id: string; name: string } | null;
   problems: string[];
   warnings: string[];
 }
@@ -115,6 +117,51 @@ export interface RunDetail {
   enhance: EnhanceDetail | null;
   /** Folder runs: the coding, commit and push stages. */
   finish: FinishInfo | null;
+  /** The portfolio project this run belongs to (null until it is filed, or when the portfolio is off). */
+  project: ProjectBrief | null;
+}
+
+/** A project of the portfolio (ADR-028), as the run page shows it. */
+export interface ProjectBrief {
+  id: string;
+  name: string;
+  summary: string;
+  stack: string | null;
+  repo: { dir: string | null; url: string | null };
+  runCount: number;
+}
+
+/** One card on the dashboard home (GET /api/portfolio). */
+export interface ProjectCard extends ProjectBrief {
+  origin: 'created' | 'adopted' | 'existing';
+  updatedAt: string;
+  latest: { runId: string; kind: string; state: string; done: boolean; startedAt: string } | null;
+}
+
+export interface ProjectRunInfo {
+  runId: string;
+  kind: string;
+  request: string | null;
+  startedAt: string;
+  state: string;
+  done: boolean;
+  outcome: {
+    commit?: string;
+    branch?: string;
+    pr?: { number: number; url: string };
+    local?: string;
+  } | null;
+  /** The run's folder still exists, so it can be opened. */
+  available: boolean;
+}
+
+/** A project and its run history (GET /api/portfolio/:id). */
+export interface ProjectDetail extends ProjectBrief {
+  origin: 'created' | 'adopted' | 'existing';
+  createdAt: string;
+  updatedAt: string;
+  repo: { dir: string | null; url: string | null; remote: string | null };
+  runs: ProjectRunInfo[];
 }
 
 /** What an enhance run shows: the scan, the request, and the outcome. */

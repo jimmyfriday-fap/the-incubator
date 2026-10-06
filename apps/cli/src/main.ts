@@ -12,6 +12,7 @@ import { collectCheck } from './commands/checks.js';
 import { runGc } from './commands/gc.js';
 import { runAdopt, type AdoptOptions } from './commands/adopt.js';
 import { runEnhance, type EnhanceOptions } from './commands/enhance.js';
+import { runPortfolio } from './commands/portfolio.js';
 import { runUi } from './commands/ui.js';
 import { liveDeps, type CliDeps, type DepsFactory } from './deps.js';
 import type { Io } from './io.js';
@@ -212,6 +213,14 @@ export async function main(
     .option('--dry-run', 'only list what would be removed')
     .action((opts: { days?: string; dryRun?: boolean }) => {
       code = runGc(getDeps(), io, opts);
+    });
+
+  program
+    .command('portfolio [project]')
+    .description('list the projects the Incubator has worked on, or show one with its runs')
+    .option('--json', 'print JSON instead of text')
+    .action(async (project: string | undefined, opts: { json?: boolean }) => {
+      code = await runPortfolio(getDeps(), io, project, opts);
     });
 
   program

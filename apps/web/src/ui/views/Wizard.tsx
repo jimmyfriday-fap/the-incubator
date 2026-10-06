@@ -173,6 +173,12 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
             onChange={setFolder}
             onCheck={onCheck}
           />
+          {usable && check?.project && (
+            <p data-testid="recognised">
+              Recognised: <strong>{check.project.name}</strong>. This update is added to its
+              history.
+            </p>
+          )}
           {needsRef && (
             <label>
               GitHub repository for the push and pull request (owner/name), optional

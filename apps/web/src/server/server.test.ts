@@ -7,6 +7,8 @@ import { nodeExec } from '@incubator/runtime';
 import type {
   FolderCheck,
   LogEntry,
+  ProjectCard,
+  ProjectDetail,
   Question,
   RunDetail,
   RunListItem,
@@ -288,6 +290,50 @@ describe('enhance over the API', () => {
     expect(d.enhance?.pr?.url).toBe('https://github.com/octo/bare-node/pull/1');
     expect(d.enhance?.plan?.features.map((f) => f.id)).toEqual(['export-orders']);
     expect(d.adopt).toBeNull();
+  });
+
+  it('files the run under a project, lists it, recognises the folder again, and keeps the history (ADR-028)', async () => {
+    const { api, h } = await boot({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    expect((await api.get<ProjectCard[]>('/api/portfolio')).body).toEqual([]);
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        repo: dir,
+        repoRef: 'octo/bare-node',
+        request: REQUEST,
+      })
+    ).body;
+    const d = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    expect(d.parked?.state).toBe('REVIEW');
+    expect(d.project).toMatchObject({
+      name: path.basename(dir),
+      runCount: 1,
+      repo: { dir, url: 'https://github.com/octo/bare-node' },
+    });
+    const cards = (await api.get<ProjectCard[]>('/api/portfolio')).body;
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({
+      id: d.project!.id,
+      origin: 'existing',
+      runCount: 1,
+      latest: { runId, kind: 'enhance', state: 'PARKED', done: false },
+    });
+    const detail = (await api.get<ProjectDetail>(`/api/portfolio/${d.project!.id}`)).body;
+    expect(detail.runs).toEqual([
+      expect.objectContaining({ runId, request: REQUEST, state: 'PARKED', available: true }),
+    ]);
+    expect((await api.get('/api/portfolio/nope')).status).toBe(404);
+    // The folder is recognised before another run starts; one that was never part of it is not.
+    const known = (
+      await api.post<FolderCheck>('/api/folders/inspect', { path: dir, purpose: 'existing' })
+    ).body;
+    expect(known.project).toEqual({ id: d.project!.id, name: d.project!.name });
+    const other = await seedAdoptRepo(h, 'flutter-app');
+    const fresh = (
+      await api.post<FolderCheck>('/api/folders/inspect', { path: other.dir, purpose: 'existing' })
+    ).body;
+    expect(fresh.project).toBeNull();
   });
 
   it('serves a plain-English review summary at REVIEW, and says what the scan found', async () => {

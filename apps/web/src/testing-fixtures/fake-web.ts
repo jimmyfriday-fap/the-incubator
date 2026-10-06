@@ -44,6 +44,7 @@ export async function startFakeServer(
   const h = fakePublishEngine({
     handoff: fakeAgentHandoff(),
     tools: stacks.tools,
+    portfolio: true,
     llm: turnsWithReviewSummary(
       opts.fixtureDir ??
         (opts.enhance

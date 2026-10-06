@@ -24,6 +24,7 @@ import { FakeGitHub, createGitOps, type GitOps } from '@incubator/git';
 import { FakeTracker } from '@incubator/tracker';
 import { FakeLlmAdapter, loadFixtures, type FixtureTurn, type LlmAdapter } from '@incubator/llm';
 import { Engine, type EngineDeps } from './engine.js';
+import { Portfolio } from './portfolio.js';
 import { RunStore } from './store.js';
 import type { VerifyResult } from './publish.js';
 
@@ -192,6 +193,8 @@ export function fakePublishEngine(
     handoff?: EngineDeps['handoff'];
     /** Stand-ins for a stack's own tool (retrieved stacks, ADR-027). */
     tools?: EngineDeps['tools'];
+    /** The portfolio (ADR-028): off unless a test asks for it, so no marker file appears in a delivery. */
+    portfolio?: boolean;
     /** Discovery turns for greenfield runs (default: no LLM). */
     llm?: LlmAdapter | FixtureTurn[] | { dir: string };
   } = {},
@@ -218,6 +221,7 @@ export function fakePublishEngine(
     },
     ...(opts.handoff ? { handoff: opts.handoff } : {}),
     ...(opts.tools ? { tools: opts.tools } : {}),
+    ...(opts.portfolio ? { portfolio: new Portfolio(home, () => clock.now().toISOString()) } : {}),
     publish: {
       resolveToken: () =>
         Promise.resolve({ token: new SecretString(FAKE_GITHUB_TOKEN), source: 'env' as const }),

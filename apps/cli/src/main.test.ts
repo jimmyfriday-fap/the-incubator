@@ -248,6 +248,7 @@ describe('publish, handoff, auth, gc', () => {
         ? L
         : never
       : never,
+    extra: { portfolio?: boolean } = {},
   ) {
     const agentCaps = {
       installed: true,
@@ -265,6 +266,7 @@ describe('publish, handoff, auth, gc', () => {
     const h = fakePublishEngine({
       handoff: { exec: nodeExec, probe: () => Promise.resolve(agentCaps) },
       ...(llm ? { llm } : {}),
+      ...(extra.portfolio ? { portfolio: true } : {}),
     });
     const keychain = new MemoryKeychain();
     const deps: CliDeps = {
@@ -400,6 +402,40 @@ describe('publish, handoff, auth, gc', () => {
       const { ref, dir } = await seedExistingRepo(d.h.github, 'order-desk', bareNode);
       return { ...d, ref, dir };
     };
+
+    it('lists the portfolio, shows one project with its runs, and refuses a name it does not know', async () => {
+      const d = publishDeps({ dir: enhanceFixtureDir('export-orders') }, { portfolio: true });
+      const { dir } = await seedExistingRepo(d.h.github, 'order-desk', bareNode);
+      const empty = io();
+      expect(await main(['portfolio'], empty.io, d.factory)).toBe(0);
+      expect(empty.out.join('')).toContain('No projects yet');
+      const run = ['enhance', dir, '--repo', 'octo/order-desk', '--prompt', REQUEST];
+      expect(await main([...run, '--no-publish', '--yes'], io().io, d.factory)).toBe(0);
+      const name = path.basename(dir);
+      const list = io();
+      expect(await main(['portfolio'], list.io, d.factory)).toBe(0);
+      expect(list.out.join('')).toContain(name);
+      expect(list.out.join('')).toContain('1 runs');
+      expect(list.out.join('')).toContain('DONE');
+      const json = io();
+      expect(await main(['portfolio', '--json'], json.io, d.factory)).toBe(0);
+      const projects = JSON.parse(json.out.join('')) as { id: string; runs: unknown[] }[];
+      expect(projects).toHaveLength(1);
+      expect(projects[0]!.runs).toHaveLength(1);
+      // By the start of its id, or its name: the project and the request it was asked.
+      for (const ref of [projects[0]!.id.slice(0, 8), name]) {
+        const one = io();
+        expect(await main(['portfolio', ref], one.io, d.factory)).toBe(0);
+        expect(one.out.join('')).toContain(projects[0]!.id);
+        expect(one.out.join('')).toContain('Kitchen staff need to export');
+      }
+      const one = io();
+      expect(await main(['portfolio', projects[0]!.id, '--json'], one.io, d.factory)).toBe(0);
+      expect(JSON.parse(one.out.join('')) as { id: string }).toMatchObject({ id: projects[0]!.id });
+      const missing = io();
+      expect(await main(['portfolio', 'nope'], missing.io, d.factory)).toBe(2);
+      expect(missing.err.join('')).toContain('no project matches');
+    });
 
     it('writes the enhance branch locally, or opens a pull request with the gaps separate', async () => {
       const { h, factory, dir } = await setup();

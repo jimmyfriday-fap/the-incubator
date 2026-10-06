@@ -12,10 +12,19 @@ import {
   type Engine,
   type FolderPurpose,
   type JournalEntry,
+  type PortfolioProject,
   type RunStore,
 } from '@incubator/core';
 import { STACK_CATALOG, type IncubatorSpec } from '@incubator/spec';
-import type { RunDetail, RunListItem, StackInfo, StartRunBody } from '../api-types.js';
+import type {
+  ProjectBrief,
+  ProjectCard,
+  ProjectDetail,
+  RunDetail,
+  RunListItem,
+  StackInfo,
+  StartRunBody,
+} from '../api-types.js';
 import { ConflictError, RunDriver } from './driver.js';
 import { expectedOrigin } from './origin.js';
 import { CSRF_HEADER, Guard, SECURITY_HEADERS } from './security.js';
@@ -246,6 +255,47 @@ export function createApp(opts: ServerOptions): WebApp {
     },
   );
 
+  // The portfolio (ADR-028): every project the Incubator has worked on, and the runs on each.
+  const brief = (p: PortfolioProject): ProjectBrief => ({
+    id: p.id,
+    name: p.name,
+    summary: p.summary,
+    stack: p.stack,
+    repo: { dir: p.repo.dir, url: p.repo.url },
+    runCount: p.runs.length,
+  });
+
+  app.get('/api/portfolio', (): ProjectCard[] =>
+    engine.portfolioList().map((p) => ({
+      ...brief(p),
+      origin: p.origin,
+      updatedAt: p.updatedAt,
+      latest: p.runs[0]
+        ? {
+            runId: p.runs[0].runId,
+            kind: p.runs[0].kind,
+            state: p.runs[0].state,
+            done: p.runs[0].done,
+            startedAt: p.runs[0].startedAt,
+          }
+        : null,
+    })),
+  );
+
+  app.get<{ Params: { id: string } }>('/api/portfolio/:id', (req, reply): ProjectDetail | void => {
+    const p = engine.portfolioGet(req.params.id);
+    if (!p) return void reply.code(404).send({ error: 'no such project' });
+    const onDisk = new Set(store.list());
+    return {
+      ...brief(p),
+      origin: p.origin,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+      repo: { dir: p.repo.dir, url: p.repo.url, remote: p.repo.remote },
+      runs: p.runs.map((r) => ({ ...r, available: onDisk.has(r.runId) })),
+    };
+  });
+
   app.get('/api/runs', (): RunListItem[] =>
     store
       .list()
@@ -389,6 +439,7 @@ export function createApp(opts: ServerOptions): WebApp {
               }
             : null,
         finish: await engine.finishDetail(runId),
+        project: ((p) => (p ? brief(p) : null))(engine.portfolioForRun(runId)),
       };
     }),
   );
@@ -665,6 +716,8 @@ export interface RunningServer extends WebApp {
 /** Binds 127.0.0.1 on a random free port (TDD §9.1). */
 export async function startServer(opts: ServerOptions & { port?: number }): Promise<RunningServer> {
   const web = createApp(opts);
+  // why: the first start with the portfolio on files the runs already on disk, so earlier work shows at once.
+  await opts.engine.portfolioBackfill();
   await web.app.listen({ host: '127.0.0.1', port: opts.port ?? 0 });
   const addr = web.app.server.address();
   if (!addr || typeof addr === 'string') throw new ToolError('the server did not bind a TCP port');
