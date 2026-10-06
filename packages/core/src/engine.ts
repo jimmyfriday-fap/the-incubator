@@ -75,6 +75,7 @@ import {
   stackRecommendationUserPrompt,
   type StackRecommendation,
 } from './stack-recommendation.js';
+import type { IncubatorConfig } from './config.js';
 import {
   MARKER_PATH,
   markerText,
@@ -170,6 +171,8 @@ export interface EngineDeps {
   log: Logger;
   llm: LlmSelector;
   llmTimeoutMs?: number;
+  /** The live configuration (Settings, ADR-029): read when a run needs it, so a saved change applies to the next run. */
+  config?: () => IncubatorConfig;
   /** GitHub, git and verification; required to go past SCAFFOLD into VERIFY/PUBLISH. */
   publish?: PublishDeps;
   /** Handoff: probes an agent CLI and runs processes. */
@@ -190,7 +193,21 @@ const PORTFOLIO_EVENTS = new Set([
   'step.ok',
   'finish.summary',
   'spec.revision',
+  'interrupted',
+  'run.cancel',
 ]);
+
+/** Who asked the work to stop: the owner in the UI, a signal (Ctrl+C), or the app shutting down. */
+export type StopBy = 'owner' | 'signal' | 'shutdown';
+
+/** One tool and model that did one kind of work in a run. */
+export interface ModelUse {
+  job: 'planning' | 'analysis' | 'review-summary' | 'coding';
+  tool: string;
+  model: string | null;
+  calls: number;
+  costUsd: number | null;
+}
 
 export interface RunEvent {
   runId: string;
@@ -662,7 +679,8 @@ export class Engine {
           system: prompt.body,
           user: summaryUserPrompt(scanDigest(scan), opening),
           promptVersion: prompt.version,
-          timeoutMs: this.deps.llmTimeoutMs ?? 180_000,
+          timeoutMs: this.llmTimeout(),
+          ...this.sig(runId),
         },
         { log: this.deps.log },
       );
@@ -908,6 +926,127 @@ export class Engine {
     this.enter(runId, 'HANDOFF');
   }
 
+  // --- stop and cancel (ADR-029) -----------------------------------------------------------------
+
+  /** The work under way for each run: one controller per `advance`, and who asked it to stop. */
+  readonly #active = new Map<string, { controller: AbortController; by: StopBy | null }>();
+  /** Model calls made outside the run's own task (the review summary), so a stop reaches them too. */
+  readonly #background = new Map<string, Set<AbortController>>();
+
+  /** The signal of the work under way for a run, for the calls that can be cancelled. */
+  private sig(runId: string): { signal?: AbortSignal } {
+    const a = this.#active.get(runId);
+    return a ? { signal: a.controller.signal } : {};
+  }
+
+  private throwIfStopped(runId: string): void {
+    if (this.#active.get(runId)?.controller.signal.aborted)
+      throw new InterruptedError(`run ${runId} was stopped`);
+  }
+
+  /** The runs that have work under way right now. */
+  activeRuns(): string[] {
+    return [...this.#active.keys()];
+  }
+
+  /**
+   * Stops whatever the run is doing: the model call or coding agent is killed, and the run ends the step at
+   * its next boundary (a scan cannot be cut short). Returns false when nothing was running. The run stays
+   * resumable.
+   */
+  abortRun(runId: string, by: StopBy = 'owner'): boolean {
+    const bg = this.#background.get(runId);
+    for (const c of bg ?? []) c.abort();
+    const a = this.#active.get(runId);
+    if (!a) return Boolean(bg?.size);
+    a.by ??= by;
+    a.controller.abort();
+    return true;
+  }
+
+  /** Stops every run that is working (Ctrl+C in the terminal, closing the window). */
+  abortAll(by: StopBy): string[] {
+    const stopped = [...new Set([...this.#active.keys(), ...this.#background.keys()])].filter(
+      (id) => this.abortRun(id, by),
+    );
+    return stopped;
+  }
+
+  /**
+   * Abandons a run for good: it ends as cancelled and cannot be resumed. It never touches the owner's files;
+   * whatever the coding agent already wrote stays where it is. A run that is working must be stopped first.
+   */
+  cancel(runId: string, reason?: string): void {
+    const s = this.state(runId);
+    if (s.done)
+      throw new PolicyError(`run ${runId} is already ${s.cancelled ? 'cancelled' : 'finished'}`, {
+        code: 'not_cancellable',
+      });
+    if (this.#active.has(runId))
+      throw new PolicyError(`run ${runId} is working: stop it first`, { code: 'working' });
+    this.record(runId, 'run.cancel', reason ? { reason: cleanAgentText(reason, 200) } : {});
+  }
+
+  // --- settings and models (ADR-029) -------------------------------------------------------------
+
+  private cfg(): IncubatorConfig {
+    return this.deps.config?.() ?? {};
+  }
+
+  private llmTimeout(): number {
+    return this.cfg().discovery?.timeoutMs ?? this.deps.llmTimeoutMs ?? 180_000;
+  }
+
+  /** The tool settings with the owner's current `toolPaths`. */
+  private tools(): ToolsDeps | undefined {
+    const t = this.deps.tools;
+    const paths = this.cfg().toolPaths;
+    return t && paths ? { ...t, toolPaths: paths } : t;
+  }
+
+  /**
+   * Which tool and model did each job of a run, from the journal: planning (questions), analysis, the review
+   * summary and coding. A model is `null` when the tool did not say.
+   */
+  models(runId: string): ModelUse[] {
+    const out = new Map<string, ModelUse>();
+    const add = (job: ModelUse['job'], tool: string, model: string | null, cost: number | null) => {
+      const key = `${job}|${tool}|${model ?? ''}`;
+      const m = out.get(key) ?? { job, tool, model, calls: 0, costUsd: null };
+      m.calls++;
+      if (cost !== null) m.costUsd = (m.costUsd ?? 0) + cost;
+      out.set(key, m);
+    };
+    let launched: { agent: string; model: string | null } | null = null;
+    for (const e of this.entries(runId)) {
+      const x = e as Record<string, unknown>;
+      if (e.type === 'llm.turn' && typeof x['adapter'] === 'string') {
+        const purpose = x['purpose'];
+        add(
+          purpose === 'analysis'
+            ? 'analysis'
+            : purpose === 'review-summary'
+              ? 'review-summary'
+              : 'planning',
+          x['adapter'],
+          typeof x['model'] === 'string' ? x['model'] : null,
+          typeof x['costUsd'] === 'number' ? x['costUsd'] : null,
+        );
+      } else if (e.type === 'handoff.launch' && typeof x['agent'] === 'string') {
+        launched = { agent: x['agent'], model: typeof x['model'] === 'string' ? x['model'] : null };
+      } else if (e.type === 'handoff.result' && launched) {
+        add(
+          'coding',
+          launched.agent,
+          typeof x['model'] === 'string' ? x['model'] : launched.model,
+          typeof x['costUsd'] === 'number' ? x['costUsd'] : null,
+        );
+        launched = null;
+      }
+    }
+    return [...out.values()];
+  }
+
   // --- portfolio (ADR-028) -----------------------------------------------------------------------
 
   /** Every project the Incubator has worked on, most recently touched first. */
@@ -1026,6 +1165,13 @@ export class Engine {
           case 'failed':
             r.state = 'FAILED';
             break;
+          case 'interrupted':
+            r.state = 'STOPPED';
+            break;
+          case 'run.cancel':
+            r.state = 'CANCELLED';
+            r.done = true;
+            break;
           case 'run.done':
             r.state = 'DONE';
             r.done = true;
@@ -1137,7 +1283,7 @@ export class Engine {
           system: prompt.body,
           user: stackRecommendationUserPrompt(idea),
           promptVersion: prompt.version,
-          timeoutMs: this.deps.llmTimeoutMs ?? 180_000,
+          timeoutMs: this.llmTimeout(),
         },
         { log: this.deps.log, extraCheck: (rec) => recommendationIssues(rec) },
       );
@@ -1163,7 +1309,7 @@ export class Engine {
 
   /** Is the tool for a retrieved stack installed (ADR-027)? */
   stackProbe(id: string): Promise<StackProbe> {
-    return probeStack(this.retrievedStack(id), this.deps.tools!);
+    return probeStack(this.retrievedStack(id), this.tools()!);
   }
 
   /** Creates a new project in an empty folder with the stack's own generator, then commits it. */
@@ -1177,7 +1323,7 @@ export class Engine {
     const publish = this.deps.publish;
     if (!publish) throw new PolicyError('this build cannot run git', { code: 'no_git' });
     return createStackProject(entry, input, {
-      ...this.deps.tools!,
+      ...this.tools()!,
       git: publish.git,
       ...(publish.identity ? { identity: () => publish.identity!() } : {}),
     });
@@ -1272,7 +1418,12 @@ export class Engine {
       this.#reviewSummaries.set(key, slot);
       const s = this.state(runId);
       const cell = slot;
-      cell.promise = this.writeReviewSummary(runId, s, spec, hash, file)
+      // why: the summary is written outside the run's own task, so Stop must be able to reach it too.
+      const stop = new AbortController();
+      const background = this.#background.get(runId) ?? new Set<AbortController>();
+      background.add(stop);
+      this.#background.set(runId, background);
+      cell.promise = this.writeReviewSummary(runId, s, spec, hash, file, stop.signal)
         .catch((e: unknown) => {
           if (e instanceof InterruptedError) return;
           const message = (e instanceof Error ? e.message : String(e)).slice(0, 300);
@@ -1281,6 +1432,7 @@ export class Engine {
         })
         .finally(() => {
           cell.promise = undefined;
+          background.delete(stop);
         });
     }
     return { status: 'pending' };
@@ -1292,6 +1444,7 @@ export class Engine {
     spec: IncubatorSpec,
     hash: string,
     file: string,
+    signal: AbortSignal,
   ): Promise<void> {
     const adapter = await this.deps.llm.select(
       'analysis',
@@ -1313,7 +1466,8 @@ export class Engine {
           digest: enhance ? scanDigest(this.readScan(runId)) : null,
         }),
         promptVersion: prompt.version,
-        timeoutMs: this.deps.llmTimeoutMs ?? 180_000,
+        timeoutMs: this.llmTimeout(),
+        signal,
       },
       { log: this.deps.log },
     );
@@ -1797,7 +1951,10 @@ export class Engine {
         );
       }
     }
-    const agent = opts.agent ?? spec.agents.primary;
+    // The owner's own choice (Settings, ADR-029) wins over what the spec says; unset means the spec decides.
+    const chosen = this.cfg().agents;
+    const agent = opts.agent ?? chosen?.primary ?? spec.agents.primary;
+    const codingModel = chosen?.model ?? null;
     const caps = await this.deps.handoff.probe(AGENT_ADAPTERS[agent]);
     if (!caps.installed || !caps.path)
       throw new PolicyError(`${AGENT_ADAPTERS[agent]} is not installed`, { code: 'agent_missing' });
@@ -1821,12 +1978,18 @@ export class Engine {
         'checks_unenforceable',
         `${AGENT_ADAPTERS[agent]} cannot restrict which commands an agent runs, so it cannot code in a repository the Incubator did not build`,
       );
-    const env =
-      external && this.deps.tools ? await toolPathEnv(checks.commands, this.deps.tools) : null;
+    const tools = this.tools();
+    const env = external && tools ? await toolPathEnv(checks.commands, tools) : null;
     const plan: HandoffPlan = {
       agent,
       bin: caps.path,
-      argv: buildHandoffArgv(caps, ceilings, external ? externalTools(checks.commands) : undefined),
+      argv: buildHandoffArgv(
+        caps,
+        ceilings,
+        external ? externalTools(checks.commands) : undefined,
+        codingModel ?? undefined,
+      ),
+      ...(codingModel ? { model: codingModel } : {}),
       cwd: repo,
       planPath,
       ceilings,
@@ -1851,12 +2014,37 @@ export class Engine {
       agent?: HandoffAgent;
       onEvent?: (chunk: string) => void;
       onProgress?: (p: HandoffProgress) => void;
+      /** Stops the agent; when absent the run's own stop (Stop in the app) applies. */
+      signal?: AbortSignal;
     } = {},
   ): Promise<HandoffOutcome> {
     const { plan, prompt, ticket, checks } = await this.prepareHandoff(runId, opts);
+    // why: `incubator handoff --launch` runs the agent outside `advance`; a stop (Ctrl+C) must still reach it.
+    const own = !this.#active.has(runId);
+    if (own) this.#active.set(runId, { controller: new AbortController(), by: null });
+    try {
+      return await this.runHandoff(runId, plan, prompt, ticket, checks, opts);
+    } finally {
+      if (own) this.#active.delete(runId);
+    }
+  }
+
+  private async runHandoff(
+    runId: string,
+    plan: HandoffPlan,
+    prompt: string,
+    ticket: string | null,
+    checks: AgentChecks,
+    opts: {
+      onEvent?: (chunk: string) => void;
+      onProgress?: (p: HandoffProgress) => void;
+      signal?: AbortSignal;
+    },
+  ): Promise<HandoffOutcome> {
     this.record(runId, 'handoff.launch', {
       agent: plan.agent,
       argv: plan.argv,
+      model: plan.model ?? null,
       ceilings: plan.ceilings,
       ticket,
       checks,
@@ -1866,6 +2054,7 @@ export class Engine {
       ticket,
       ...(opts.onEvent ? { onEvent: opts.onEvent } : {}),
       ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
+      ...(opts.signal ? { signal: opts.signal } : this.sig(runId)),
     });
     this.record(runId, 'handoff.result', { ...outcome });
     return outcome;
@@ -2023,7 +2212,8 @@ export class Engine {
         system: prompt.body,
         user,
         promptVersion: prompt.version,
-        timeoutMs: this.deps.llmTimeoutMs ?? 180_000,
+        timeoutMs: this.llmTimeout(),
+        ...this.sig(runId),
       },
       {
         log: this.deps.log,
@@ -2172,9 +2362,23 @@ export class Engine {
    * A ParkError is journaled and the parked state returned (exit 2 at the CLI).
    */
   async advance(runId: string, prompter: Prompter): Promise<RunState> {
+    const before = this.state(runId);
+    if (before.cancelled) return before;
+    if (this.#active.has(runId))
+      throw new PolicyError(`run ${runId} is already working`, { code: 'working' });
+    this.#active.set(runId, { controller: new AbortController(), by: null });
+    try {
+      return await this.advanceLoop(runId, prompter);
+    } finally {
+      this.#active.delete(runId);
+    }
+  }
+
+  private async advanceLoop(runId: string, prompter: Prompter): Promise<RunState> {
     await this.linkPortfolio(runId);
     try {
       for (;;) {
+        this.throwIfStopped(runId);
         const s = this.state(runId);
         switch (s.state) {
           case 'INTAKE':
@@ -2241,7 +2445,11 @@ export class Engine {
         this.deps.log.warn(`run ${runId} parked: ${err.message}`, { reason: err.reason });
         return this.state(runId);
       }
-      if (err instanceof InterruptedError) this.record(runId, 'interrupted', {});
+      if (err instanceof InterruptedError)
+        this.record(runId, 'interrupted', {
+          by: this.#active.get(runId)?.by ?? 'signal',
+          state: this.state(runId).state,
+        });
       // why: without a journal entry a failed run reads as still in progress after a restart,
       // and the web UI offers no way to resume it.
       else

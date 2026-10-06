@@ -52,3 +52,31 @@ export function leantimeHosts(specs: readonly unknown[]): string[] {
   }
   return [...hosts];
 }
+
+export type HistoryAction = 'back' | 'forward';
+
+/** The keyboard input Electron reports before the page sees it (the fields this needs). */
+export interface KeyInput {
+  type: string;
+  key: string;
+  alt: boolean;
+  control: boolean;
+  meta: boolean;
+  shift: boolean;
+}
+
+/** Alt+Left / Alt+Right (Windows, Linux) and Cmd+[ / Cmd+] (macOS) move through the page history. */
+export function historyActionForKey(input: KeyInput, platform: string): HistoryAction | null {
+  if (input.type !== 'keyDown' || input.shift) return null;
+  if (platform === 'darwin') {
+    if (!input.meta || input.alt || input.control) return null;
+    return input.key === '[' ? 'back' : input.key === ']' ? 'forward' : null;
+  }
+  if (!input.alt || input.control || input.meta) return null;
+  return input.key === 'ArrowLeft' ? 'back' : input.key === 'ArrowRight' ? 'forward' : null;
+}
+
+/** The mouse's back and forward buttons arrive as Windows app commands. */
+export function historyActionForCommand(command: string): HistoryAction | null {
+  return command === 'browser-backward' ? 'back' : command === 'browser-forward' ? 'forward' : null;
+}

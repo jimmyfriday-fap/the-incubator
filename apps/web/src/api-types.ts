@@ -39,7 +39,7 @@ export interface FinishInfo {
   dir: string;
   branch: string | null;
   agent: {
-    verdict: 'ready' | 'parked' | 'ceiling' | 'failed';
+    verdict: 'ready' | 'parked' | 'ceiling' | 'failed' | 'stopped';
     summary: string | null;
     tripped: string | null;
     exitCode: number | null;
@@ -83,6 +83,9 @@ export interface RunListItem {
   repoRef: string | null;
   /** Folder runs: the folder the owner chose. */
   dir: string | null;
+  cancelled: boolean;
+  /** The portfolio project the run belongs to, when it has been filed. */
+  project: { id: string; name: string } | null;
 }
 
 export interface RunDetail {
@@ -115,10 +118,56 @@ export interface RunDetail {
   } | null;
   adopt: { compliant: boolean; pr?: { number: number; url: string }; report: string | null } | null;
   enhance: EnhanceDetail | null;
+  /** The owner abandoned the run: it is done and cannot be resumed. */
+  cancelled: boolean;
+  /** The work was stopped and has not been resumed (by the owner, a signal or the app closing). */
+  stopped: { by: string; state: string } | null;
   /** Folder runs: the coding, commit and push stages. */
   finish: FinishInfo | null;
   /** The portfolio project this run belongs to (null until it is filed, or when the portfolio is off). */
   project: ProjectBrief | null;
+  /** Which tool and model did each kind of work so far (ADR-029). */
+  models: ModelUse[];
+}
+
+export interface ModelUse {
+  job: 'planning' | 'analysis' | 'review-summary' | 'coding';
+  tool: string;
+  /** The model the tool reported or was asked for; null when it did not say. */
+  model: string | null;
+  calls: number;
+  costUsd: number | null;
+}
+
+/** The Settings page (GET and PUT /api/settings; ADR-029). */
+export interface SettingsView {
+  chosen: {
+    planning: { tool: string; model: string | null };
+    coding: { agent: string; model: string | null };
+    limits: { timeoutSeconds: number | null; gcDays: number | null };
+    toolPaths: Record<string, string>;
+  };
+  effective: {
+    planning: { tool: string | null; model: string | null; problem?: string };
+    coding: { agent: string; model: string | null; installed: boolean };
+  };
+  adapters: {
+    id: string;
+    installed: boolean;
+    version: string | null;
+    canPlan: boolean;
+    canCode: boolean;
+    takesModel: boolean;
+  }[];
+  credentials: { account: string; source: string | null }[];
+  about: { home: string; keychain: boolean };
+}
+
+export interface SettingsPatch {
+  planning?: { tool?: string; model?: string | null };
+  coding?: { agent?: string; model?: string | null };
+  limits?: { timeoutSeconds?: number | null; gcDays?: number | null };
+  toolPaths?: Record<string, string>;
 }
 
 /** A project of the portfolio (ADR-028), as the run page shows it. */

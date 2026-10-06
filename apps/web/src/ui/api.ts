@@ -39,3 +39,14 @@ export async function post<T>(path: string, body: unknown = {}): Promise<T> {
     }),
   );
 }
+
+export async function put<T>(path: string, body: unknown = {}): Promise<T> {
+  const { csrf } = await getSession();
+  return parse<T>(
+    await fetch(path, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-incubator-csrf': csrf },
+      body: JSON.stringify(body),
+    }),
+  );
+}

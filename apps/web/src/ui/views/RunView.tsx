@@ -4,7 +4,8 @@ import { get, post } from '../api.js';
 import { ChangeRequest } from './ChangeRequest.js';
 import { Coding } from './Coding.js';
 import { CommitRequest, PushRequest } from './FinishChanges.js';
-import { ProjectBanner } from './Projects.js';
+import { Crumbs, ProjectBanner } from './Projects.js';
+import { ModelsUsed } from './ModelsUsed.js';
 import { Questions } from './Questions.js';
 import { Review } from './Review.js';
 import { RunLog } from './RunLog.js';
@@ -17,6 +18,8 @@ export function RunView({ runId }: { runId: string }) {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<number | null>(null);
+  const [stopping, setStopping] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const refresh = useCallback(() => {
     get<RunDetail>(`/api/runs/${runId}`)
@@ -51,6 +54,11 @@ export function RunView({ runId }: { runId: string }) {
     };
   }, [runId, refresh, soon]);
 
+  // The stop has taken effect once the run is no longer working.
+  useEffect(() => {
+    if (run && !run.busy) setStopping(false);
+  }, [run]);
+
   if (!run) return <p className={error ? 'error' : 'muted'}>{error ?? 'Loading…'}</p>;
   const reviewing = run.state === 'PARKED' && run.parked?.state === 'REVIEW' && !run.busy;
   const asking = run.state === 'PARKED' && run.parked?.reason === 'needs_input' && !run.busy;
@@ -73,6 +81,13 @@ export function RunView({ runId }: { runId: string }) {
 
   return (
     <div className="run">
+      <Crumbs
+        items={[
+          run.project ? { label: 'Projects', to: '/projects' } : { label: 'Runs', to: '/runs' },
+          ...(run.project ? [{ label: run.project.name, to: `/projects/${run.project.id}` }] : []),
+          { label: `Run ${runId}` },
+        ]}
+      />
       {run.project && (
         <ProjectBanner
           project={run.project}
@@ -91,8 +106,11 @@ export function RunView({ runId }: { runId: string }) {
                 ? 'New solution '
                 : 'New project '}
           <code>{runId}</code>{' '}
-          <span data-testid="run-state" className={`badge state-${run.state.toLowerCase()}`}>
-            {run.state}
+          <span
+            data-testid="run-state"
+            className={`badge state-${(run.cancelled ? 'cancelled' : run.state).toLowerCase()}`}
+          >
+            {run.cancelled ? 'CANCELLED' : run.state}
           </span>{' '}
           {run.busy && (
             <span className="muted" data-testid="busy">
@@ -100,10 +118,68 @@ export function RunView({ runId }: { runId: string }) {
             </span>
           )}
         </h2>
+        {(run.busy || !run.done) && (
+          <div className="actions" data-testid="run-controls">
+            {run.busy && (
+              <button
+                className="secondary"
+                data-testid="stop"
+                disabled={stopping}
+                title="Stop what is running now. You can resume the run afterwards."
+                onClick={() => {
+                  setStopping(true);
+                  void act(post(`/api/runs/${runId}/stop`));
+                }}
+              >
+                {stopping ? 'Stopping…' : 'Stop'}
+              </button>
+            )}
+            {!run.done && !confirming && (
+              <button
+                className="secondary"
+                data-testid="cancel-run"
+                onClick={() => setConfirming(true)}
+              >
+                Cancel run
+              </button>
+            )}
+          </div>
+        )}
+        {confirming && !run.done && (
+          <div className="parked" data-testid="cancel-confirm-box">
+            <p>
+              Cancel this run for good? It stops now and can’t be resumed. Nothing is deleted: any
+              files the coding agent already changed in your folder stay as they are.
+            </p>
+            <button
+              data-testid="cancel-confirm"
+              onClick={() => {
+                setConfirming(false);
+                void act(post(`/api/runs/${runId}/cancel`));
+              }}
+            >
+              Yes, cancel this run
+            </button>{' '}
+            <button
+              className="secondary"
+              data-testid="cancel-keep"
+              onClick={() => setConfirming(false)}
+            >
+              Keep it
+            </button>
+          </div>
+        )}
+        {run.cancelled && (
+          <p className="muted" data-testid="cancelled">
+            This run was cancelled. Nothing was deleted: files the coding agent already changed in
+            your folder are still there.
+          </p>
+        )}
         <p className="muted">
           {run.input.dir ??
             (run.kind === 'adopt' || run.kind === 'enhance' ? run.input.repo : run.input.narrative)}
         </p>
+        <ModelsUsed models={run.models} />
         {run.error && (
           <p className="error" role="alert" data-testid="run-error">
             {run.error}
@@ -131,10 +207,24 @@ export function RunView({ runId }: { runId: string }) {
         {stopped && (
           <div className="parked" data-testid="stopped">
             <p>
-              Stopped at <strong>{run.failure?.state ?? run.state}</strong>
-              {run.failure
-                ? '. Fix the cause above, then resume to retry from there.'
-                : ". It isn't running; resume to continue from there."}
+              {run.stopped ? (
+                <>
+                  {run.stopped.by === 'owner'
+                    ? 'You stopped this'
+                    : run.stopped.by === 'shutdown'
+                      ? 'The app was closed while this was working, so it stopped'
+                      : 'This was interrupted'}{' '}
+                  at <strong>{run.stopped.state}</strong>. Resume to run that step again; nothing
+                  already done is repeated.
+                </>
+              ) : (
+                <>
+                  Stopped at <strong>{run.failure?.state ?? run.state}</strong>
+                  {run.failure
+                    ? '. Fix the cause above, then resume to retry from there.'
+                    : ". It isn't running; resume to continue from there."}
+                </>
+              )}
             </p>
             <button
               data-testid="resume"
@@ -188,7 +278,7 @@ export function RunView({ runId }: { runId: string }) {
           onChecks={(commands) => post(`/api/runs/${runId}/checks`, { commands })}
         />
       )}
-      {run.done && <Summary run={run} />}
+      {run.done && !run.cancelled && <Summary run={run} />}
       {run.specComplete && <Tree runId={runId} rev={run.rev} />}
       <RunLog entries={entries} />
     </div>

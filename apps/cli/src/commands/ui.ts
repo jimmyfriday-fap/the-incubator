@@ -56,6 +56,7 @@ export async function runUi(
     engine: deps.engine,
     store: deps.store,
     log: deps.log,
+    ...(deps.settings ? { settings: deps.settings } : {}),
     ...(pickFolder ? { host: { pickFolder } } : {}),
   });
   const sig = stop ? null : untilSignal();

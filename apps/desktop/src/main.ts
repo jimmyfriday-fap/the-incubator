@@ -3,14 +3,25 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, dialog, session, shell, type WebContents } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  Menu,
+  session,
+  shell,
+  type MenuItemConstructorOptions,
+  type WebContents,
+} from 'electron';
 import { Logger, fileSink, formatError, incubatorHome } from '@incubator/runtime';
-import { createLiveEngine, type Engine, type RunStore } from '@incubator/core';
+import { createLiveEngine, type Engine, type RunStore, type Settings } from '@incubator/core';
 import { startServer, type HostCapabilities, type RunningServer } from '@incubator/web';
 import { extractArchive, type PacksArchive } from './packs-archive.js';
 import {
   TEST_FAKES_FLAG,
   externalAllowed,
+  historyActionForCommand,
+  historyActionForKey,
   leantimeHosts,
   navigationAllowed,
   secureWebPreferences,
@@ -24,6 +35,7 @@ interface Wiring {
   engine: Engine;
   store: RunStore;
   log: Logger;
+  settings?: Settings;
   /** Test builds only: a folder picker that answers without opening a dialog. */
   pickFolder?: HostCapabilities['pickFolder'];
 }
@@ -36,7 +48,7 @@ async function wiring(): Promise<Wiring> {
   }
   const log = new Logger([fileSink(path.join(incubatorHome(), 'desktop.log'))]);
   const live = createLiveEngine({ log });
-  return { engine: live.engine, store: live.store, log };
+  return { engine: live.engine, store: live.store, log, settings: live.settings };
 }
 
 /**
@@ -76,6 +88,59 @@ function lockDown(contents: WebContents, origin: string, hosts: () => string[]):
   });
 }
 
+/** Back and forward through the page history, from the menu, the keyboard and the mouse. */
+function goThroughHistory(contents: WebContents, action: 'back' | 'forward'): void {
+  const h = contents.navigationHistory;
+  if (action === 'back' && h.canGoBack()) h.goBack();
+  if (action === 'forward' && h.canGoForward()) h.goForward();
+}
+
+function historyControls(win: BrowserWindow): void {
+  const contents = win.webContents;
+  contents.on('before-input-event', (event, input) => {
+    const action = historyActionForKey(input, process.platform);
+    if (!action) return;
+    event.preventDefault();
+    goThroughHistory(contents, action);
+  });
+  // why: the mouse's back and forward buttons reach Windows apps as app commands.
+  win.on('app-command', (_e, command) => {
+    const action = historyActionForCommand(command);
+    if (action) goThroughHistory(contents, action);
+  });
+}
+
+/** A small menu: the default one has no Back or Forward and a Developer Tools entry the owner never needs. */
+function applicationMenu(win: () => BrowserWindow | undefined): Menu {
+  const go = (action: 'back' | 'forward') => () => {
+    const w = win();
+    if (w) goThroughHistory(w.webContents, action);
+  };
+  const mac = process.platform === 'darwin';
+  const template: MenuItemConstructorOptions[] = [
+    ...(mac ? [{ role: 'appMenu' as const }] : []),
+    { label: 'File', submenu: [mac ? { role: 'close' as const } : { role: 'quit' as const }] },
+    { role: 'editMenu' },
+    {
+      label: 'View',
+      submenu: [
+        { label: 'Back', accelerator: mac ? 'Cmd+[' : 'Alt+Left', click: go('back') },
+        { label: 'Forward', accelerator: mac ? 'Cmd+]' : 'Alt+Right', click: go('forward') },
+        { type: 'separator' },
+        { role: 'reload' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        ...(app.isPackaged
+          ? []
+          : [{ type: 'separator' as const }, { role: 'toggleDevTools' as const }]),
+      ],
+    },
+    { role: 'windowMenu' },
+  ];
+  return Menu.buildFromTemplate(template);
+}
+
 async function main(): Promise<void> {
   // why: the fakes exist only in test builds; a release build refuses the flag before anything starts.
   if (process.argv.includes(TEST_FAKES_FLAG) && !__INCUBATOR_TEST_BUILD__) {
@@ -110,12 +175,13 @@ async function main(): Promise<void> {
       archive,
       path.join(app.getPath('userData'), 'packs'),
     );
-    const { engine, store, log, pickFolder } = await wiring();
+    const { engine, store, log, settings, pickFolder } = await wiring();
     const windows: { main?: BrowserWindow } = {};
     server = await startServer({
       engine,
       store,
       log,
+      ...(settings ? { settings } : {}),
       uiDir: path.join(appRoot, 'ui'),
       host: { pickFolder: pickFolder ?? folderDialog(() => windows.main) },
     });
@@ -135,6 +201,8 @@ async function main(): Promise<void> {
     });
     windows.main = main;
     lockDown(main.webContents, server.origin, hosts);
+    historyControls(main);
+    Menu.setApplicationMenu(applicationMenu(() => windows.main));
     main.once('ready-to-show', () => main.show());
     app.on('second-instance', () => {
       if (main.isMinimized()) main.restore();

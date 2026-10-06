@@ -90,12 +90,12 @@ two most consequential items are **Q1**, a third deploy class for non-server pro
 
 **Exit-code contract** (`packages/runtime/src/exit.ts`; guard scripts implement the same contract):
 
-| Code  | Meaning                  | Raised by                                                                                     |
-| ----- | ------------------------ | --------------------------------------------------------------------------------------------- |
-| `0`   | pass                     | normal completion                                                                             |
-| `1`   | the tool itself broke    | `ToolError`, any uncaught exception                                                           |
-| `2`   | a policy or gate finding | `PolicyError` (gate failed, spec invalid, name taken without `--adopt`, run parked)           |
-| `130` | interrupted              | SIGINT or SIGTERM. The handler journals `interrupted`, kills child process trees, then exits. |
+| Code  | Meaning                  | Raised by                                                                                                                  |
+| ----- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `0`   | pass                     | normal completion                                                                                                          |
+| `1`   | the tool itself broke    | `ToolError`, any uncaught exception                                                                                        |
+| `2`   | a policy or gate finding | `PolicyError` (gate failed, spec invalid, name taken without `--adopt`, run parked)                                        |
+| `130` | interrupted              | Ctrl+C or SIGTERM. The run's work is stopped, the journal records `interrupted`, child process trees are killed (ADR-029). |
 
 A parked run exits `2`, not `1`. Parking is a gate outcome (for example, an LLM response failed the
 schema twice), not a crash. A single `main()` wrapper in `apps/cli` maps errors to codes. No other
@@ -189,7 +189,9 @@ stderr, for the fake token and its encodings (Phase 3 acceptance).
 
 ```
 ~/.incubator/                 (or $INCUBATOR_HOME)
-  config.json                 schema-validated; adapters, model, defaults, gc.days (default 14)
+  config.json                 read on every use; written by Settings and `incubator config` (ADR-029):
+                              llm.preferred and cliModel, agents.primary and model, discovery.timeoutMs,
+                              gc.days (default 30), toolPaths; keys it does not know are kept
   runs/<runId>/
     run.json                  immutable header: inputs, versions, surface
     journal.jsonl             append-only event log (ADR-010)
@@ -1202,22 +1204,25 @@ aside.
   7. Responses carry `Content-Security-Policy: default-src 'self'` and no CORS headers at all.
 - **Routes** (all under `/api`, JSON):
 
-  | Method | Path                                     | Purpose                                                              |
-  | ------ | ---------------------------------------- | -------------------------------------------------------------------- |
-  | GET    | `/session`                               | CSRF token, versions, `capabilities.pickFolder`                      |
-  | POST   | `/runs`                                  | start `new`, `adopt` or `enhance`                                    |
-  | GET    | `/runs`, `/runs/:id`                     | list and inspect runs                                                |
-  | POST   | `/runs/:id/answers`                      | CLARIFY answers                                                      |
-  | POST   | `/runs/:id/request`                      | REQUEST: the enhance run's "What do you want to change?" answer      |
-  | POST   | `/runs/:id/approve`                      | REVIEW → APPROVED, with an optional edited spec                      |
-  | GET    | `/runs/:id/tree`, `/runs/:id/file?path=` | preview; `path` is normalized and confined to the workspace          |
-  | GET    | `/runs/:id/spec-diff?from=&to=`          | a JSON-pointer diff between spec revisions                           |
-  | POST   | `/runs/:id/publish`, `/runs/:id/handoff` | effectful steps                                                      |
-  | POST   | `/folders/pick`                          | the host's native folder dialog (`{purpose}` → `{path \| null}`)     |
-  | POST   | `/folders/inspect`                       | `{path, purpose}` → a verdict: problems, warnings, branch, origin    |
-  | POST   | `/runs/:id/commit`, `/runs/:id/push`     | the owner's answers at COMMIT and PUSH (§7.5)                        |
-  | GET    | `/portfolio`, `/portfolio/:id`           | the project cards, and one project with its runs (§7.6)              |
-  | GET    | `/runs/:id/events`                       | SSE `RunEvent` stream; `Last-Event-ID` = journal seq, for reconnects |
+  | Method | Path                                     | Purpose                                                                |
+  | ------ | ---------------------------------------- | ---------------------------------------------------------------------- |
+  | GET    | `/session`                               | CSRF token, versions, `capabilities.pickFolder`                        |
+  | POST   | `/runs`                                  | start `new`, `adopt` or `enhance`                                      |
+  | GET    | `/runs`, `/runs/:id`                     | list and inspect runs                                                  |
+  | POST   | `/runs/:id/answers`                      | CLARIFY answers                                                        |
+  | POST   | `/runs/:id/request`                      | REQUEST: the enhance run's "What do you want to change?" answer        |
+  | POST   | `/runs/:id/approve`                      | REVIEW → APPROVED, with an optional edited spec                        |
+  | GET    | `/runs/:id/tree`, `/runs/:id/file?path=` | preview; `path` is normalized and confined to the workspace            |
+  | GET    | `/runs/:id/spec-diff?from=&to=`          | a JSON-pointer diff between spec revisions                             |
+  | POST   | `/runs/:id/publish`, `/runs/:id/handoff` | effectful steps                                                        |
+  | POST   | `/folders/pick`                          | the host's native folder dialog (`{purpose}` → `{path \| null}`)       |
+  | POST   | `/folders/inspect`                       | `{path, purpose}` → a verdict: problems, warnings, branch, origin      |
+  | POST   | `/runs/:id/commit`, `/runs/:id/push`     | the owner's answers at COMMIT and PUSH (§7.5)                          |
+  | GET    | `/portfolio`, `/portfolio/:id`           | the project cards, and one project with its runs (§7.6)                |
+  | POST   | `/runs/:id/stop`, `/runs/:id/cancel`     | stop the work under way (resumable); abandon the run for good (§9.4)   |
+  | GET    | `/settings`                              | what is chosen, what the next run uses, tools found, account sources   |
+  | PUT    | `/settings`                              | save a choice (planning and coding tool and model, limits, tool paths) |
+  | GET    | `/runs/:id/events`                       | SSE `RunEvent` stream; `Last-Event-ID` = journal seq, for reconnects   |
 
 - **Host capabilities** (ADR-022). `ServerOptions.host.pickFolder` is how the embedding process
   offers the operating system's folder dialog: Electron's `dialog.showOpenDialog` in the desktop app;
@@ -1225,6 +1230,21 @@ aside.
   `incubator ui`. The page asks over HTTP, behind the same token, Origin and CSRF checks as every other
   call (one dialog at a time); without a picker the page offers a field for a pasted path. No preload
   and no IPC (ADR-012).
+
+### 9.4 Stop, cancel, settings and moving around (ADR-029)
+
+- **Stop** kills the model call or the coding agent now and leaves the run resumable; the journal records
+  `interrupted {by, state}` and the page says who stopped it and where. A scan, being synchronous, ends at its next
+  step. A stopped coding agent reaches the commit request with the verdict `stopped`.
+- **Cancel** abandons the run: `run.cancel`, done, not resumable, files untouched; `incubator gc` collects it.
+- **Closing the app** stops every working run (`by: shutdown`). On the command line the first Ctrl+C stops the run
+  and exits 130; a second, or one with nothing running, exits at once.
+- **Settings** (`/settings`, `incubator config`): the planning tool and model, the coding agent and model, the model
+  timeout, the `gc` age and the tool locations; accounts show a source, never a value. A change applies to the next run.
+  A coding model is passed with the CLI's model flag, or the run parks `model_unsupported`.
+- **Which model did each job** is on the run page ("Models used"), from the journal.
+- **Moving around.** Back and Forward in the header (and the mouse buttons and Alt+Left/Right in the desktop window),
+  tabs Home, Projects, Runs and Settings, `/runs` with a filter, and a breadcrumb on run and project pages.
 
 ### 9.2 UI (`apps/web/src/ui`)
 
@@ -1415,33 +1435,34 @@ flowchart LR
 
 ## Appendix A — ADR index
 
-| ADR                                                     | Title                                                                             |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [001](adr/001-monorepo-toolchain.md)                    | Monorepo toolchain: pnpm 10, Node 22, TypeScript 6.0, ESM, source condition       |
-| [002](adr/002-runtime-kernel-package.md)                | A `packages/runtime` kernel shared by all adapters                                |
-| [003](adr/003-template-engine-eta.md)                   | Eta (not Handlebars) as the template engine, with a restricted-template lint      |
-| [004](adr/004-deterministic-rendering-and-lockfile.md)  | Deterministic rendering, normalization and the lockfile                           |
-| [005](adr/005-scaffold-markers-and-json-patches.md)     | Comment markers for text files, declarative JSON patches for JSON                 |
-| [006](adr/006-spec-schema-source-of-truth.md)           | JSON Schema as the source of truth; generated types; Ajv                          |
-| [007](adr/007-llm-adapters-probing-and-sandboxing.md)   | LLM adapters: capability probing, schema gate, tool-less sandbox                  |
-| [008](adr/008-subprocess-spawning.md)                   | Shell-less subprocesses and Windows shim resolution                               |
-| [009](adr/009-secrets-and-redaction.md)                 | Token resolution, `SecretString`, env-based git auth, the Redactor                |
-| [010](adr/010-run-journal-and-resume.md)                | An append-only JSONL journal with a pure reducer for resume                       |
-| [011](adr/011-localhost-ui-security.md)                 | Localhost UI: token → cookie, Host/Origin checks, synchronizer CSRF               |
-| [012](adr/012-electron-in-process-server.md)            | Electron runs the same Fastify server in-process                                  |
-| [013](adr/013-guard-toolkit-in-node.md)                 | A single Node guard toolkit for every generated stack                             |
-| [014](adr/014-security-scanner-pinning.md)              | Scanner pinning, gitleaks binary over the action, stable fingerprints             |
-| [015](adr/015-test-strategy-fakes-and-live-gating.md)   | Vitest, fakes by default, a bare-repo fake GitHub, `INCUBATOR_LIVE`               |
-| [016](adr/016-deploy-class-package-release.md)          | **Proposed:** a `package-release` deploy class for non-server projects            |
-| [017](adr/017-agent-hooks-and-tracker-loop.md)          | Agent hooks: a Stop-hook veto as the verification loop                            |
-| [018](adr/018-completeness-score.md)                    | Completeness score formula and default threshold                                  |
-| [019](adr/019-toolchain-fetch-and-ci.md)                | Hash-pinned tool fetching and the CI layout                                       |
-| [020](adr/020-enhance-command-and-staged-contract.md)   | `enhance` command, additive delivery model, staged contract change                |
-| [021](adr/021-deep-scan-caps-and-skip-accounting.md)    | Deep scan: deterministic, capped, honest about skipped files                      |
-| [022](adr/022-host-capabilities-over-http.md)           | Native capabilities (folder dialog) reach the UI as HTTP routes                   |
-| [023](adr/023-local-folder-workflow.md)                 | Folder workflows; the owner approves every commit and push                        |
-| [024](adr/024-spec-value-other.md)                      | The spec value `other`: updating a repository with no stack pack                  |
-| [025](adr/025-owner-approved-check-commands.md)         | The owner approves what a coding agent runs in an external repository             |
-| [026](adr/026-stack-pack-catalog-and-recommendation.md) | A stack pack catalog in the manifests; the LLM recommends a stack, rules check it |
-| [027](adr/027-retrieved-stacks.md)                      | Larger stacks are retrieved from their own generator, not built in as packs       |
-| [028](adr/028-project-portfolio-and-repo-marker.md)     | A project portfolio, and a marker in the repository that ties a folder to it      |
+| ADR                                                     | Title                                                                              |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| [001](adr/001-monorepo-toolchain.md)                    | Monorepo toolchain: pnpm 10, Node 22, TypeScript 6.0, ESM, source condition        |
+| [002](adr/002-runtime-kernel-package.md)                | A `packages/runtime` kernel shared by all adapters                                 |
+| [003](adr/003-template-engine-eta.md)                   | Eta (not Handlebars) as the template engine, with a restricted-template lint       |
+| [004](adr/004-deterministic-rendering-and-lockfile.md)  | Deterministic rendering, normalization and the lockfile                            |
+| [005](adr/005-scaffold-markers-and-json-patches.md)     | Comment markers for text files, declarative JSON patches for JSON                  |
+| [006](adr/006-spec-schema-source-of-truth.md)           | JSON Schema as the source of truth; generated types; Ajv                           |
+| [007](adr/007-llm-adapters-probing-and-sandboxing.md)   | LLM adapters: capability probing, schema gate, tool-less sandbox                   |
+| [008](adr/008-subprocess-spawning.md)                   | Shell-less subprocesses and Windows shim resolution                                |
+| [009](adr/009-secrets-and-redaction.md)                 | Token resolution, `SecretString`, env-based git auth, the Redactor                 |
+| [010](adr/010-run-journal-and-resume.md)                | An append-only JSONL journal with a pure reducer for resume                        |
+| [011](adr/011-localhost-ui-security.md)                 | Localhost UI: token → cookie, Host/Origin checks, synchronizer CSRF                |
+| [012](adr/012-electron-in-process-server.md)            | Electron runs the same Fastify server in-process                                   |
+| [013](adr/013-guard-toolkit-in-node.md)                 | A single Node guard toolkit for every generated stack                              |
+| [014](adr/014-security-scanner-pinning.md)              | Scanner pinning, gitleaks binary over the action, stable fingerprints              |
+| [015](adr/015-test-strategy-fakes-and-live-gating.md)   | Vitest, fakes by default, a bare-repo fake GitHub, `INCUBATOR_LIVE`                |
+| [016](adr/016-deploy-class-package-release.md)          | **Proposed:** a `package-release` deploy class for non-server projects             |
+| [017](adr/017-agent-hooks-and-tracker-loop.md)          | Agent hooks: a Stop-hook veto as the verification loop                             |
+| [018](adr/018-completeness-score.md)                    | Completeness score formula and default threshold                                   |
+| [019](adr/019-toolchain-fetch-and-ci.md)                | Hash-pinned tool fetching and the CI layout                                        |
+| [020](adr/020-enhance-command-and-staged-contract.md)   | `enhance` command, additive delivery model, staged contract change                 |
+| [021](adr/021-deep-scan-caps-and-skip-accounting.md)    | Deep scan: deterministic, capped, honest about skipped files                       |
+| [022](adr/022-host-capabilities-over-http.md)           | Native capabilities (folder dialog) reach the UI as HTTP routes                    |
+| [023](adr/023-local-folder-workflow.md)                 | Folder workflows; the owner approves every commit and push                         |
+| [024](adr/024-spec-value-other.md)                      | The spec value `other`: updating a repository with no stack pack                   |
+| [025](adr/025-owner-approved-check-commands.md)         | The owner approves what a coding agent runs in an external repository              |
+| [026](adr/026-stack-pack-catalog-and-recommendation.md) | A stack pack catalog in the manifests; the LLM recommends a stack, rules check it  |
+| [027](adr/027-retrieved-stacks.md)                      | Larger stacks are retrieved from their own generator, not built in as packs        |
+| [028](adr/028-project-portfolio-and-repo-marker.md)     | A project portfolio, and a marker in the repository that ties a folder to it       |
+| [029](adr/029-stop-cancel-and-settings.md)              | Stop and cancel a run, settings the owner can change, and which model did each job |

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { completeSpec } from '@incubator/spec';
@@ -13,6 +13,8 @@ import {
   type HandoffProgress,
 } from './handoff.js';
 import { loadPrompt } from './prompts.js';
+import type { EngineDeps } from './engine.js';
+import { agentReport } from './finish.js';
 import { fakePublishEngine } from './testing.js';
 
 const fakeAgent = path.resolve(import.meta.dirname, '../fixtures/handoff/fake-agent.mjs');
@@ -30,10 +32,21 @@ const agentCaps = caps({
   streamJson: ['--output-format', 'stream-json'],
 });
 
-async function publishedRun(mode: string, ceilings?: Record<string, number>) {
+async function publishedRun(
+  mode: string,
+  ceilings?: Record<string, number>,
+  extra: {
+    config?: EngineDeps['config'];
+    probe?: (adapter: string) => Capabilities;
+  } = {},
+) {
   process.env['FAKE_AGENT_MODE'] = mode;
   const h = fakePublishEngine({
-    handoff: { exec: nodeExec, probe: () => Promise.resolve(agentCaps) },
+    handoff: {
+      exec: nodeExec,
+      probe: (adapter) => Promise.resolve(extra.probe ? extra.probe(adapter) : agentCaps),
+    },
+    ...(extra.config ? { config: extra.config } : {}),
   });
   const draft = JSON.parse(
     readFileSync(
@@ -88,6 +101,52 @@ describe('handoff', () => {
     expect(() => buildHandoffArgv(caps({ printMode: ['-p'] }), ceilings)).toThrow(
       'no headless streaming mode',
     );
+  });
+
+  it('asks the agent for the chosen model when its CLI has a flag, and parks when it has none', () => {
+    const flags = {
+      printMode: ['-p'],
+      streamJson: ['--output-format', 'stream-json'],
+      model: '--model',
+    };
+    const ceilings = { turns: 30, toolCalls: 100, minutes: 20, usd: 5 };
+    expect(buildHandoffArgv(caps(flags), ceilings, undefined, 'claude-sonnet-5-5')).toEqual([
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--model',
+      'claude-sonnet-5-5',
+    ]);
+    // No model chosen: nothing is added.
+    expect(buildHandoffArgv(caps(flags), ceilings)).not.toContain('--model');
+    // A CLI with no model flag cannot honour the choice, so the run parks rather than ignore it.
+    expect(() =>
+      buildHandoffArgv(
+        caps({ printMode: ['-p'], streamJson: ['--x'] }),
+        ceilings,
+        undefined,
+        'opus',
+      ),
+    ).toThrow(/no flag for choosing a model/);
+    // A model id reaches argv, so only a plain token is accepted.
+    for (const bad of ['opus; rm -rf', '--evil', '', 'a b', '$(x)', 'x'.repeat(81)])
+      expect(() => buildHandoffArgv(caps(flags), ceilings, undefined, bad), bad).toThrow(
+        /not a model id/,
+      );
+  });
+
+  it('reads the model from the init event of the stream, cleaned', () => {
+    const m = new CeilingMonitor({ turns: 9, toolCalls: 9, minutes: 1, usd: 9 }, false);
+    expect(m.model).toBeNull();
+    m.feed(`${JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-sonnet-5-5' })}
+`);
+    expect(m.model).toBe('claude-sonnet-5-5');
+    const other = new CeilingMonitor({ turns: 9, toolCalls: 9, minutes: 1, usd: 9 }, false);
+    other.feed(`${JSON.stringify({ type: 'system', subtype: 'other', model: 'x' })}
+`);
+    other.feed(`${JSON.stringify({ type: 'system', subtype: 'init', model: 7 })}
+`);
+    expect(other.model).toBeNull();
   });
 
   it('counts turns, tool calls and cost from the stream and trips ceilings', () => {
@@ -145,6 +204,63 @@ describe('handoff', () => {
     expect(h.engine.entries(runId).map((e) => e.type)).toEqual(
       expect.arrayContaining(['handoff.launch', 'handoff.result']),
     );
+  });
+
+  it('passes the chosen coding model, records the one that ran, and lists the models used', async () => {
+    const withModel = caps({ ...agentCaps.flags, model: '--model' });
+    const { h, runId } = await publishedRun('complete', undefined, {
+      config: () => ({ agents: { model: 'claude-sonnet-5-5' } }),
+      probe: () => withModel,
+    });
+    const out = await h.engine.launchHandoff(runId);
+    expect(out.model).toBe('fake-agent-model');
+    const launch = h.engine.entries(runId).findLast((e) => e.type === 'handoff.launch')!;
+    expect(launch['model']).toBe('claude-sonnet-5-5');
+    expect(launch['argv']).toEqual(expect.arrayContaining(['--model', 'claude-sonnet-5-5']));
+    expect(h.engine.models(runId)).toEqual([
+      { job: 'coding', tool: 'claude', model: 'fake-agent-model', calls: 1, costUsd: 0.42 },
+    ]);
+  });
+
+  it('parks instead of ignoring a coding model its CLI cannot take, and picks the agent from the settings', async () => {
+    const probed: string[] = [];
+    const { h, runId } = await publishedRun('complete', undefined, {
+      config: () => ({ agents: { primary: 'copilot', model: 'gpt-5' } }),
+      probe: (adapter) => {
+        probed.push(adapter);
+        return agentCaps;
+      },
+    });
+    await expect(h.engine.prepareHandoff(runId)).rejects.toMatchObject({
+      reason: 'model_unsupported',
+    });
+    expect(probed.at(-1)).toBe('copilot-cli');
+    // Asked for explicitly (the CLI's --agent), the owner's choice does not override it.
+    await expect(h.engine.prepareHandoff(runId, { agent: 'cursor' })).rejects.toMatchObject({
+      reason: 'model_unsupported',
+    });
+    expect(probed.at(-1)).toBe('cursor-cli');
+  });
+
+  it('stops the agent when asked, keeps what it wrote, and does not call it a ceiling', async () => {
+    const { h, runId } = await publishedRun('slow');
+    const stop = new AbortController();
+    // Stop once the agent has started working (its first message comes after it wrote its file).
+    const out = await h.engine.launchHandoff(runId, {
+      signal: stop.signal,
+      onEvent: (chunk) => {
+        if (chunk.includes('"type":"assistant"')) stop.abort();
+      },
+    });
+    expect(out).toMatchObject({ stopped: true, tripped: null });
+    expect(agentReport(out).verdict).toBe('stopped');
+    const prep = await h.engine.prepareHandoff(runId);
+    expect(existsSync(path.join(prep.plan.cwd, 'src', 'agent-partial.txt'))).toBe(true);
+    // A ceiling is still a ceiling, and a run that ends by itself is neither.
+    const done = await publishedRun('complete');
+    const finished = await done.h.engine.launchHandoff(done.runId);
+    expect(finished.stopped).toBe(false);
+    expect(agentReport(finished).verdict).toBe('ready');
   });
 
   it('reports progress as the agent works and returns its summary', async () => {

@@ -1,4 +1,4 @@
-import { ExitCode, PolicyError } from '@incubator/runtime';
+import { ExitCode, InterruptedError, PolicyError } from '@incubator/runtime';
 import type { HandoffAgent } from '@incubator/core';
 import type { CliDeps } from '../deps.js';
 import type { Io } from '../io.js';
@@ -38,6 +38,10 @@ export async function runHandoff(
   }
   io.stderr(`▶ launching ${plan.agent} in ${plan.cwd} (ticket ${ticket ?? 'none'})\n`);
   const out = await deps.engine.launchHandoff(runId, agent ? { agent } : {});
+  if (out.stopped) {
+    io.stderr('⏹ stopped; the repository keeps whatever the agent had written\n');
+    throw new InterruptedError('the agent was stopped');
+  }
   const stats = `${out.turns} turns, ${out.toolCalls} tool calls${out.costUsd !== null ? `, $${out.costUsd}` : ''}`;
   if (out.tripped) {
     io.stderr(

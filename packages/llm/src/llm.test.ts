@@ -9,6 +9,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
+  InterruptedError,
   ParkError,
   SecretString,
   ToolError,
@@ -126,6 +127,64 @@ describe('schema gate', () => {
   });
 });
 
+describe('stopping a model call', () => {
+  it('never retries or wraps a stop, and does not call the adapter once it was stopped', async () => {
+    const stop = new AbortController();
+    let calls = 0;
+    const slow = {
+      id: 'fake' as const,
+      probe: () => Promise.reject(new Error('x')),
+      invoke: (r: { signal?: AbortSignal }) =>
+        new Promise<never>((_resolve, reject) => {
+          calls++;
+          r.signal?.addEventListener('abort', () => reject(new Error('aborted by signal')));
+        }),
+    };
+    const pending = complete(slow, { ...req(), signal: stop.signal });
+    setTimeout(() => stop.abort(), 50);
+    await expect(pending).rejects.toBeInstanceOf(InterruptedError);
+    expect(calls).toBe(1);
+    await expect(complete(slow, { ...req(), signal: stop.signal })).rejects.toBeInstanceOf(
+      InterruptedError,
+    );
+    expect(calls).toBe(1);
+  });
+
+  it('kills the CLI process when the call is stopped', async () => {
+    const dir = fakeCliDir(CLAUDE_HELP, '', 'hang');
+    const stop = new AbortController();
+    const adapter = new CliAdapter({ id: 'claude-cli', bin: 'fake-agent', exec: execWith(dir) });
+    const started = Date.now();
+    const pending = adapter.invoke(req({ timeoutMs: 60_000, signal: stop.signal }));
+    setTimeout(() => stop.abort(), 1500);
+    await expect(pending).rejects.toBeInstanceOf(InterruptedError);
+    expect(Date.now() - started).toBeLessThan(30_000);
+  });
+
+  it('turns an aborted Anthropic request into a stop', async () => {
+    const stop = new AbortController();
+    const adapter = new AnthropicApiAdapter({
+      apiKey: () => Promise.resolve(new SecretString('sk-test')),
+      clientFactory: () =>
+        ({
+          beta: {
+            messages: {
+              create: (_body: unknown, opts: { signal?: AbortSignal }) =>
+                new Promise((_resolve, reject) => {
+                  opts.signal?.addEventListener('abort', () =>
+                    reject(new Error('Request was aborted.')),
+                  );
+                }),
+            },
+          },
+        }) as never,
+    });
+    const pending = adapter.invoke(req({ signal: stop.signal }));
+    setTimeout(() => stop.abort(), 50);
+    await expect(pending).rejects.toBeInstanceOf(InterruptedError);
+  });
+});
+
 describe('capability probing', () => {
   it('derives flags from help text instead of hard-coding them', () => {
     const caps = capabilitiesFromHelp('2.1.0 (Claude Code)\n', CLAUDE_HELP, '/bin/claude');
@@ -176,6 +235,28 @@ function execWith(dir: string): Exec {
 }
 
 describe('CliAdapter (real subprocess)', () => {
+  it('reads the model on every call, so a saved setting applies to the next one', async () => {
+    const dir = fakeCliDir(CLAUDE_HELP, JSON.stringify({ type: 'result', result: '{"a":1}' }));
+    let model: string | undefined = 'opus';
+    const adapter = new CliAdapter({
+      id: 'claude-cli',
+      bin: 'fake-agent',
+      exec: execWith(dir),
+      model: () => model,
+    });
+    const argsOf = () =>
+      (JSON.parse(readFileSync(path.join(dir, 'last-call.json'), 'utf8')) as { args: string[] })
+        .args;
+    await adapter.invoke(req());
+    expect(argsOf()).toContain('opus');
+    model = 'sonnet';
+    await adapter.invoke(req());
+    expect(argsOf()).toContain('sonnet');
+    model = undefined;
+    await adapter.invoke(req());
+    expect(argsOf()).not.toContain('--model');
+  });
+
   it('runs headless with tools disabled, an empty cwd, allowlisted env and stdin prompt', async () => {
     const reply = JSON.stringify({
       type: 'result',
@@ -281,6 +362,19 @@ describe('CliAdapter (real subprocess)', () => {
     expect(unwrapCliOutput('{"answer":1}')).toEqual({ value: { answer: 1 } });
     expect(unwrapCliOutput('[1]')).toEqual({ value: [1] });
     expect(() => unwrapCliOutput('{"is_error":true,"result":"quota"}')).toThrow(/quota/);
+  });
+  it('names the models Claude used from the keys of modelUsage when the envelope has no model', () => {
+    expect(
+      unwrapCliOutput(
+        '{"type":"result","result":"{}","modelUsage":{"claude-opus-5-5":{},"claude-haiku-4-5-20251001":{}}}',
+      ),
+    ).toEqual({ text: '{}', model: 'claude-opus-5-5, claude-haiku-4-5-20251001' });
+    expect(unwrapCliOutput('{"result":"{}","modelUsage":{}}')).toEqual({ text: '{}' });
+    expect(unwrapCliOutput('{"result":"{}","modelUsage":[1]}')).toEqual({ text: '{}' });
+    expect(unwrapCliOutput('{"result":"{}","model":"m1","modelUsage":{"x":{}}}')).toEqual({
+      text: '{}',
+      model: 'm1',
+    });
   });
 });
 

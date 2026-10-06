@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ToolError } from './errors.js';
+import { InterruptedError, ToolError } from './errors.js';
 import {
   SAFE_BATCH_ARG,
   batchCommand,
@@ -129,6 +129,33 @@ describe('runProcess', () => {
       stderr: 'e',
       timedOut: false,
     });
+  });
+
+  it('kills the process tree when the signal fires, and says it was stopped', async () => {
+    const stop = new AbortController();
+    const started = Date.now();
+    const pending = runProcess(
+      'node',
+      ['-e', 'setInterval(() => {}, 1000)'],
+      { timeoutMs: 60_000, signal: stop.signal },
+      resolveNode,
+    );
+    setTimeout(() => stop.abort(), 300);
+    const r = await pending;
+    expect(r.aborted).toBe(true);
+    expect(r.timedOut).toBe(false);
+    expect(Date.now() - started).toBeLessThan(20_000);
+    // A normal run does not carry the flag.
+    const ok = await runProcess('node', ['-e', ''], { timeoutMs: 10_000 }, resolveNode);
+    expect(ok.aborted).toBeUndefined();
+  });
+
+  it('does not start a process when it was already stopped', async () => {
+    const stop = new AbortController();
+    stop.abort();
+    await expect(
+      runProcess('node', ['-e', ''], { timeoutMs: 10_000, signal: stop.signal }, resolveNode),
+    ).rejects.toBeInstanceOf(InterruptedError);
   });
 
   it('passes env overrides and can drop the inherited environment', async () => {

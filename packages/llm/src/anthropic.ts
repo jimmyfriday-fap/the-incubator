@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { ParkError, ToolError, type SecretString } from '@incubator/runtime';
+import { InterruptedError, ParkError, ToolError, type SecretString } from '@incubator/runtime';
 import type { Capabilities, CompleteRequest, JsonSchema, LlmAdapter, RawReply } from './types.js';
 
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-5-5';
@@ -97,22 +97,29 @@ export class AnthropicApiAdapter implements LlmAdapter {
       this.opts.clientFactory ?? ((apiKey: string) => new Anthropic({ apiKey, maxRetries: 2 }))
     )(key.reveal());
     const fallbacks = this.opts.fallbacks ?? true;
-    const res = await client.beta.messages.create(
-      {
-        model: this.opts.model ?? DEFAULT_ANTHROPIC_MODEL,
-        max_tokens: 16000,
-        system: req.system,
-        messages: [{ role: 'user', content: req.user }],
-        output_config: {
-          effort: this.opts.effort ?? 'medium',
-          format: { type: 'json_schema', schema: toStructuredOutputSchema(req.schema) },
+    let res: Awaited<ReturnType<typeof client.beta.messages.create>>;
+    try {
+      res = await client.beta.messages.create(
+        {
+          model: this.opts.model ?? DEFAULT_ANTHROPIC_MODEL,
+          max_tokens: 16000,
+          system: req.system,
+          messages: [{ role: 'user', content: req.user }],
+          output_config: {
+            effort: this.opts.effort ?? 'medium',
+            format: { type: 'json_schema', schema: toStructuredOutputSchema(req.schema) },
+          },
+          ...(fallbacks
+            ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
+            : {}),
         },
-        ...(fallbacks
-          ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
-          : {}),
-      },
-      { timeout: req.timeoutMs },
-    );
+        { timeout: req.timeoutMs, ...(req.signal ? { signal: req.signal } : {}) },
+      );
+    } catch (e) {
+      if (req.signal?.aborted)
+        throw new InterruptedError('anthropic-api was stopped', { cause: e });
+      throw e;
+    }
     if (res.stop_reason === 'refusal') {
       throw new ParkError('llm_refusal', 'the model declined the request; run parked', {
         category: res.stop_details?.category ?? null,

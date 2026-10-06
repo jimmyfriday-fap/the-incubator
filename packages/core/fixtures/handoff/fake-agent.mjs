@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A stand-in agent CLI for handoff tests: reads the prompt on stdin and emits Claude-style
 // stream-json. FAKE_AGENT_MODE=complete moves the active ticket to READY_FOR_TEST (like the Stop
-// hook); edit does the same and also writes src/agent-work.txt and a result text, like a real coding
+// hook); slow works slowly and never ends by itself (for stopping it); edit does the same and also writes src/agent-work.txt and a result text, like a real coding
 // run; idle stops without touching a file; runaway keeps calling tools until it is killed; spend
 // reports a large cost.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -10,11 +10,27 @@ import path from 'node:path';
 const mode = process.env.FAKE_AGENT_MODE ?? 'complete';
 const prompt = readFileSync(0, 'utf8');
 const emit = (e) => process.stdout.write(`${JSON.stringify(e)}\n`);
-emit({ type: 'system', subtype: 'init', argv: process.argv.slice(2), promptChars: prompt.length });
+emit({
+  type: 'system',
+  subtype: 'init',
+  model: process.env.FAKE_AGENT_MODEL ?? 'fake-agent-model',
+  argv: process.argv.slice(2),
+  promptChars: prompt.length,
+});
 const assistant = (tools) =>
   emit({ type: 'assistant', message: { content: [{ type: 'text', text: 'working' }, ...Array.from({ length: tools }, () => ({ type: 'tool_use', name: 'Edit' }))] } });
 
-if (mode === 'runaway') {
+if (mode === 'slow') {
+  // Works slowly and never finishes by itself: for tests that stop the agent. Writes a file first, as a
+  // real agent would have, so a stopped run has something in the folder.
+  mkdirSync('src', { recursive: true });
+  writeFileSync(path.join('src', 'agent-partial.txt'), 'half done\n');
+  const tick = () => {
+    assistant(0);
+    setTimeout(tick, 200);
+  };
+  tick();
+} else if (mode === 'runaway') {
   const tick = () => {
     assistant(5);
     setTimeout(tick, 5);

@@ -4,7 +4,7 @@ import type { GitIdentity, RepoRef, StatusEntry } from '@incubator/git';
 import { cleanAgentText, type HandoffOutcome } from './handoff.js';
 
 /** What the agent's run amounts to, in the words the owner sees at the commit request. */
-export type AgentVerdict = 'ready' | 'parked' | 'ceiling' | 'failed';
+export type AgentVerdict = 'ready' | 'parked' | 'ceiling' | 'failed' | 'stopped';
 
 /**
  * What the agent could run to check its work: the repository's own Incubator gate, the commands the
@@ -29,13 +29,15 @@ export interface AgentReport {
 }
 
 export function agentReport(out: HandoffOutcome): AgentReport {
-  const verdict: AgentVerdict = out.tripped
-    ? 'ceiling'
-    : out.exitCode !== 0
-      ? 'failed'
-      : out.ticketState === 'READY_FOR_TEST' || out.ticketState === null
-        ? 'ready'
-        : 'parked';
+  const verdict: AgentVerdict = out.stopped
+    ? 'stopped'
+    : out.tripped
+      ? 'ceiling'
+      : out.exitCode !== 0
+        ? 'failed'
+        : out.ticketState === 'READY_FOR_TEST' || out.ticketState === null
+          ? 'ready'
+          : 'parked';
   return {
     verdict,
     summary: out.summary,
@@ -125,6 +127,7 @@ export function finishBody(opts: {
     parked: 'The agent stopped before reaching ready-for-test; review with care.',
     ceiling: 'The agent was stopped at a run ceiling; the work may be incomplete.',
     failed: 'The agent exited with an error; the work may be incomplete.',
+    stopped: 'The owner stopped the agent; the work is probably incomplete.',
   };
   return [
     `# ${cleanAgentText(opts.title, 200) ?? 'Changes by the coding agent'}`,

@@ -3,6 +3,7 @@ import {
   type Engine,
   type IncubatorConfig,
   type RunStore,
+  type Settings,
 } from '@incubator/core';
 import type { GitHubAdapter } from '@incubator/git';
 import type { LlmRegistry } from '@incubator/llm';
@@ -25,6 +26,8 @@ export interface CliDeps {
   llm: LlmRegistry;
   store: RunStore;
   engine: Engine;
+  /** Read and save the configuration (the Settings page, `incubator config`). */
+  settings?: Settings;
   /** GitHub client for a token (doctor's token check; publish uses the same factory). */
   github: (token: SecretString) => GitHubAdapter;
   /** Tests: resolves to stop long-running commands (`ui`) instead of waiting for a signal. */

@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import type { ProjectBrief, ProjectCard } from '../../api-types.js';
+import { get } from '../api.js';
 import { navigate } from '../nav.js';
 
 export const when = (iso: string): string => {
@@ -14,6 +16,32 @@ const open = (id: string) => (e: { preventDefault: () => void }) => {
 /** Where a project lives: its GitHub address when it has one, else the folder on this computer. */
 export const whereIs = (p: Pick<ProjectBrief, 'repo'>): string | null =>
   p.repo.url?.replace(/^https:\/\/github\.com\//, '') ?? p.repo.dir;
+
+/** Where you are: a trail of links ending at the current page. */
+export function Crumbs({ items }: { items: { label: string; to?: string }[] }) {
+  return (
+    <nav className="crumbs muted" aria-label="Breadcrumb" data-testid="crumbs">
+      {items.map((c, i) => (
+        <span key={`${i}-${c.label}`}>
+          {i > 0 && ' › '}
+          {c.to ? (
+            <a
+              href={c.to}
+              onClick={(e) => {
+                e.preventDefault();
+                navigate(c.to!);
+              }}
+            >
+              {c.label}
+            </a>
+          ) : (
+            c.label
+          )}
+        </span>
+      ))}
+    </nav>
+  );
+}
 
 /** The portfolio on the dashboard home: one card per project, newest activity first. */
 export function ProjectGrid({ projects }: { projects: ProjectCard[] }) {
@@ -47,6 +75,29 @@ export function ProjectGrid({ projects }: { projects: ProjectCard[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** The Projects tab: the whole portfolio. */
+export function ProjectsPage() {
+  const [projects, setProjects] = useState<ProjectCard[] | null>(null);
+  useEffect(() => {
+    get<ProjectCard[]>('/api/portfolio')
+      .then(setProjects)
+      .catch(() => setProjects([]));
+  }, []);
+  if (projects === null) return <p className="muted">Loading…</p>;
+  return (
+    <section className="card wide" data-testid="projects-page">
+      <h2>Projects</h2>
+      {projects.length === 0 ? (
+        <p className="muted">
+          No projects yet. Start a run from Home and the project appears here.
+        </p>
+      ) : (
+        <ProjectGrid projects={projects} />
+      )}
+    </section>
   );
 }
 

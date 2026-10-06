@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import {
   FixedClock,
   Logger,
+  MemoryKeychain,
   MemorySink,
   SecretString,
   ToolError,
@@ -22,9 +23,18 @@ import {
 } from '@incubator/runtime';
 import { FakeGitHub, createGitOps, type GitOps } from '@incubator/git';
 import { FakeTracker } from '@incubator/tracker';
-import { FakeLlmAdapter, loadFixtures, type FixtureTurn, type LlmAdapter } from '@incubator/llm';
+import {
+  FakeLlmAdapter,
+  loadFixtures,
+  type Capabilities,
+  type FixtureTurn,
+  type LlmAdapter,
+  type LlmRegistry,
+} from '@incubator/llm';
+import type { ConfigStore } from './config.js';
 import { Engine, type EngineDeps } from './engine.js';
 import { Portfolio } from './portfolio.js';
+import { Settings } from './settings.js';
 import { RunStore } from './store.js';
 import type { VerifyResult } from './publish.js';
 
@@ -109,6 +119,7 @@ export function fakeAgentHandoff(): NonNullable<EngineDeps['handoff']> {
         flags: {
           printMode: [fakeAgentPath(), '-p'],
           streamJson: ['--output-format', 'stream-json'],
+          model: '--model',
           // As the real claude CLI: the allowed-tool list is how approved checks are enforced.
           allowedTools: '--allowedTools',
         },
@@ -117,6 +128,48 @@ export function fakeAgentHandoff(): NonNullable<EngineDeps['handoff']> {
         reasons: [],
       }),
   };
+}
+
+/**
+ * Settings over stand-in tools: `claude` installed (and able to plan, code and take a model), `copilot` not
+ * installed, no keychain and one account from the environment. For the Settings page in the web tests.
+ */
+export function fakeSettings(home: string, config: ConfigStore): Settings {
+  const caps = (installed: boolean, model: boolean): Capabilities => ({
+    installed,
+    ...(installed ? { version: 'fake 1.0' } : {}),
+    flags: model ? { model: '--model' } : {},
+    stdinPrompt: true,
+    eligible: { discovery: installed, analysis: installed, handoff: installed },
+    reasons: installed ? [] : ['not installed'],
+  });
+  const llm = {
+    adapters: new Map(),
+    probeAll: () =>
+      Promise.resolve({
+        'claude-cli': caps(true, true),
+        'copilot-cli': caps(false, false),
+        'cursor-cli': caps(false, false),
+        'anthropic-api': {
+          ...caps(true, false),
+          eligible: { discovery: true, analysis: true, handoff: false },
+        },
+      }),
+    select: (_purpose: string, preferred?: string) =>
+      Promise.resolve({ id: preferred ?? config.get().llm?.preferred ?? 'claude-cli' }),
+  } as unknown as LlmRegistry;
+  return new Settings({
+    home,
+    config,
+    llm,
+    keychain: new MemoryKeychain(),
+    credentials: () =>
+      Promise.resolve([
+        { account: 'github', source: 'env' },
+        { account: 'anthropic', source: null },
+        { account: 'leantime', source: null },
+      ]),
+  });
 }
 
 export function discoveryFixtureDir(name: string): string {
@@ -193,6 +246,8 @@ export function fakePublishEngine(
     handoff?: EngineDeps['handoff'];
     /** Stand-ins for a stack's own tool (retrieved stacks, ADR-027). */
     tools?: EngineDeps['tools'];
+    /** The live configuration (Settings, ADR-029). */
+    config?: EngineDeps['config'];
     /** The portfolio (ADR-028): off unless a test asks for it, so no marker file appears in a delivery. */
     portfolio?: boolean;
     /** Discovery turns for greenfield runs (default: no LLM). */
@@ -221,6 +276,7 @@ export function fakePublishEngine(
     },
     ...(opts.handoff ? { handoff: opts.handoff } : {}),
     ...(opts.tools ? { tools: opts.tools } : {}),
+    ...(opts.config ? { config: opts.config } : {}),
     ...(opts.portfolio ? { portfolio: new Portfolio(home, () => clock.now().toISOString()) } : {}),
     publish: {
       resolveToken: () =>

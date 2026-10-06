@@ -1,4 +1,4 @@
-import { ParkError, ToolError, type Logger } from '@incubator/runtime';
+import { InterruptedError, ParkError, ToolError, type Logger } from '@incubator/runtime';
 import { validateAgainst, type Issue } from '@incubator/spec';
 import { extractJson } from './extract.js';
 import type { CompleteRequest, LlmAdapter, RawReply } from './types.js';
@@ -36,10 +36,15 @@ export async function complete<T>(
   let costUsd = 0;
   let lastIssues: Issue[] = [];
   for (let attempt = 1; attempt <= 2; attempt++) {
+    if (req.signal?.aborted) throw new InterruptedError(`${adapter.id} was stopped`);
     let reply: RawReply;
     try {
       reply = await adapter.invoke(request);
     } catch (err) {
+      // why: a stop is not a failure and is never retried or wrapped.
+      if (err instanceof InterruptedError) throw err;
+      if (req.signal?.aborted)
+        throw new InterruptedError(`${adapter.id} was stopped`, { cause: err });
       if (err instanceof ParkError || err instanceof ToolError) throw err;
       throw new ToolError(
         `${adapter.id} failed: ${err instanceof Error ? err.message : String(err)}`,

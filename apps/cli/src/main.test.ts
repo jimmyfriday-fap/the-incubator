@@ -1,13 +1,14 @@
 import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Engine, RunStore } from '@incubator/core';
+import { ConfigStore, Engine, RunStore } from '@incubator/core';
 import { completeSpec } from '@incubator/spec';
 import {
   FAKE_GITHUB_TOKEN,
   discoveryFixtureDir,
   enhanceFixtureDir,
   fakePublishEngine,
+  fakeSettings,
   seedExistingRepo,
 } from '@incubator/core/testing';
 import { FakeLlmAdapter, createLlmRegistry } from '@incubator/llm';
@@ -15,7 +16,7 @@ import { FakeGitHub } from '@incubator/git';
 import { FixedClock, Logger, MemoryKeychain, MemorySink, nodeExec } from '@incubator/runtime';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CliDeps, DepsFactory } from './deps.js';
-import { main } from './main.js';
+import { main, type InterruptControl } from './main.js';
 
 function io(isTTY = false) {
   const out: string[] = [];
@@ -151,6 +152,83 @@ describe('incubator doctor', () => {
     expect(text).toMatch(/fake\s+✔/);
     expect(text).toMatch(/claude-cli\s+✖/);
     expect(code).toBe(0);
+  });
+});
+
+describe('incubator config', () => {
+  const withSettings = () => {
+    const d = testDeps('ts-library');
+    const factory: DepsFactory = (o) => {
+      const deps = d.factory(o);
+      deps.settings = fakeSettings(d.home, new ConfigStore(d.home));
+      return deps;
+    };
+    return { factory, home: d.home };
+  };
+
+  it('shows what the next run uses, then sets, reads and clears a setting', async () => {
+    const { factory, home } = withSettings();
+    const show = io();
+    expect(await main(['config'], show.io, factory)).toBe(0);
+    expect(show.out.join('')).toMatch(/planning\s+claude-cli · the tool’s default model/);
+    expect(show.out.join('')).toContain('incubator config set');
+
+    const set = io();
+    expect(
+      await main(['config', 'set', 'coding.model', 'claude-sonnet-5-5'], set.io, factory),
+    ).toBe(0);
+    expect(set.err.join('')).toContain('coding.model = claude-sonnet-5-5');
+    expect(JSON.parse(readFileSync(path.join(home, 'config.json'), 'utf8'))).toEqual({
+      agents: { model: 'claude-sonnet-5-5' },
+    });
+    const got = io();
+    expect(await main(['config', 'get', 'coding.model'], got.io, factory)).toBe(0);
+    expect(got.out.join('').trim()).toBe('claude-sonnet-5-5');
+
+    expect(await main(['config', 'set', 'limits.gcDays', '14'], io().io, factory)).toBe(0);
+    const where = path.resolve('flutter');
+    expect(await main(['config', 'set', 'toolPath.flutter', where], io().io, factory)).toBe(0);
+    const again = io();
+    await main(['config'], again.io, factory);
+    expect(again.out.join('')).toContain('removed after 14 days');
+    expect(again.out.join('')).toContain(`flutter = ${where}`);
+
+    // "default" and "auto" go back to automatic, and the empty sections disappear.
+    expect(await main(['config', 'set', 'coding.model', 'default'], io().io, factory)).toBe(0);
+    expect(await main(['config', 'set', 'limits.gcDays', 'default'], io().io, factory)).toBe(0);
+    expect(await main(['config', 'set', 'toolPath.flutter', 'default'], io().io, factory)).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(home, 'config.json'), 'utf8'))).toEqual({});
+  });
+
+  it('refuses a bad value, an unknown setting and a missing argument with exit 2, saving nothing', async () => {
+    const { factory, home } = withSettings();
+    for (const argv of [
+      ['config', 'set', 'coding.model', '--evil'],
+      ['config', 'set', 'limits.gcDays', 'abc'],
+      ['config', 'set', 'toolPath.flutter', 'relative'],
+      ['config', 'set', 'planning.tool', 'gpt'],
+      ['config', 'set', 'nonsense', '1'],
+      ['config', 'get', 'nonsense'],
+      ['config', 'get'],
+      ['config', 'set', 'coding.model'],
+      ['config', 'dance'],
+    ]) {
+      const t = io();
+      expect(await main(argv, t.io, factory), argv.join(' ')).toBe(2);
+      expect(t.err.join(''), argv.join(' ')).not.toBe('');
+    }
+    expect(() => readFileSync(path.join(home, 'config.json'), 'utf8')).toThrow();
+  });
+
+  it('says so when settings are not available, and doctor shows what is in use', async () => {
+    const none = io();
+    expect(await main(['config'], none.io, testDeps('ts-library').factory)).toBe(2);
+    expect(none.err.join('')).toContain('settings are not available');
+    const { factory } = withSettings();
+    const doc = io();
+    await main(['doctor'], doc.io, factory);
+    expect(doc.out.join('')).toContain('In use for the next run:');
+    expect(doc.out.join('')).toMatch(/coding\s+claude · default model/);
   });
 });
 
@@ -322,6 +400,43 @@ describe('publish, handoff, auth, gc', () => {
     process.env['FAKE_AGENT_MODE'] = 'spend';
     expect(await main(['handoff', runId, '--launch', '--agent', 'nope'], io().io, factory)).toBe(2);
     expect(h.github.repos.has('octo/tallyho')).toBe(true);
+  });
+
+  it('Ctrl+C stops the agent of a handoff and exits 130', async () => {
+    const { h, factory } = publishDeps();
+    const t = io();
+    expect(await main(['publish', specFile()], t.io, factory)).toBe(0);
+    const runId = /incubator handoff (\S+) --launch/.exec(t.err.join(''))![1]!;
+    process.env['FAKE_AGENT_MODE'] = 'slow';
+    const control: InterruptControl = {};
+    const launched = io();
+    const running = main(['handoff', runId, '--launch'], launched.io, factory, control);
+    // Once the agent has started and written something, the launcher's handler stops it, as Ctrl+C does.
+    for (let i = 0; i < 400; i++) {
+      if (h.engine.entries(runId).some((e) => e.type === 'handoff.launch')) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(control.stop?.()).toBe(1);
+    expect(await running).toBe(130);
+    expect(launched.err.join('')).toContain('⏹ stopped');
+    process.env['FAKE_AGENT_MODE'] = 'complete';
+  });
+
+  it('gives the launcher something to stop for a command that does work, and nothing for ui', async () => {
+    const { factory } = publishDeps();
+    const control: InterruptControl = {};
+    await main(['doctor'], io().io, factory, control);
+    expect(control.stop).toBeTypeOf('function');
+    expect(control.stop!()).toBe(0); // nothing is running, so the launcher exits at once
+    const forUi: InterruptControl = {};
+    await main(
+      ['ui', '--no-open'],
+      io().io,
+      (o) => ({ ...factory(o), stop: Promise.resolve('test') }),
+      forUi,
+    );
+    expect(forUi.stop).toBeUndefined();
   });
 
   it('parks a publish on a taken name and resumes it by run id', async () => {

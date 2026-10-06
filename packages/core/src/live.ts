@@ -22,7 +22,8 @@ import {
   type Keychain,
   type Logger,
 } from '@incubator/runtime';
-import { loadConfig, type IncubatorConfig } from './config.js';
+import { ConfigStore, loadConfig, type IncubatorConfig } from './config.js';
+import { Settings, type CredentialSource } from './settings.js';
 import { Engine } from './engine.js';
 import type { PublishDeps } from './publish.js';
 import { RunStore } from './store.js';
@@ -38,6 +39,8 @@ export interface LiveEngine {
   store: RunStore;
   engine: Engine;
   github: (token: SecretString) => GitHubAdapter;
+  /** The Settings page and `incubator config`: read and save the configuration (ADR-029). */
+  settings: Settings;
 }
 
 /**
@@ -53,6 +56,8 @@ export function createLiveEngine(opts: {
   const home = opts.home ?? incubatorHome();
   const clock = systemClock;
   const config = loadConfig(home);
+  // why: read on every use, so a setting saved from the page applies to the next run without a restart.
+  const configStore = new ConfigStore(home, config);
   const log = opts.log;
   const exec = nodeExec;
   const keychain = new OsKeychain();
@@ -60,7 +65,7 @@ export function createLiveEngine(opts: {
     exec,
     keychain,
     log,
-    ...(config.llm ? { config: config.llm } : {}),
+    config: () => configStore.get().llm,
     ...(env['INCUBATOR_RECORD'] ? { recordDir: path.resolve(env['INCUBATOR_RECORD']) } : {}),
   });
   const store = new RunStore(clock, home);
@@ -114,11 +119,37 @@ export function createLiveEngine(opts: {
       userHome: os.homedir(),
       ...(config.toolPaths ? { toolPaths: config.toolPaths } : {}),
     },
+    config: () => configStore.get(),
     store,
     clock,
     log,
     llm,
-    ...(config.discovery?.timeoutMs ? { llmTimeoutMs: config.discovery.timeoutMs } : {}),
   });
-  return { home, clock, exec, keychain, config, llm, store, engine, github };
+  const credentials = async (): Promise<CredentialSource[]> => {
+    const fromKeychain = async (account: string): Promise<boolean> =>
+      (await keychain.available()) &&
+      Boolean(await keychain.get('incubator', account).catch(() => null));
+    const github = await resolveGitHubToken({ keychain, exec, env }).catch(() => null);
+    return [
+      { account: 'github', source: github?.source ?? null },
+      {
+        account: 'anthropic',
+        source: (await fromKeychain('anthropic'))
+          ? 'keychain'
+          : env['ANTHROPIC_API_KEY']
+            ? 'env'
+            : null,
+      },
+      {
+        account: 'leantime',
+        source: (await fromKeychain('leantime'))
+          ? 'keychain'
+          : env['INCUBATOR_LEANTIME_TOKEN']
+            ? 'env'
+            : null,
+      },
+    ];
+  };
+  const settings = new Settings({ home, config: configStore, llm, keychain, credentials });
+  return { home, clock, exec, keychain, config, llm, store, engine, github, settings };
 }

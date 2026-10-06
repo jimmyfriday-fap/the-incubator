@@ -14,6 +14,8 @@ import {
   type JournalEntry,
   type PortfolioProject,
   type RunStore,
+  type Settings,
+  type SettingsPatch as CoreSettingsPatch,
 } from '@incubator/core';
 import { STACK_CATALOG, type IncubatorSpec } from '@incubator/spec';
 import type {
@@ -22,6 +24,7 @@ import type {
   ProjectDetail,
   RunDetail,
   RunListItem,
+  SettingsView,
   StackInfo,
   StartRunBody,
 } from '../api-types.js';
@@ -45,6 +48,8 @@ export interface ServerOptions {
   store: RunStore;
   log?: Logger;
   host?: HostCapabilities;
+  /** The Settings page; without it the page says settings are unavailable. */
+  settings?: Settings;
   /** The built UI; defaults to this package's dist/ui. */
   uiDir?: string;
   /** Fixed launch token (tests); a random 32-byte token otherwise. */
@@ -96,6 +101,11 @@ export function createApp(opts: ServerOptions): WebApp {
   const driver = new RunDriver(engine, log);
   const uiDir = opts.uiDir ?? defaultUiDir();
   const app = Fastify({ logger: false, forceCloseConnections: true, bodyLimit: 1024 * 1024 });
+
+  // why: closing the app must not leave a model call or the coding agent running with nobody watching.
+  app.addHook('onClose', async () => {
+    await driver.stopAll('shutdown');
+  });
 
   app.addHook('onRequest', async (req, reply) => {
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) void reply.header(k, v);
@@ -296,11 +306,68 @@ export function createApp(opts: ServerOptions): WebApp {
     };
   });
 
+  // Settings (ADR-029): what the next run will use, and the choices the owner can change. Accounts are shown
+  // as a source only; a secret never travels over this API.
+  const nullableString = (max: number) => ({ type: ['string', 'null'], maxLength: max });
+  app.get('/api/settings', async (_req, reply): Promise<SettingsView | FastifyReply> => {
+    if (!opts.settings) return reply.code(501).send({ error: 'settings are not available here' });
+    try {
+      return await opts.settings.view();
+    } catch (err) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.put<{ Body: CoreSettingsPatch }>(
+    '/api/settings',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            planning: {
+              type: 'object',
+              additionalProperties: false,
+              properties: { tool: { type: 'string', maxLength: 30 }, model: nullableString(100) },
+            },
+            coding: {
+              type: 'object',
+              additionalProperties: false,
+              properties: { agent: { type: 'string', maxLength: 30 }, model: nullableString(100) },
+            },
+            limits: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                timeoutSeconds: { type: ['number', 'null'] },
+                gcDays: { type: ['number', 'null'] },
+              },
+            },
+            toolPaths: {
+              type: 'object',
+              maxProperties: 20,
+              additionalProperties: { type: 'string', maxLength: 1000 },
+            },
+          },
+        },
+      },
+    },
+    async (req, reply): Promise<SettingsView | FastifyReply> => {
+      if (!opts.settings) return reply.code(501).send({ error: 'settings are not available here' });
+      try {
+        return await opts.settings.update(req.body);
+      } catch (err) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
   app.get('/api/runs', (): RunListItem[] =>
     store
       .list()
       .reverse()
-      .slice(0, 50)
+      .slice(0, 200)
       .flatMap((runId) => {
         try {
           const s = engine.state(runId);
@@ -315,6 +382,10 @@ export function createApp(opts: ServerOptions): WebApp {
               repo: s.input.repo ?? null,
               repoRef: s.input.repoRef ? `${s.input.repoRef.owner}/${s.input.repoRef.name}` : null,
               dir: s.input.dir ?? null,
+              cancelled: s.cancelled,
+              project: ((p) => (p ? { id: p.id, name: p.name } : null))(
+                engine.portfolioForRun(runId),
+              ),
             },
           ];
         } catch {
@@ -438,8 +509,11 @@ export function createApp(opts: ServerOptions): WebApp {
                 checks: engine.checksDetail(runId),
               }
             : null,
+        cancelled: s.cancelled,
+        stopped: s.stopped,
         finish: await engine.finishDetail(runId),
         project: ((p) => (p ? brief(p) : null))(engine.portfolioForRun(runId)),
+        models: engine.models(runId),
       };
     }),
   );
@@ -638,6 +712,32 @@ export function createApp(opts: ServerOptions): WebApp {
     withRun(async (runId) => {
       const { plan, ticket } = await engine.prepareHandoff(runId);
       return { bin: plan.bin, argv: plan.argv, cwd: plan.cwd, ceilings: plan.ceilings, ticket };
+    }),
+  );
+
+  // Stop ends the work under way (the run stays resumable); cancel abandons the run for good.
+  app.post(
+    '/api/runs/:id/stop',
+    withRun((runId) => {
+      driver.stop(runId);
+      return { stopping: true };
+    }),
+  );
+
+  app.post<{ Body: { reason?: string } }>(
+    '/api/runs/:id/cancel',
+    {
+      schema: {
+        body: {
+          type: ['object', 'null'],
+          additionalProperties: false,
+          properties: { reason: { type: 'string', maxLength: 200 } },
+        },
+      },
+    },
+    withRun(async (runId, req: { body?: { reason?: string } | null }) => {
+      await driver.cancel(runId, req.body?.reason);
+      return { cancelled: true };
     }),
   );
 

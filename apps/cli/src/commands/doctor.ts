@@ -58,6 +58,16 @@ export async function runDoctor(deps: CliDeps, io: Io): Promise<number> {
       lines.push(`  ${''.padEnd(14)}   flags: ${JSON.stringify(caps.flags)}`);
     for (const r of caps.reasons) lines.push(`  ${''.padEnd(14)}   - ${r}`);
   }
+  if (deps.settings) {
+    const { effective: e } = await deps.settings.view();
+    lines.push(
+      '',
+      'In use for the next run:',
+      `  planning   ${e.planning.tool ? `${e.planning.tool} · ${e.planning.model ?? 'default model'}` : 'none can run'}`,
+      `  coding     ${e.coding.agent} · ${e.coding.model ?? 'default model'}${e.coding.installed ? '' : '  ✖ not installed'}`,
+      '  change with: incubator config set <setting> <value>',
+    );
+  }
   if (!anyDiscovery) {
     ok = false;
     lines.push(

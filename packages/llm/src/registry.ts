@@ -19,6 +19,9 @@ export interface LlmConfig {
   cliModel?: string;
 }
 
+/** The settings, or a function that returns the current ones, so a saved change applies to the next call. */
+export type LlmConfigSource = LlmConfig | (() => LlmConfig | undefined);
+
 export interface LlmRegistry {
   adapters: ReadonlyMap<LlmAdapterId, LlmAdapter>;
   probeAll(): Promise<Record<string, Capabilities>>;
@@ -68,13 +71,15 @@ async function safeProbe(adapter: LlmAdapter): Promise<Capabilities> {
 export function createLlmRegistry(deps: {
   exec: Exec;
   keychain: Keychain;
-  config?: LlmConfig;
+  config?: LlmConfigSource;
   log?: Logger;
   extra?: LlmAdapter[];
   env?: NodeJS.ProcessEnv;
   /** Record every exchange as keyed fixtures into this directory (`INCUBATOR_RECORD`). */
   recordDir?: string;
 }): LlmRegistry {
+  const config = (): LlmConfig | undefined =>
+    typeof deps.config === 'function' ? deps.config() : deps.config;
   const cache = new ProbeCache(path.join(incubatorHome(deps.env), 'cache', 'probe.json'));
   const adapters = new Map<LlmAdapterId, LlmAdapter>();
   for (const id of ['claude-cli', 'copilot-cli', 'cursor-cli'] as const) {
@@ -85,7 +90,7 @@ export function createLlmRegistry(deps: {
         bin: CLI_BINARIES[id],
         exec: deps.exec,
         probeCache: cache,
-        ...(deps.config?.cliModel ? { model: deps.config.cliModel } : {}),
+        model: () => config()?.cliModel,
         ...(deps.log ? { log: deps.log } : {}),
       }),
     );
@@ -94,7 +99,7 @@ export function createLlmRegistry(deps: {
     'anthropic-api',
     new AnthropicApiAdapter({
       apiKey: anthropicKeySource(deps.keychain, deps.env),
-      ...deps.config?.anthropic,
+      ...config()?.anthropic,
     }),
   );
   for (const a of deps.extra ?? []) adapters.set(a.id, a);
@@ -107,7 +112,7 @@ export function createLlmRegistry(deps: {
       return out;
     },
     async select(purpose, preferred) {
-      const wanted = preferred ?? deps.config?.preferred;
+      const wanted = preferred ?? config()?.preferred;
       const order = wanted ? [wanted] : [...SELECTION_ORDER];
       const rejected: string[] = [];
       for (const id of order) {

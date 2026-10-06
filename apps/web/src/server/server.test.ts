@@ -12,6 +12,7 @@ import type {
   Question,
   RunDetail,
   RunListItem,
+  SettingsView,
   SpecChange,
   TreeFile,
 } from '../api-types.js';
@@ -323,6 +324,11 @@ describe('enhance over the API', () => {
     expect(detail.runs).toEqual([
       expect.objectContaining({ runId, request: REQUEST, state: 'PARKED', available: true }),
     ]);
+    const listed = (await api.get<RunListItem[]>('/api/runs')).body;
+    expect(listed.find((r) => r.runId === runId)?.project).toEqual({
+      id: d.project!.id,
+      name: d.project!.name,
+    });
     expect((await api.get('/api/portfolio/nope')).status).toBe(404);
     // The folder is recognised before another run starts; one that was never part of it is not.
     const known = (
@@ -551,6 +557,113 @@ describe('folders, coding, and the commit and push requests over the API', () =>
     expect(existsSync(path.join(dir, '.git'))).toBe(true);
   });
 
+  it('stops the coding agent on request, keeps what it wrote, then cancels the run for good', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'slow');
+    const { api, h } = await boot({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        dir,
+        repoRef: 'octo/bare-node',
+        request: 'Kitchen staff need to export the orders list as a CSV file.',
+      })
+    ).body;
+    await until(api, runId, (x) => !x.busy && x.parked?.state === 'REVIEW');
+    // Nothing is running at review: there is nothing to stop.
+    expect((await api.post(`/api/runs/${runId}/stop`)).status).toBe(409);
+    await api.post(`/api/runs/${runId}/approve`);
+    await until(
+      api,
+      runId,
+      (x) => x.busy && x.finish?.stage === 'coding' && x.finish.progress !== null,
+    );
+
+    expect((await api.post<{ stopping: boolean }>(`/api/runs/${runId}/stop`)).body).toEqual({
+      stopping: true,
+    });
+    let d = await until(api, runId, (x) => !x.busy);
+    // The stop is not an error, and it is said who asked for it.
+    expect(d.error).toBeNull();
+    expect(d.stopped).toEqual({ by: 'owner', state: 'COMMIT' });
+    expect(d.done).toBe(false);
+
+    // Resumed, the run asks what to do with the half-finished work, and says the agent was stopped.
+    await api.post(`/api/runs/${runId}/resume`);
+    d = await until(api, runId, (x) => !x.busy && x.parked?.reason === 'needs_commit');
+    expect(d.stopped).toBeNull();
+    expect(d.finish?.agent?.verdict).toBe('stopped');
+    expect(d.finish!.files.map((f) => f.path)).toContain('src/agent-partial.txt');
+    expect(d.models.find((m) => m.job === 'coding')?.model).toBe('fake-agent-model');
+
+    // Cancel ends it for good, touches no file, and cannot be undone by resuming.
+    expect((await api.post(`/api/runs/${runId}/cancel`, { reason: 'not needed' })).status).toBe(
+      200,
+    );
+    d = (await api.get<RunDetail>(`/api/runs/${runId}`)).body;
+    expect(d).toMatchObject({ cancelled: true, done: true, busy: false });
+    expect(existsSync(path.join(dir, 'src', 'agent-partial.txt'))).toBe(true);
+    expect((await api.post(`/api/runs/${runId}/resume`)).status).toBe(409);
+    expect((await api.post(`/api/runs/${runId}/cancel`)).status).toBe(409);
+    expect((await api.post(`/api/runs/${runId}/stop`)).status).toBe(409);
+    const listed = (await api.get<RunListItem[]>('/api/runs')).body;
+    expect(listed.find((r) => r.runId === runId)?.cancelled).toBe(true);
+    expect((await api.get<ProjectCard[]>('/api/portfolio')).body[0]?.latest).toMatchObject({
+      state: 'CANCELLED',
+      done: true,
+    });
+  });
+
+  it('cancelling a run that is working stops it first, and closing the server stops what is running', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'slow');
+    const { api, h } = await boot({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        dir,
+        repoRef: 'octo/bare-node',
+        request: 'Kitchen staff need to export the orders list as a CSV file.',
+      })
+    ).body;
+    await until(api, runId, (x) => !x.busy && x.parked?.state === 'REVIEW');
+    await api.post(`/api/runs/${runId}/approve`);
+    await until(
+      api,
+      runId,
+      (x) => x.busy && x.finish?.stage === 'coding' && x.finish.progress !== null,
+    );
+    expect((await api.post(`/api/runs/${runId}/cancel`)).status).toBe(200);
+    expect((await api.get<RunDetail>(`/api/runs/${runId}`)).body).toMatchObject({
+      cancelled: true,
+      busy: false,
+    });
+  });
+
+  it('closing the server stops what is running, and the journal says it was the app', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'slow');
+    const { api, h, server } = await boot({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        dir,
+        repoRef: 'octo/bare-node',
+        request: 'Kitchen staff need to export the orders list as a CSV file.',
+      })
+    ).body;
+    await until(api, runId, (x) => !x.busy && x.parked?.state === 'REVIEW');
+    await api.post(`/api/runs/${runId}/approve`);
+    await until(
+      api,
+      runId,
+      (x) => x.busy && x.finish?.stage === 'coding' && x.finish.progress !== null,
+    );
+    await server.close();
+    expect(h.engine.state(runId).stopped?.by).toBe('shutdown');
+    expect(h.engine.activeRuns()).toEqual([]);
+  });
+
   it("an update in the owner's folder is refused while it has uncommitted work", async () => {
     const { api, h } = await boot({ enhance: 'export-orders' });
     const { dir } = await seedAdoptRepo(h, 'bare-node');
@@ -777,5 +890,72 @@ describe('retrieved stacks over the API (ADR-027)', () => {
     });
     expect(refused.status).toBeGreaterThanOrEqual(400);
     expect(readFileSync(path.join(full, 'mine.txt'), 'utf8')).toBe('mine');
+  });
+});
+
+describe('settings over the API (ADR-029)', () => {
+  it('shows what the next run uses, saves a choice, refuses a bad one, and never carries a secret', async () => {
+    const { api, h, server } = await boot();
+    const first = (await api.get<SettingsView>('/api/settings')).body;
+    expect(first.effective.planning).toEqual({ tool: 'claude-cli', model: null });
+    expect(first.adapters.map((a) => a.id)).toContain('claude-cli');
+    expect(first.credentials.find((c) => c.account === 'github')).toEqual({
+      account: 'github',
+      source: 'env',
+    });
+    // Only a source is ever shown: no value of any account appears in the body.
+    expect(JSON.stringify(first)).not.toContain(FAKE_GITHUB_TOKEN);
+
+    const saved = await api.put<SettingsView>('/api/settings', {
+      planning: { model: 'opus' },
+      coding: { agent: 'claude', model: 'claude-sonnet-5-5' },
+      limits: { gcDays: 7 },
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body.chosen.coding).toEqual({ agent: 'claude', model: 'claude-sonnet-5-5' });
+    expect(saved.body.effective.planning).toEqual({ tool: 'claude-cli', model: 'opus' });
+    const file = JSON.parse(readFileSync(path.join(h.home, 'config.json'), 'utf8')) as unknown;
+    expect(file).toEqual({
+      llm: { cliModel: 'opus' },
+      agents: { primary: 'claude', model: 'claude-sonnet-5-5' },
+      gc: { days: 7 },
+    });
+
+    // A bad id and unknown keys are refused, and the file is unchanged.
+    for (const body of [
+      { coding: { model: '--evil' } },
+      { toolPaths: { flutter: 'relative' } },
+      { limits: { gcDays: 0 } },
+    ]) {
+      const r = await api.put<{ error: string }>('/api/settings', body);
+      expect([400, 422], JSON.stringify(body)).toContain(r.status);
+    }
+    expect(JSON.parse(readFileSync(path.join(h.home, 'config.json'), 'utf8'))).toEqual(file);
+    // A key the page does not know is dropped by the schema, not written.
+    expect((await api.put('/api/settings', { nonsense: true })).status).toBe(200);
+    expect(JSON.parse(readFileSync(path.join(h.home, 'config.json'), 'utf8'))).toEqual(file);
+
+    // The same guard as every other change: no CSRF header, no write.
+    const noCsrf = await fetch(`${server.origin}/api/settings`, {
+      method: 'PUT',
+      headers: { cookie: api.cookie, origin: server.origin, 'content-type': 'application/json' },
+      body: JSON.stringify({ limits: { gcDays: 1 } }),
+    });
+    expect(noCsrf.status).toBe(403);
+  });
+
+  it('lists which tool and model did the work of a run', async () => {
+    const { api, h } = await boot({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        repo: dir,
+        repoRef: 'octo/bare-node',
+        request: 'Kitchen staff need to export the orders list as a CSV file.',
+      })
+    ).body;
+    const d = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    expect(d.models.map((m) => m.job).sort()).toEqual(['analysis', 'planning']);
   });
 });

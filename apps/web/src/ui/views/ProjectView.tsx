@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ProjectDetail, StartRunBody } from '../../api-types.js';
 import { get, post } from '../api.js';
 import { navigate } from '../nav.js';
-import { when, whereIs } from './Projects.js';
+import { Crumbs, when, whereIs } from './Projects.js';
 
 const ORIGIN = {
   created: 'created by the Incubator',
@@ -36,6 +36,7 @@ export function ProjectView({ id }: { id: string }) {
 
   return (
     <div className="run" data-testid="project-page">
+      <Crumbs items={[{ label: 'Projects', to: '/projects' }, { label: project.name }]} />
       <section className="card wide">
         <h2>
           {project.name} {project.stack && <span className="badge">{project.stack}</span>}

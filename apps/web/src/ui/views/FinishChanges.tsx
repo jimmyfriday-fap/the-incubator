@@ -15,6 +15,7 @@ const VERDICT: Record<
     warn: true,
   },
   failed: { text: 'The agent exited with an error, so the work may be incomplete.', warn: true },
+  stopped: { text: 'You stopped the agent, so the work is probably incomplete.', warn: true },
 };
 
 /** The commit request: what changed, what the agent said, and a message for the owner to approve. */

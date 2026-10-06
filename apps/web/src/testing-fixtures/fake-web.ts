@@ -1,9 +1,11 @@
 import path from 'node:path';
+import { ConfigStore } from '@incubator/core';
 import {
   discoveryFixtureDir,
   enhanceFixtureDir,
   fakeAgentHandoff,
   fakePublishEngine,
+  fakeSettings,
   fakeStackTools,
   seedExistingRepo,
   turnsWithReviewSummary,
@@ -40,11 +42,14 @@ export async function startFakeServer(
   stackCalls: ReturnType<typeof fakeStackTools>['calls'];
 }> {
   const stacks = fakeStackTools(opts.stacks ?? {});
+  // The saved settings are read by the engine on every run, as in the real app; the store exists once the home does.
+  const live: { store?: ConfigStore } = {};
   // One fake model per server: recorded turns for a new project, or for an enhancement request.
   const h = fakePublishEngine({
     handoff: fakeAgentHandoff(),
     tools: stacks.tools,
     portfolio: true,
+    config: () => live.store?.get() ?? {},
     llm: turnsWithReviewSummary(
       opts.fixtureDir ??
         (opts.enhance
@@ -52,9 +57,12 @@ export async function startFakeServer(
           : discoveryFixtureDir(opts.discovery ?? 'saas-web')),
     ),
   });
+  const configStore = new ConfigStore(h.home);
+  live.store = configStore;
   const server = await startServer({
     engine: h.engine,
     store: h.store,
+    settings: fakeSettings(h.home, configStore),
     ...(opts.host ? { host: opts.host } : {}),
     ...(opts.uiDir ? { uiDir: opts.uiDir } : {}),
     ...(opts.heartbeatMs ? { heartbeatMs: opts.heartbeatMs } : {}),
@@ -86,6 +94,17 @@ export async function apiClient(server: RunningServer) {
     csrf: session.csrf,
     get: async <T = unknown>(p: string): Promise<{ status: number; body: T }> => {
       const r = await fetch(`${server.origin}${p}`, { headers: base });
+      return { status: r.status, body: (await r.json()) as T };
+    },
+    put: async <T = unknown>(
+      p: string,
+      body: unknown = {},
+    ): Promise<{ status: number; body: T }> => {
+      const r = await fetch(`${server.origin}${p}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(body),
+      });
       return { status: r.status, body: (await r.json()) as T };
     },
     post: async <T = unknown>(

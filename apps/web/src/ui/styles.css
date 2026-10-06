@@ -60,9 +60,67 @@ textarea.code {
 
 .top {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
+  gap: 16px;
   padding: 16px 0;
+}
+
+.top .version {
+  margin-left: auto;
+}
+
+.history {
+  display: flex;
+  gap: 4px;
+}
+
+button.icon {
+  padding: 2px 10px;
+  line-height: 1.2;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tab {
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.tab:hover,
+.tab.on {
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--line);
+  padding: 3px 11px;
+}
+
+.crumbs {
+  font-size: 13px;
+}
+
+.filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+button.chip {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+button.chip.on {
+  color: var(--text);
+  border-color: var(--text);
 }
 
 .brand {
@@ -204,6 +262,13 @@ button:disabled {
 .source-user {
   color: var(--ok);
   border-color: var(--ok);
+}
+
+.state-cancelled,
+.state-stopped {
+  color: var(--muted);
+  border-color: var(--muted);
+  text-decoration: line-through;
 }
 
 .state-parked,
@@ -407,4 +472,38 @@ blockquote {
 .run-request {
   margin: 2px 0;
   overflow-wrap: anywhere;
+}
+
+.plain {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.plain li {
+  padding: 3px 0;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.models-used {
+  font-size: 13px;
+}
+
+.card h3 {
+  margin: 16px 0 6px;
+  font-size: 15px;
 }

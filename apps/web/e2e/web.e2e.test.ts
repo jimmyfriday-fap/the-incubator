@@ -39,6 +39,8 @@ afterAll(async () => {
     delete process.env[k];
 });
 afterEach(async () => {
+  // A test that needs another kind of agent sets it for itself; the next one starts from the usual one.
+  process.env['FAKE_AGENT_MODE'] = 'edit';
   await Promise.all(servers.splice(0).map((s) => s.close()));
 });
 
@@ -319,6 +321,160 @@ describe('web UI (Playwright, fakes)', () => {
     expect(await page.getByTestId('gap-report').textContent()).toContain('Incubator gap report');
     await shot(page, 'brownfield-2-done');
     expect(h.github.repos.get('octo/bare-node')!.prs).toHaveLength(1);
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  it('navigation: tabs, breadcrumbs, and back and forward through run, runs and projects', async () => {
+    const { h, page, errors } = await open({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    // Nothing to go back to on the first page.
+    await expect.poll(() => page.getByTestId('nav-back').isDisabled(), UI).toBe(true);
+    await intent(page).selectOption({ label: 'Update an existing solution' });
+    await page.getByTestId('folder-path').fill(dir);
+    await page.getByTestId('repo-ref').fill('octo/bare-node');
+    await expect.poll(() => page.getByTestId('start-enhance').isDisabled(), UI).toBe(false);
+    await page.getByTestId('start-enhance').click();
+    await page.waitForURL(/\/runs\/[\w-]+$/);
+    await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
+    const runUrl = page.url();
+
+    // The run page says where you are; the Runs tab lists it as waiting for you.
+    await expect.poll(() => page.getByTestId('crumbs').textContent(), UI).toContain('Projects');
+    await page.getByTestId('tab-runs').click();
+    await page.waitForURL(/\/runs$/);
+    await expect.poll(() => page.getByTestId('runs').textContent(), UI).toContain('PARKED');
+    await page.getByTestId('runs-filter-finished').click();
+    await expect
+      .poll(() => page.getByTestId('runs-page').textContent(), UI)
+      .toContain('No runs here.');
+    await page.getByTestId('runs-filter-waiting').click();
+    await expect
+      .poll(() => page.getByTestId('runs').textContent(), UI)
+      .toContain(path.basename(dir));
+
+    // Projects lists the project; Back returns to the Runs tab, Back again to the run, Forward reverses it.
+    await page.getByTestId('tab-projects').click();
+    await page.waitForURL(/\/projects$/);
+    await expect
+      .poll(() => page.getByTestId('projects').textContent(), UI)
+      .toContain(path.basename(dir));
+    await page.getByTestId('nav-back').click();
+    await page.waitForURL(/\/runs$/);
+    await page.getByTestId('nav-back').click();
+    await page.waitForURL((u) => u.toString() === runUrl);
+    await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
+    await page.getByTestId('nav-forward').click();
+    await page.waitForURL(/\/runs$/);
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  it('settings: shows what is in use, saves a coding model, and the next run uses it and says which model ran', async () => {
+    const { h, page, errors } = await open({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    await page.getByTestId('tab-settings').click();
+    await page.waitForURL(/\/settings$/);
+    await expect
+      .poll(() => page.getByTestId('in-use-planning').textContent(), UI)
+      .toContain('claude-cli');
+    expect(await page.getByTestId('in-use-coding').textContent()).toContain('claude');
+    // Accounts show where they come from and never a value.
+    expect(await page.getByTestId('accounts').textContent()).toContain('github');
+    expect(await page.getByTestId('adapters').textContent()).toContain('copilot-cli');
+
+    // A model that could not be a model id is stopped on the page.
+    await page.getByTestId('coding-model').fill('--evil');
+    expect(await page.getByTestId('save-settings').isDisabled()).toBe(true);
+    await page.getByTestId('coding-model').fill('claude-sonnet-5-5');
+    await page.getByTestId('save-settings').click();
+    await page.getByTestId('settings-saved').waitFor(UI);
+    expect(await page.getByTestId('in-use-coding').textContent()).toContain('claude-sonnet-5-5');
+
+    // The next run is coded with it: the log names it, and so does the models line.
+    await page.getByTestId('tab-home').click();
+    await intent(page).selectOption({ label: 'Update an existing solution' });
+    await page.getByTestId('folder-path').fill(dir);
+    await page.getByTestId('repo-ref').fill('octo/bare-node');
+    await expect.poll(() => page.getByTestId('start-enhance').isDisabled(), UI).toBe(false);
+    await page.getByTestId('start-enhance').click();
+    await page.waitForURL(/\/runs\/[\w-]+$/);
+    await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
+    await page
+      .getByTestId('request-text')
+      .fill('Kitchen staff need to export the orders list as a CSV file at the end of the day.');
+    await page.getByTestId('submit-request').click();
+    await page.getByTestId('review').waitFor({ timeout: 30_000 });
+    await page.getByTestId('approve').click();
+    await page.getByTestId('commit-request').waitFor({ timeout: 90_000 });
+    await expect
+      .poll(() => page.getByTestId('models-used').textContent(), UI)
+      .toContain('Coding: claude (fake-agent-model)');
+    await expect
+      .poll(() => page.getByTestId('run-log').textContent(), UI)
+      .toContain('coding agent started: claude · claude-sonnet-5-5');
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  it('stop and cancel: stop the coding agent, resume to the commit request, then cancel the run', async () => {
+    process.env['FAKE_AGENT_MODE'] = 'slow';
+    const { h, page, errors } = await open({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    await intent(page).selectOption({ label: 'Update an existing solution' });
+    await page.getByTestId('folder-path').fill(dir);
+    await page.getByTestId('repo-ref').fill('octo/bare-node');
+    await expect.poll(() => page.getByTestId('start-enhance').isDisabled(), UI).toBe(false);
+    await page.getByTestId('start-enhance').click();
+    await page.waitForURL(/\/runs\/[\w-]+$/);
+    await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
+    await page
+      .getByTestId('request-text')
+      .fill('Kitchen staff need to export the orders list as a CSV file at the end of the day.');
+    await page.getByTestId('submit-request').click();
+    await page.getByTestId('review').waitFor({ timeout: 30_000 });
+    // Review is waiting for the owner: nothing is running, so there is no Stop, but the run can be cancelled.
+    expect(await page.getByTestId('stop').count()).toBe(0);
+    expect(await page.getByTestId('cancel-run').count()).toBe(1);
+    await page.getByTestId('approve').click();
+
+    // The agent is working: Stop it.
+    await page.getByTestId('coding-progress').waitFor({ timeout: 60_000 });
+    await shot(page, 'stop-1-coding');
+    await page.getByTestId('stop').click();
+    await page.getByTestId('stopped').waitFor({ timeout: 60_000 });
+    expect(await page.getByTestId('stopped').textContent()).toContain('You stopped this at COMMIT');
+    expect(await page.getByTestId('stop').count()).toBe(0);
+    await shot(page, 'stop-2-stopped');
+
+    // Resume goes on to the commit request, which says the agent was stopped; its half-done file is listed.
+    await page.getByTestId('resume').click();
+    await page.getByTestId('commit-request').waitFor({ timeout: 60_000 });
+    expect(await page.getByTestId('agent-verdict').textContent()).toContain(
+      'You stopped the agent',
+    );
+    expect(await page.getByTestId('changed-files').textContent()).toContain(
+      'src/agent-partial.txt',
+    );
+
+    // Cancel asks first; "Keep it" changes nothing, "Yes" ends the run for good.
+    await page.getByTestId('cancel-run').click();
+    await page.getByTestId('cancel-keep').click();
+    expect(await page.getByTestId('cancel-confirm-box').count()).toBe(0);
+    expect(await state(page).textContent()).toBe('PARKED');
+    await page.getByTestId('cancel-run').click();
+    await page.getByTestId('cancel-confirm').click();
+    await expect.poll(() => state(page).textContent(), UI).toBe('CANCELLED');
+    expect(await page.getByTestId('cancelled').textContent()).toContain('Nothing was deleted');
+    expect(await page.getByTestId('commit-request').count()).toBe(0);
+    expect(await page.getByTestId('resume').count()).toBe(0);
+    await shot(page, 'stop-3-cancelled');
+
+    // Runs lists it under Cancelled, not under Finished.
+    await page.getByTestId('tab-runs').click();
+    await page.getByTestId('runs-filter-cancelled').click();
+    await expect.poll(() => page.getByTestId('runs').textContent(), UI).toContain('CANCELLED');
+    await page.getByTestId('runs-filter-finished').click();
+    await expect
+      .poll(() => page.getByTestId('runs-page').textContent(), UI)
+      .toContain('No runs here.');
     expect(errors, errors.join('\n')).toEqual([]);
   });
 

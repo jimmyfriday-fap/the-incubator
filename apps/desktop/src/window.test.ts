@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   externalAllowed,
+  historyActionForCommand,
+  historyActionForKey,
   leantimeHosts,
   navigationAllowed,
   secureWebPreferences,
@@ -48,5 +50,43 @@ describe('navigation lockdown', () => {
         null,
       ]),
     ).toEqual(['pm.example.org']);
+  });
+});
+
+describe('history shortcuts', () => {
+  const key = (
+    k: string,
+    mods: Partial<Record<'alt' | 'control' | 'meta' | 'shift', boolean>> = {},
+  ) => ({
+    type: 'keyDown',
+    key: k,
+    alt: false,
+    control: false,
+    meta: false,
+    shift: false,
+    ...mods,
+  });
+  it('maps Alt+Arrow on Windows and Linux, and Cmd+bracket on macOS', () => {
+    expect(historyActionForKey(key('ArrowLeft', { alt: true }), 'win32')).toBe('back');
+    expect(historyActionForKey(key('ArrowRight', { alt: true }), 'linux')).toBe('forward');
+    expect(historyActionForKey(key('[', { meta: true }), 'darwin')).toBe('back');
+    expect(historyActionForKey(key(']', { meta: true }), 'darwin')).toBe('forward');
+  });
+  it('ignores other keys, other modifiers, key releases and the wrong platform', () => {
+    expect(historyActionForKey(key('ArrowLeft'), 'win32')).toBeNull();
+    expect(historyActionForKey(key('ArrowLeft', { alt: true, control: true }), 'win32')).toBeNull();
+    expect(historyActionForKey(key('ArrowLeft', { alt: true, shift: true }), 'win32')).toBeNull();
+    expect(
+      historyActionForKey({ ...key('ArrowLeft', { alt: true }), type: 'keyUp' }, 'win32'),
+    ).toBeNull();
+    expect(historyActionForKey(key('ArrowLeft', { alt: true }), 'darwin')).toBeNull();
+    expect(historyActionForKey(key('[', { meta: true }), 'win32')).toBeNull();
+    expect(historyActionForKey(key('x', { meta: true }), 'darwin')).toBeNull();
+    expect(historyActionForKey(key('x', { alt: true }), 'win32')).toBeNull();
+  });
+  it('maps the mouse back and forward buttons', () => {
+    expect(historyActionForCommand('browser-backward')).toBe('back');
+    expect(historyActionForCommand('browser-forward')).toBe('forward');
+    expect(historyActionForCommand('browser-home')).toBeNull();
   });
 });

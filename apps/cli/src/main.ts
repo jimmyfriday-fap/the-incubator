@@ -12,12 +12,21 @@ import { collectCheck } from './commands/checks.js';
 import { runGc } from './commands/gc.js';
 import { runAdopt, type AdoptOptions } from './commands/adopt.js';
 import { runEnhance, type EnhanceOptions } from './commands/enhance.js';
+import { runConfig } from './commands/config.js';
 import { runPortfolio } from './commands/portfolio.js';
 import { runUi } from './commands/ui.js';
 import { liveDeps, type CliDeps, type DepsFactory } from './deps.js';
 import type { Io } from './io.js';
 
 export type { Io } from './io.js';
+
+/**
+ * How the launcher stops work on Ctrl+C. `main` fills `stop` for a command that runs work (not for `ui`, which
+ * has its own graceful shutdown); it stops every run that is working and returns how many it stopped.
+ */
+export interface InterruptControl {
+  stop?: () => number;
+}
 
 /**
  * Entry point. Returns an exit code (0 pass, 1 tool broke, 2 policy/gate, 130 interrupted) and never
@@ -27,12 +36,15 @@ export async function main(
   argv: readonly string[],
   io: Io,
   depsFactory: DepsFactory = liveDeps,
+  interrupt?: InterruptControl,
 ): Promise<number> {
   let code: number = ExitCode.Ok;
   let deps: CliDeps | undefined;
   const program = new Command('incubator');
   const verbose = argv.includes('--verbose');
   const getDeps = (): CliDeps => (deps ??= depsFactory({ verbose, stderr: io.stderr }));
+  if (interrupt && argv[0] !== 'ui')
+    interrupt.stop = () => deps?.engine.abortAll('signal').length ?? 0;
   program
     .description(
       'Turn a plain-English idea and/or an existing repository into a canonical GitHub repository.',
@@ -221,6 +233,15 @@ export async function main(
     .option('--json', 'print JSON instead of text')
     .action(async (project: string | undefined, opts: { json?: boolean }) => {
       code = await runPortfolio(getDeps(), io, project, opts);
+    });
+
+  program
+    .command('config [action] [args...]')
+    .description(
+      'show what the next run uses, or get/set a setting (planning and coding model, limits, tool paths)',
+    )
+    .action(async (action: string | undefined, args: string[]) => {
+      code = await runConfig(getDeps(), io, action, args);
     });
 
   program

@@ -22,6 +22,8 @@ export interface CompleteRequest {
   /** Version of the prompt that produced `system` (fixture keys). */
   promptVersion: string;
   timeoutMs: number;
+  /** Stops the call: the process or request is cancelled and the call rejects with `InterruptedError`. */
+  signal?: AbortSignal;
 }
 
 /** One raw model reply, before schema validation. */

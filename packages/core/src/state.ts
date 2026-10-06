@@ -51,6 +51,10 @@ export interface RunState {
   parked: { state: RunStateName; reason: string; message: string; evidence?: unknown } | null;
   /** The last attempt stopped on an error (not a park); resume retries `state`. */
   failure: { state: RunStateName; message: string } | null;
+  /** The work was stopped (by the owner, a signal or a shutdown) and has not been resumed since. */
+  stopped: { by: string; state: RunStateName } | null;
+  /** The owner abandoned the run (`run.cancel`): it is done and cannot be resumed. */
+  cancelled: boolean;
   approvedHash: string | null;
   llmCostUsd: number;
   done: boolean;
@@ -69,6 +73,8 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
     pendingQuestions: null,
     parked: null,
     failure: null,
+    stopped: null,
+    cancelled: false,
     approvedHash: null,
     llmCostUsd: 0,
     done: false,
@@ -95,6 +101,7 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
           round: typeof e['round'] === 'number' ? e['round'] : s.round,
           parked: null,
           failure: null,
+          stopped: null,
         };
         break;
       case 'spec.revision':
@@ -122,6 +129,7 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
             evidence: e['evidence'],
           },
           failure: null,
+          stopped: null,
           state: 'PARKED',
         };
         break;
@@ -131,6 +139,7 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
           state: (e['to'] as RunStateName | undefined) ?? s.parked?.state ?? s.state,
           parked: null,
           failure: null,
+          stopped: null,
         };
         break;
       case 'failed':
@@ -140,6 +149,7 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
             state: (e['state'] as RunStateName | undefined) ?? s.state,
             message: String(e['message']),
           },
+          stopped: null,
         };
         break;
       case 'step.ok':
@@ -156,8 +166,20 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
           },
         };
         break;
+      case 'interrupted':
+        s = {
+          ...s,
+          stopped: {
+            by: typeof e['by'] === 'string' ? e['by'] : 'signal',
+            state: (e['state'] as RunStateName | undefined) ?? s.state,
+          },
+        };
+        break;
+      case 'run.cancel':
+        s = { ...s, done: true, cancelled: true, parked: null, failure: null, stopped: null };
+        break;
       case 'run.done':
-        s = { ...s, state: 'DONE', done: true, failure: null };
+        s = { ...s, state: 'DONE', done: true, failure: null, stopped: null };
         break;
       default:
         break;

@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { constants as fsConstants } from 'node:fs';
 import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { ToolError } from './errors.js';
+import { InterruptedError, ToolError } from './errors.js';
 import type { Logger } from './log.js';
 
 export type BinKind = 'native' | 'cmd-shim' | 'script';
@@ -48,6 +48,8 @@ export interface ExecResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  /** The caller's signal fired, so the process tree was killed (the exit code says nothing about success). */
+  aborted?: boolean;
 }
 
 export interface Exec {
@@ -321,6 +323,8 @@ export async function runProcess(
   const out = new Capture(max, outLine);
   const err = new Capture(max, errLine);
 
+  // why: a stop that arrives before the process starts must not start it.
+  if (opts.signal?.aborted) throw new InterruptedError(`${bin} was not started: stopped`);
   return new Promise<ExecResult>((resolve, reject) => {
     const child = spawn(command, argv, {
       shell: false,
@@ -362,7 +366,14 @@ export async function runProcess(
       clearTimeout(timer);
       opts.signal?.removeEventListener('abort', onAbort);
       if (child.pid !== undefined) live.delete(child.pid);
-      resolve({ code, signal, stdout: out.finish(), stderr: err.finish(), timedOut });
+      resolve({
+        code,
+        signal,
+        stdout: out.finish(),
+        stderr: err.finish(),
+        timedOut,
+        ...(opts.signal?.aborted ? { aborted: true } : {}),
+      });
     });
     if (opts.stdin !== undefined) child.stdin.end(opts.stdin);
     else child.stdin.end();

@@ -1,4 +1,10 @@
-import { ParkError, PolicyError, formatError, type Logger } from '@incubator/runtime';
+import {
+  InterruptedError,
+  ParkError,
+  PolicyError,
+  formatError,
+  type Logger,
+} from '@incubator/runtime';
 import type {
   Answer,
   AskedQuestion,
@@ -88,6 +94,11 @@ export class RunDriver {
     const task = work()
       .then(() => undefined)
       .catch((err: unknown) => {
+        // why: a stop is what the owner asked for, not an error to show.
+        if (err instanceof InterruptedError) {
+          this.log.info(`run ${runId} stopped`);
+          return;
+        }
         const message = formatError(err);
         this.#errors.set(runId, message);
         this.log.error(`run ${runId} failed: ${message}`);
@@ -160,7 +171,36 @@ export class RunDriver {
   /** Re-enters a parked or interrupted run (after fixing whatever parked it). */
   resume(runId: string): void {
     const s = this.engine.state(runId);
-    if (s.done) throw new ConflictError(`run ${runId} is finished`);
+    if (s.done)
+      throw new ConflictError(`run ${runId} ${s.cancelled ? 'was cancelled' : 'is finished'}`);
     this.spawn(runId, () => this.engine.resume(runId, new WebPrompter()));
+  }
+
+  /**
+   * Stops the work under way: the model call or coding agent is killed and the run ends its step. It returns
+   * at once; the run stops being busy when the work has settled. The run stays resumable.
+   */
+  stop(runId: string): void {
+    if (!this.#busy.has(runId)) throw new ConflictError(`nothing is running for ${runId}`);
+    this.engine.abortRun(runId, 'owner');
+  }
+
+  /** Abandons a run: stops it if it is working, waits for that, then records the cancellation. */
+  async cancel(runId: string, reason?: string): Promise<void> {
+    const s = this.engine.state(runId);
+    if (s.done)
+      throw new ConflictError(`run ${runId} is already ${s.cancelled ? 'cancelled' : 'finished'}`);
+    if (this.#busy.has(runId)) {
+      this.engine.abortRun(runId, 'owner');
+      await this.#busy.get(runId);
+    }
+    this.engine.cancel(runId, reason);
+    this.emit(runId);
+  }
+
+  /** Stops everything that is working and waits for it to settle (closing the app). */
+  async stopAll(by: 'shutdown' | 'signal' = 'shutdown'): Promise<void> {
+    this.engine.abortAll(by);
+    await Promise.all([...this.#busy.values()]);
   }
 }

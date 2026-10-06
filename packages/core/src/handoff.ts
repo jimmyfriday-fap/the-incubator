@@ -3,6 +3,7 @@ import path from 'node:path';
 import { globalRedactor, ParkError, type Exec } from '@incubator/runtime';
 import type { Capabilities, LlmAdapterId } from '@incubator/llm';
 import type { IncubatorSpec } from '@incubator/spec';
+import { MODEL_ID } from './config.js';
 import { loadPrompt } from './prompts.js';
 
 export type HandoffAgent = 'claude' | 'copilot' | 'cursor';
@@ -27,6 +28,8 @@ export interface HandoffPlan {
   cwd: string;
   planPath: string;
   ceilings: Ceilings;
+  /** The model the owner asked for (Settings); absent means the tool's own default. */
+  model?: string;
   /** Added to the agent's environment: the directory of a tool the owner approved but PATH lacks. */
   env?: Record<string, string>;
   /** Ceilings this adapter cannot enforce from its stream (reported, never silently dropped). */
@@ -56,8 +59,21 @@ export function buildHandoffArgv(
   caps: Capabilities,
   ceilings: Ceilings,
   tools: readonly string[] = HANDOFF_ALLOWED_TOOLS,
+  model?: string,
 ): string[] {
   const f = caps.flags;
+  if (model !== undefined) {
+    if (!MODEL_ID.test(model))
+      throw new ParkError(
+        'bad_model',
+        `"${model}" is not a model id (letters, digits and . _ : -)`,
+      );
+    if (!f.model)
+      throw new ParkError(
+        'model_unsupported',
+        `this CLI has no flag for choosing a model, so "${model}" cannot be used: clear the coding model in Settings`,
+      );
+  }
   if (!f.printMode || !f.streamJson)
     throw new ParkError(
       'handoff_unsupported',
@@ -68,6 +84,7 @@ export function buildHandoffArgv(
     ...f.streamJson,
     ...(f.verbose ? [f.verbose] : []),
     ...(f.maxTurns ? [f.maxTurns, String(ceilings.turns)] : []),
+    ...(model !== undefined && f.model ? [f.model, model] : []),
     ...(f.acceptEdits ?? []),
     ...(f.allowedTools ? [f.allowedTools, tools.join(',')] : []),
   ];
@@ -99,6 +116,8 @@ export class CeilingMonitor {
   lastText: string | null = null;
   /** The final `result` text of the stream, when the agent sent one. */
   resultText: string | null = null;
+  /** The model the agent says it is using (its `system` init event). */
+  model: string | null = null;
   #buf = '';
 
   constructor(
@@ -120,6 +139,8 @@ export class CeilingMonitor {
   private event(line: string): void {
     let e: {
       type?: string;
+      subtype?: string;
+      model?: unknown;
       message?: { content?: { type?: string; text?: unknown }[] };
       result?: unknown;
       total_cost_usd?: number;
@@ -130,6 +151,8 @@ export class CeilingMonitor {
     } catch {
       return;
     }
+    if (e.type === 'system' && e.subtype === 'init' && typeof e.model === 'string')
+      this.model = cleanAgentText(e.model, 100);
     if (e.type === 'assistant') {
       this.turns++;
       const blocks = e.message?.content ?? [];
@@ -159,6 +182,10 @@ export interface HandoffOutcome {
   toolCalls: number;
   costUsd: number | null;
   tripped: string | null;
+  /** The owner stopped the agent (Stop in the app, Ctrl+C): the work is probably unfinished. */
+  stopped: boolean;
+  /** The model the agent reported, when it did. */
+  model: string | null;
   ticketState: string | null;
   /** What the agent said at the end: its result text, else its last message. Cleaned and capped. */
   summary: string | null;
@@ -228,6 +255,8 @@ export async function launchHandoff(
     onEvent?: (line: string) => void;
     /** Called when the counters or the latest text change (at most once per assistant turn). */
     onProgress?: (p: HandoffProgress) => void;
+    /** Stops the agent: its process tree is killed and the outcome says `stopped`. */
+    signal?: AbortSignal;
   },
 ): Promise<HandoffOutcome> {
   mkdirSync(path.dirname(opts.logFile), { recursive: true });
@@ -240,6 +269,12 @@ export async function launchHandoff(
     plan.argv.includes(String(plan.ceilings.turns)),
   );
   const abort = new AbortController();
+  // why: a ceiling and an outside stop both end the agent the same way; only `stopped` tells them apart.
+  const stopNow = (): void => {
+    if (!abort.signal.aborted) abort.abort();
+  };
+  if (opts.signal?.aborted) stopNow();
+  else opts.signal?.addEventListener('abort', stopNow, { once: true });
   let reported = -1;
   const r = await exec.run(plan.bin, plan.argv, {
     cwd: plan.cwd,
@@ -263,6 +298,7 @@ export async function launchHandoff(
     },
     onStderr: (chunk) => appendFileSync(opts.logFile, globalRedactor.redact(chunk)),
   });
+  opts.signal?.removeEventListener('abort', stopNow);
   const tripped = monitor.tripped ?? (r.timedOut ? `minutes > ${plan.ceilings.minutes}` : null);
   return {
     exitCode: r.code,
@@ -270,6 +306,8 @@ export async function launchHandoff(
     toolCalls: monitor.toolCalls,
     costUsd: monitor.costUsd,
     tripped,
+    stopped: Boolean(opts.signal?.aborted) && !monitor.tripped,
+    model: monitor.model,
     ticketState: opts.ticket ? ticketState(plan.cwd, opts.ticket) : null,
     summary: cleanAgentText(monitor.resultText ?? monitor.lastText),
   };

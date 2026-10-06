@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ToolError, type Exec, type Logger } from '@incubator/runtime';
+import { InterruptedError, ToolError, type Exec, type Logger } from '@incubator/runtime';
 import { ProbeCache } from './probe-cache.js';
 import type { Capabilities, CompleteRequest, LlmAdapter, LlmAdapterId, RawReply } from './types.js';
 
@@ -11,7 +11,8 @@ export interface CliAdapterOptions {
   exec: Exec;
   /** Environment variables the CLI needs for its own login; everything else is dropped. */
   authEnv?: readonly string[];
-  model?: string;
+  /** The model to ask for; a function is read on every call, so a saved setting applies to the next one. */
+  model?: string | (() => string | undefined);
   probeCache?: ProbeCache;
   log?: Logger;
 }
@@ -80,6 +81,13 @@ export function unwrapCliOutput(stdout: string): RawReply {
           : undefined;
     const base: RawReply = cost === undefined ? {} : { costUsd: cost };
     if (typeof o['model'] === 'string') base.model = o['model'];
+    else {
+      // Claude's JSON envelope names the models it used as the keys of `modelUsage`.
+      const usage = o['modelUsage'];
+      const used =
+        usage && typeof usage === 'object' && !Array.isArray(usage) ? Object.keys(usage) : [];
+      if (used.length > 0) base.model = used.join(', ');
+    }
     if (o['is_error'] === true)
       throw new ToolError(
         `CLI reported an error: ${typeof o['result'] === 'string' ? o['result'] : 'unknown'}`,
@@ -118,7 +126,8 @@ export class CliAdapter implements LlmAdapter {
     }
     const f = caps.flags;
     const args = [...(f.printMode ?? []), ...(f.jsonOutput ?? []), ...(f.disableTools ?? [])];
-    if (this.opts.model && f.model) args.push(f.model, this.opts.model);
+    const model = typeof this.opts.model === 'function' ? this.opts.model() : this.opts.model;
+    if (model && f.model) args.push(f.model, model);
     const contract = `Reply with only one JSON value that validates against this JSON Schema (${req.schemaName}):\n${JSON.stringify(req.schema)}`;
     let stdin = `${req.user}\n\n${contract}\n`;
     if (f.systemPrompt) args.push(f.systemPrompt, req.system);
@@ -131,10 +140,12 @@ export class CliAdapter implements LlmAdapter {
         cwd,
         stdin,
         timeoutMs: req.timeoutMs,
+        ...(req.signal ? { signal: req.signal } : {}),
         inheritEnv: false,
         env,
         ...(this.opts.log ? { log: this.opts.log.child({ adapter: this.id }) } : {}),
       });
+      if (r.aborted || req.signal?.aborted) throw new InterruptedError(`${this.id} was stopped`);
       if (r.timedOut)
         throw new ToolError(`${this.id} timed out after ${req.timeoutMs} ms`, {
           code: 'llm_timeout',
