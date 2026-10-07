@@ -1,0 +1,27 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "plan 021: the update plan before the owner's corrections",
+  "response": {
+    "draftSpec": {
+      "intent": {
+        "coreFeatures": [
+          {
+            "id": "export-orders",
+            "summary": "Export the day's orders as CSV from the existing /orders route",
+            "lane": "enhancement/existing"
+          }
+        ]
+      },
+      "decisions": [
+        {
+          "key": "intent.coreFeatures",
+          "question": "Which existing behaviour changes",
+          "answer": "GET /orders gains a CSV export",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [],
+    "done": true
+  }
+}

@@ -155,3 +155,41 @@ export function mergeTurn(opts: {
   merged.decisions = decisions;
   return applyAnswers(merged, opts.answers, opts.questions);
 }
+
+/**
+ * The draft as the model sees it on an update run: `targets` are resolved by the engine, never set by the model
+ * (plan 021). The same object comes back when there is nothing to remove, so prompts stay byte-identical.
+ */
+export function withoutTargets(draft: Draft): Draft {
+  const intent = draft['intent'] as { coreFeatures?: unknown } | undefined;
+  const features = intent?.coreFeatures;
+  if (
+    !Array.isArray(features) ||
+    !features.some((f) => typeof f === 'object' && f !== null && 'targets' in f)
+  )
+    return draft;
+  const out = structuredClone(draft);
+  const list = (out['intent'] as { coreFeatures: Record<string, unknown>[] }).coreFeatures;
+  for (const f of list) delete f['targets'];
+  return out;
+}
+
+/**
+ * The keys of answers a correction turn overrides: an answer whose field the turn changed, or a field below or
+ * above it (plan 021). Each key once, in answer order.
+ */
+export function supersededAnswers(
+  before: Draft,
+  turn: DiscoveryTurn,
+  answers: readonly Answer[],
+): string[] {
+  const proposed = withoutPackFixed(turn.draftSpec);
+  const changed = changedPaths(
+    withoutMeta(before),
+    deepMerge(withoutMeta(before), withoutMeta(proposed)),
+  );
+  const keys = answers
+    .map((a) => a.key)
+    .filter((k) => changed.some((p) => covers(k, p) || covers(p, k)));
+  return [...new Set(keys)];
+}

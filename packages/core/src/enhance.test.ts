@@ -423,6 +423,36 @@ describe('enhance', () => {
     expect(h.engine.finalSpec(runId)!.intent.personas).toEqual(['kitchen staff']);
   });
 
+  it('revises an update plan from corrections at review and resolves the targets again (plan 021)', async () => {
+    const h = engineFor('review-changes');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const runId = start(h, dir, ref, { noPublish: true });
+    const waiting = new ScriptedPrompter({}, { approve: false, reason: 'owner is reading' });
+    expect((await h.engine.advance(runId, waiting)).parked).toMatchObject({ state: 'REVIEW' });
+    expect(h.engine.finalSpec(runId)!.intent.coreFeatures[0]!.targets).toEqual(['src/server.js']);
+    h.engine.requestChanges(runId, 'Also let kitchen staff filter the export by date.');
+    expect((await h.engine.advance(runId, waiting)).parked).toMatchObject({ state: 'REVIEW' });
+    const features = h.engine.finalSpec(runId)!.intent.coreFeatures;
+    expect(features.map((f) => f.id)).toEqual(['export-orders', 'export-filter']);
+    expect(features.every((f) => Array.isArray(f.targets))).toBe(true);
+    const turns = (h.llm as FakeLlmAdapter).calls.filter((c) => c.schemaName === 'DiscoveryTurn');
+    expect(turns).toHaveLength(2);
+    expect(turns[1]!.user).toContain("## Owner's corrections at review");
+    expect(turns[1]!.user).not.toContain('"targets"');
+    // The plain-English brief for the corrected plan is told about the corrections.
+    let brief = h.engine.reviewSummary(runId);
+    for (let i = 0; i < 100 && brief.status === 'pending'; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      brief = h.engine.reviewSummary(runId);
+    }
+    expect(brief.status).toBe('ready');
+    const briefs = (h.llm as FakeLlmAdapter).calls.filter((c) => c.schemaName === 'ReviewSummary');
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]!.user).toContain(
+      "## The owner's corrections at review\n- Also let kitchen staff filter the export by date.",
+    );
+  });
+
   it('heals a run whose draft an earlier build corrupted with option slugs', async () => {
     const h = engineFor('dashboard-questions');
     const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));

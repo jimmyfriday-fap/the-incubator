@@ -43,6 +43,8 @@ export interface TurnContext {
   analysis: unknown;
   draft: Record<string, unknown>;
   decisions: readonly Decision[];
+  /** The owner's corrections at review, oldest first (plan 021). Absent or empty: the prompt is unchanged. */
+  corrections?: readonly string[];
 }
 
 /** Deterministic user prompt for one discovery round (no clocks, no ids). */
@@ -59,6 +61,9 @@ export function buildUserPrompt(ctx: TurnContext): string {
     `## ${ctx.narrativeHeading ?? 'Narrative'}`,
     ctx.narrative.trim() || '(none)',
     '',
+    ...(ctx.corrections?.length
+      ? ["## Owner's corrections at review", ...ctx.corrections.map((c) => `- ${c}`), '']
+      : []),
     '## Repository analysis',
     ctx.analysis === undefined || ctx.analysis === null
       ? '(none)'
@@ -89,6 +94,11 @@ export function buildUserPrompt(ctx: TurnContext): string {
       ? '- Record each intent field you set or change in draftSpec.decisions, keyed by its path: "intent.coreFeatures" whenever you set features, and "intent.personas" (or any other intent field) if you change it; source "inferred", with a one-line question/answer. A decision keyed by a feature id, by a request.<topic> key, or by a path below the field (such as intent.coreFeatures.exportOrders) does not count.'
       : '- Record every value you set in draftSpec.decisions with source "inferred" and a one-line question/answer.',
     '- Answers the user already gave are final; do not ask about them again.',
+    ...(ctx.corrections?.length
+      ? [
+          '- Apply every correction from the owner; it overrides earlier answers and decisions. Record each field you change in draftSpec.decisions as usual.',
+        ]
+      : []),
     ctx.round >= MAX_ROUNDS
       ? '- This is the last round: ask only what would still change the generated files; unanswered questions take their recommended option.'
       : '- Prefer inferring over asking.',

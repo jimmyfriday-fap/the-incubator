@@ -1,0 +1,11 @@
+{
+  "schemaName": "ReviewSummary",
+  "note": "plan 021: the brief for the corrected plan",
+  "response": {
+    "headline": "Kitchen staff will be able to export the day's orders as CSV, filtered by date.",
+    "changes": ["Add a CSV export with a date filter to the orders list."],
+    "approach": "A coding assistant makes the edits in a working copy of your repository. Nothing in your repository changes until you approve.",
+    "notIncluded": [],
+    "watchFor": []
+  }
+}

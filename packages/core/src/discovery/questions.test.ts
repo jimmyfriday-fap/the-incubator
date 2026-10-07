@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { DiscoveryTurn, Question } from '@incubator/spec';
-import { applyAnswers, attributionIssues, type AskedInfo, type Draft } from './merge.js';
+import {
+  applyAnswers,
+  attributionIssues,
+  withoutTargets,
+  type AskedInfo,
+  type Draft,
+} from './merge.js';
 import { buildUserPrompt } from './prompt-builder.js';
 import { questionIssues, questionTarget } from './questions.js';
 
@@ -251,5 +257,41 @@ describe('the decision rule in the user prompt (plan 020)', () => {
       '- Record every value you set in draftSpec.decisions with source "inferred" and a one-line question/answer.',
     );
     expect(text).not.toContain('keyed by its path');
+  });
+});
+
+describe('the owner corrections in the user prompt (plan 021)', () => {
+  const ctx = {
+    round: 2,
+    narrative: 'A landing page called Dashboard.',
+    analysis: null,
+    draft: { intent: { coreFeatures: [] } },
+    decisions: [],
+  };
+
+  it('prints the corrections and the rule only when there are some', () => {
+    const text = buildUserPrompt({ ...ctx, corrections: ['Add a calendar.', 'No exports.'] });
+    expect(text).toContain("## Owner's corrections at review\n- Add a calendar.\n- No exports.\n");
+    expect(text).toContain(
+      '- Apply every correction from the owner; it overrides earlier answers and decisions.',
+    );
+    expect(buildUserPrompt({ ...ctx, corrections: [] })).toBe(buildUserPrompt(ctx));
+    expect(buildUserPrompt(ctx)).not.toContain('corrections');
+  });
+});
+
+describe('withoutTargets (plan 021)', () => {
+  it('returns the same draft when no feature has targets, and a copy without them otherwise', () => {
+    const plain: Draft = {
+      intent: { coreFeatures: [{ id: 'a', summary: 'A', lane: 'enhancement/new' }] },
+    };
+    expect(withoutTargets(plain)).toBe(plain);
+    const targeted: Draft = {
+      intent: {
+        coreFeatures: [{ id: 'a', summary: 'A', lane: 'enhancement/new', targets: ['src/a.ts'] }],
+      },
+    };
+    expect(JSON.stringify(withoutTargets(targeted))).not.toContain('targets');
+    expect(JSON.stringify(targeted)).toContain('src/a.ts');
   });
 });

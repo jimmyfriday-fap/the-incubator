@@ -1,0 +1,36 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "plan 021: the turn after the owner's corrections at review",
+  "response": {
+    "draftSpec": {
+      "project": { "description": "Tiny semver helpers." },
+      "intent": {
+        "coreFeatures": [
+          { "id": "parse", "summary": "Parse version strings", "lane": "enhancement/new" },
+          { "id": "compare", "summary": "Compare and sort versions", "lane": "enhancement/new" },
+          {
+            "id": "bump",
+            "summary": "Bump a version by major, minor or patch",
+            "lane": "enhancement/new"
+          }
+        ]
+      },
+      "decisions": [
+        {
+          "key": "project",
+          "question": "Description",
+          "answer": "Tiny semver helpers.",
+          "source": "inferred"
+        },
+        {
+          "key": "intent.coreFeatures",
+          "question": "Features",
+          "answer": "parse, compare, bump",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [],
+    "done": true
+  }
+}

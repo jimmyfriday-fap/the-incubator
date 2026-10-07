@@ -30,6 +30,8 @@ import {
   attributionIssues,
   mergeTurn,
   otherIssues,
+  supersededAnswers,
+  withoutTargets,
   type AskedInfo,
   type Draft,
 } from './discovery/merge.js';
@@ -1464,6 +1466,7 @@ export class Engine {
           spec,
           detected: enhance ? this.detectedStack(runId) : null,
           digest: enhance ? scanDigest(this.readScan(runId)) : null,
+          corrections: this.reviewFeedback(runId),
         }),
         promptVersion: prompt.version,
         timeoutMs: this.llmTimeout(),
@@ -2171,6 +2174,11 @@ export class Engine {
     const questions = new Map<string, AskedInfo>();
     for (const e of this.entries(runId)) {
       if (e.type === 'answers') answers.push(...(e['answers'] as Answer[]));
+      if (e.type === 'answers.superseded') {
+        // why: a field the owner corrected at review no longer takes the answer given before it (plan 021).
+        const gone = new Set(e['keys'] as string[]);
+        answers.splice(0, answers.length, ...answers.filter((a) => !gone.has(a.key)));
+      }
       if (e.type === 'questions')
         for (const q of e['questions'] as AskedQuestion[])
           questions.set(q.key, {
@@ -2196,13 +2204,15 @@ export class Engine {
     const before = this.draft(runId);
     const narrative = this.narrativeFor(runId, s);
     const baseline = enhance ? this.enhanceBaseline(runId) : [];
+    const corrections = this.reviewFeedback(runId);
     const user = buildUserPrompt({
       round: s.round,
       narrative,
       ...(enhance ? { narrativeHeading: 'Change request', enhance: true } : {}),
       analysis: enhance ? scanDigest(this.readScan(runId)) : null,
-      draft: before,
+      draft: enhance ? withoutTargets(before) : before,
       decisions: before.decisions ?? [],
+      ...(corrections.length ? { corrections } : {}),
     });
     const gate = await complete<DiscoveryTurn>(
       adapter,
@@ -2236,9 +2246,22 @@ export class Engine {
       questions: turn.questions.length,
       done: turn.done,
     });
+    let base = before;
+    if (corrections.length) {
+      // why: after the owner's corrections, a field this turn changed wins over an answer given before
+      // review, and that answer no longer stands as the owner's decision.
+      const keys = supersededAnswers(before, turn, this.answers(runId).answers);
+      if (keys.length) {
+        this.record(runId, 'answers.superseded', { keys });
+        base = {
+          ...before,
+          decisions: (before.decisions ?? []).filter((d) => !keys.includes(d.key)),
+        };
+      }
+    }
     const { answers, questions } = this.answers(runId);
     const merged = mergeTurn({
-      before,
+      before: base,
       turn,
       narrative,
       answers,
@@ -2329,6 +2352,31 @@ export class Engine {
     const verdict = await prompter.review(spec);
     if (!verdict.approve) throw new ParkError('review_rejected', verdict.reason);
     this.approve(runId, verdict.spec);
+  }
+
+  /**
+   * The owner's corrections at REVIEW (plan 021): recorded, then the run drafts the spec again with them and
+   * comes back to REVIEW with a new plan and a new brief. Only for runs that plan through discovery.
+   */
+  requestChanges(runId: string, text: string): void {
+    const s = this.state(runId);
+    if (s.input.kind !== 'new' && s.input.kind !== 'enhance')
+      throw new PolicyError(`run ${runId} has no plan to revise`, { code: 'no_discovery' });
+    if (s.state !== 'REVIEW' && !(s.state === 'PARKED' && s.parked?.state === 'REVIEW'))
+      throw new PolicyError(`run ${runId} is not at review`, { code: 'not_at_review' });
+    if (this.#active.has(runId))
+      throw new PolicyError(`run ${runId} is working`, { code: 'working' });
+    const clean = sanitizeRequest(text, 2000);
+    if (!clean) throw new PolicyError('describe what to change', { code: 'empty_feedback' });
+    this.record(runId, 'review.feedback', { text: clean, rev: s.rev });
+    this.enter(runId, 'DRAFT_SPEC', MAX_ROUNDS);
+  }
+
+  /** The owner's corrections at review, oldest first (plan 021). */
+  private reviewFeedback(runId: string): string[] {
+    return this.entries(runId)
+      .filter((e) => e.type === 'review.feedback' && typeof e['text'] === 'string')
+      .map((e) => e['text'] as string);
   }
 
   /** REVIEW → APPROVED, optionally with a user-edited spec (revalidated). */

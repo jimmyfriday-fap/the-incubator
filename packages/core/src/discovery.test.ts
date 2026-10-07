@@ -226,6 +226,70 @@ describe('parking and resume', () => {
     expect((h.engine.draft(runId) as unknown as IncubatorSpec).project.name).toBe('semver-mini');
   });
 
+  it('revises the plan from the corrections at review, and a corrected field beats an earlier answer (plan 021)', async () => {
+    const h = fakeEngine({ dir: discoveryFixtureDir('review-changes') });
+    const runId = h.engine.start({
+      kind: 'new',
+      narrative: narrative('review-changes'),
+      specOnly: true,
+      surface: 'test',
+    });
+    const waiting = new ScriptedPrompter({}, { approve: false, reason: 'owner is reading' });
+    const first = await h.engine.advance(runId, waiting);
+    expect(first.parked).toMatchObject({ state: 'REVIEW', reason: 'review_rejected' });
+    expect(h.engine.finalSpec(runId)!.project.description).toBe('parse-compare-sort');
+    expect(() => h.engine.requestChanges(runId, '   ')).toThrow(
+      expect.objectContaining({ code: 'empty_feedback' }),
+    );
+    h.engine.requestChanges(
+      runId,
+      'Describe it as: Tiny semver helpers. Also add a feature to bump versions.',
+    );
+    const second = await h.engine.advance(runId, waiting);
+    expect(second.parked).toMatchObject({ state: 'REVIEW' });
+    expect(second.rev).toBeGreaterThan(first.rev);
+    const spec = h.engine.finalSpec(runId)!;
+    expect(spec.project.description).toBe('Tiny semver helpers.');
+    // The answer given before review no longer stands as the owner's decision.
+    expect(spec.decisions.filter((d) => d.key === 'project.description')).toEqual([]);
+    expect(spec.intent.coreFeatures.map((f) => f.id)).toEqual(['parse', 'compare', 'bump']);
+    const turns = (h.adapter as FakeLlmAdapter).calls.filter(
+      (c) => c.schemaName === 'DiscoveryTurn',
+    );
+    expect(turns).toHaveLength(3);
+    expect(turns[0]!.user).not.toContain("Owner's corrections");
+    expect(turns[2]!.user).toContain(
+      "## Owner's corrections at review\n- Describe it as: Tiny semver helpers. Also add a feature to bump versions.",
+    );
+    expect(turns[2]!.user).toContain(
+      '- Apply every correction from the owner; it overrides earlier answers and decisions.',
+    );
+    expect(h.engine.entries(runId).filter((e) => e.type === 'answers.superseded')).toEqual([
+      expect.objectContaining({ keys: ['project.description'] }),
+    ]);
+  });
+
+  it('takes corrections only at review, and only on runs that plan through discovery (plan 021)', () => {
+    const h = fakeEngine({ dir: discoveryFixtureDir('review-changes') });
+    const runId = h.engine.start({
+      kind: 'new',
+      narrative: narrative('review-changes'),
+      specOnly: true,
+      surface: 'test',
+    });
+    expect(() => h.engine.requestChanges(runId, 'x')).toThrow(
+      expect.objectContaining({ code: 'not_at_review' }),
+    );
+    const adopt = h.engine.start({
+      kind: 'adopt',
+      repo: 'https://github.com/octo/x',
+      surface: 'test',
+    });
+    expect(() => h.engine.requestChanges(adopt, 'x')).toThrow(
+      expect.objectContaining({ code: 'no_discovery' }),
+    );
+  });
+
   it('repairs a torn journal line and resumes', async () => {
     const h = fakeEngine({ dir: discoveryFixtureDir('wp-plugin') });
     const runId = h.engine.start({

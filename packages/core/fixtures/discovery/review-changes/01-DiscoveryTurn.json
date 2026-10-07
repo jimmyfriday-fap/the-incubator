@@ -1,0 +1,70 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "plan 021: round 1 drafts the library and asks for the description",
+  "response": {
+    "draftSpec": {
+      "project": { "name": "semver-lite", "slug": "semver-lite" },
+      "intent": {
+        "personas": ["library consumer"],
+        "coreFeatures": [
+          { "id": "parse", "summary": "Parse version strings", "lane": "enhancement/new" },
+          { "id": "compare", "summary": "Compare and sort versions", "lane": "enhancement/new" }
+        ]
+      },
+      "platform": "library",
+      "stack": {
+        "pack": "node-lib",
+        "framework": "typescript-lib",
+        "database": "none",
+        "auth": "none",
+        "packageManager": "pnpm"
+      },
+      "deploy": { "target": "package-release" },
+      "testing": { "e2e": "none" },
+      "decisions": [
+        { "key": "project", "question": "Name", "answer": "semver-lite", "source": "inferred" },
+        {
+          "key": "intent",
+          "question": "Features",
+          "answer": "parse, compare",
+          "source": "inferred"
+        },
+        { "key": "platform", "question": "Type", "answer": "library", "source": "inferred" },
+        {
+          "key": "stack",
+          "question": "Stack",
+          "answer": "node-lib, no database",
+          "source": "inferred"
+        },
+        {
+          "key": "deploy.target",
+          "question": "Deploy",
+          "answer": "npm via package-release",
+          "source": "inferred"
+        },
+        {
+          "key": "testing.e2e",
+          "question": "E2E",
+          "answer": "none for a library",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [
+      {
+        "key": "project.description",
+        "question": "How should the package describe itself?",
+        "impact": 3,
+        "options": [
+          {
+            "value": "parse-compare-sort",
+            "label": "Parse, compare and sort",
+            "recommended": true
+          },
+          { "value": "versions-only", "label": "Versions only", "recommended": false }
+        ]
+      }
+    ],
+    "done": false
+  }
+}

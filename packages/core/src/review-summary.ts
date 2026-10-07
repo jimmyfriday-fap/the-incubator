@@ -44,6 +44,8 @@ export interface ReviewSummaryInput {
   detected: { label: string; evidence: string[]; packed: boolean } | null;
   /** The scan digest, for update runs; fenced as untrusted data. */
   digest: string | null;
+  /** The owner's corrections at review, oldest first (plan 021); printed only when there are some. */
+  corrections?: readonly string[];
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -70,6 +72,13 @@ export function reviewSummaryUserPrompt(i: ReviewSummaryInput): string {
     "## The owner's request",
     sanitizeRequest(i.request, 2000) || '(none)',
     '',
+    ...(i.corrections?.length
+      ? [
+          "## The owner's corrections at review",
+          ...i.corrections.map((c) => `- ${sanitizeRequest(c, 2000)}`),
+          '',
+        ]
+      : []),
     '## The drafted plan',
     `Project: ${clean(i.spec.project.name, 100)}`,
     `Stack: ${i.detected ? `${i.detected.label}${i.detected.packed ? '' : ' (the Incubator has no pack for it, so only the requested changes are delivered)'}` : i.spec.stack.pack}`,
