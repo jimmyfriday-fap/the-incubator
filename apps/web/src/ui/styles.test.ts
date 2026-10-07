@@ -11,6 +11,14 @@ describe('the stylesheet (plan 023)', () => {
     expect([...used].filter((t) => !defined.has(t))).toEqual([]);
   });
 
+  it('uses the same dark palette for the computer setting and the owner choice (plan 030)', () => {
+    const squash = (s: string | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
+    const media = /:root:not\(\[data-theme='light'\]\) \{([^}]*)\}/.exec(css)?.[1];
+    const chosen = /:root\[data-theme='dark'\] \{([^}]*)\}/.exec(css)?.[1];
+    expect(squash(media)).toContain('--bg: #0b1120;');
+    expect(squash(chosen)).toBe(squash(media));
+  });
+
   it('carries the Backshack palette and the Inter font', () => {
     expect(css).toContain('--primary: #4f46e5;');
     expect(css).toContain('--nav: #1e293b;');

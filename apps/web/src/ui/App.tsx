@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getSession } from './api.js';
 import { areaOf, historyState, navigate, type Area } from './nav.js';
+import { THEME_LABEL, applyTheme, nextTheme, readTheme, type Theme } from './theme.js';
 import { Home } from './views/Home.js';
 import { Icon, Logo, type IconName } from './views/Icon.js';
 import { ProjectView } from './views/ProjectView.js';
@@ -22,6 +23,7 @@ const TABS: { area: Area; label: string; to: string; icon: IconName }[] = [
 export function App() {
   const [path, setPath] = useState(window.location.pathname);
   const [version, setVersion] = useState('');
+  const [theme, setTheme] = useState<Theme>(readTheme);
   useEffect(() => {
     const on = () => setPath(window.location.pathname);
     window.addEventListener('popstate', on);
@@ -91,6 +93,20 @@ export function App() {
             ))}
           </nav>
           <span className="version">{version}</span>
+          <button
+            className="icon"
+            data-testid="theme-toggle"
+            data-theme-choice={theme}
+            aria-label={`Theme: ${THEME_LABEL[theme]}`}
+            title={`Theme: ${THEME_LABEL[theme]}. Click for ${THEME_LABEL[nextTheme(theme)]}.`}
+            onClick={() => {
+              const t = nextTheme(theme);
+              applyTheme(t);
+              setTheme(t);
+            }}
+          >
+            <Icon name={theme === 'light' ? 'sun' : theme === 'dark' ? 'moon' : 'monitor'} />
+          </button>
         </div>
       </header>
       <main className="app">

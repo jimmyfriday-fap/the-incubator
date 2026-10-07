@@ -24,16 +24,19 @@ publish: null
 linux:
   target: [AppImage, deb]
   category: Development
+  icon: build/icon.png
   maintainer: The Incubator contributors <incubator@users.noreply.github.com>
   executableName: the-incubator
 mac:
   target: [dmg, zip]
   category: public.app-category.developer-tools
+  icon: build/icon.png
   identity: null
   hardenedRuntime: false
 win:
   target: [nsis]
-  signAndEditExecutable: false
+  icon: build/icon.png
+  signExecutable: false
 nsis:
   oneClick: false
   perMachine: false

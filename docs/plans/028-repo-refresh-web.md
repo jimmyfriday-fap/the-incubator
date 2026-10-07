@@ -470,9 +470,9 @@ pnpm exec eslint --max-warnings=0 apps/web
 pnpm exec vitest run apps/web/src/ui
 $env:INCUBATOR_E2E_CHANNEL = 'chrome'; pnpm test:e2e
 (Get-ChildItem packages/core/fixtures/enhance/refresh-web -Filter *.json).Count
-(Select-String apps/web/src/ui/views/RunView.tsx -SimpleMatch "=== 'enhance' && !run.done && !run.busy;").Count
-(Select-String apps/web/src/ui/views/RunView.tsx -SimpleMatch "}, [runId, watchRepo, step]);").Count
-(Select-String apps/web/src/ui/views/RunView.tsx -SimpleMatch "if (live) setRepo(s);").Count
+(Select-String -SimpleMatch -Path apps/web/src/ui/views/RunView.tsx "=== 'enhance' && !run.done && !run.busy;").Count
+(Select-String -SimpleMatch -Path apps/web/src/ui/views/RunView.tsx "}, [runId, watchRepo, step, looked]);").Count
+(Select-String -SimpleMatch -Path apps/web/src/ui/views/RunView.tsx "if (live) setRepo(s);").Count
 pnpm check:quick
 ```
 
@@ -489,7 +489,7 @@ pnpm check:quick exits 0
 
 | Trap                                                                                                            | Why                                                                                  | Mechanical check                                                                                                                                                           |
 | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The banner never shows because the status is fetched once, before the move                                      | the page must ask again when the run settles or reloads                              | the e2e reloads after the commit and waits for `repo-moved`; the Select-String count for the effect deps `[runId, watchRepo, step]` prints 1                               |
+| The banner never shows because the status is fetched once, before the move                                      | the page must ask again when the run settles or reloads                              | the e2e reloads after the commit and waits for `repo-moved`; the Select-String count for the effect deps `[runId, watchRepo, step, looked]` prints 1                       |
 | The banner stays while the run works, or a late answer brings it back                                           | the status must be cleared while busy, and an answer from an older ask ignored       | the Select-String count for `!run.done && !run.busy;` prints 1; the effect cleanup sets `live = false`; the e2e asserts `repo-moved` is gone at the confirmed-request step |
 | The request box opens empty after a refresh                                                                     | `useState` must start from `evidence.previous`                                       | the e2e asserts the textarea's value equals the earlier request                                                                                                            |
 | The questions asked again look like new ones, and "Accept all defaults" reads as discarding the owner's answers | `carried` must reach `Questions`                                                     | the e2e waits for `carried-note` and asserts the button reads "Keep all my answers"                                                                                        |

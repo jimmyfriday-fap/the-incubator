@@ -649,6 +649,10 @@ describe('web UI (Playwright, fakes)', () => {
     writeFileSync(path.join(dir, 'later.txt'), 'the owner kept working\n');
     await nodeExec.run('git', ['add', '-A'], { cwd: dir, timeoutMs: 30_000 });
     await nodeExec.run('git', ['commit', '-q', '-m', 'later'], { cwd: dir, timeoutMs: 30_000 });
+    // Coming back to the window is enough (plan 029); a reload shows it too.
+    expect(await page.getByTestId('repo-moved').count()).toBe(0);
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.getByTestId('repo-moved').waitFor({ timeout: 30_000 });
     await page.reload();
     await page.getByTestId('repo-moved').waitFor({ timeout: 30_000 });
     expect(await page.getByTestId('repo-moved').textContent()).toContain('1 new commit');
@@ -666,6 +670,8 @@ describe('web UI (Playwright, fakes)', () => {
     await page.getByTestId('request-previous-note').waitFor({ timeout: 30_000 });
     expect(await page.getByTestId('request-text').inputValue()).toBe(REQ);
     expect(await page.getByTestId('repo-moved').count()).toBe(0);
+    // The project banner keeps the earlier request until it is confirmed (plan 029).
+    expect(await page.getByTestId('project-request').textContent()).toContain(REQ);
     await shot(page, 'refresh-2-request');
     await page.getByTestId('submit-request').click();
 
@@ -690,6 +696,54 @@ describe('web UI (Playwright, fakes)', () => {
     await expect
       .poll(() => page.getByTestId('run-log').textContent(), UI)
       .toContain('asked again from before the refresh');
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  it('theme: the top-bar switch picks light or dark over the computer setting, and remembers it (plan 030)', async () => {
+    const { page, errors } = await open();
+    const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    const toggle = page.getByTestId('theme-toggle');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    const dark = await bg();
+    await page.emulateMedia({ colorScheme: 'light' });
+    const light = await bg();
+    expect(dark).not.toBe(light);
+    expect(await toggle.getAttribute('data-theme-choice')).toBe('system');
+    // Light wins over a dark computer.
+    await toggle.click();
+    expect(await toggle.getAttribute('data-theme-choice')).toBe('light');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    expect(await bg()).toBe(light);
+    // Dark wins over a light computer, and survives a reload.
+    await toggle.click();
+    expect(await toggle.getAttribute('data-theme-choice')).toBe('dark');
+    await page.emulateMedia({ colorScheme: 'light' });
+    expect(await bg()).toBe(dark);
+    // Native controls and scrollbars follow the choice too.
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe(
+      'dark',
+    );
+    await page.reload();
+    await page.getByTestId('theme-toggle').waitFor(UI);
+    expect(await bg()).toBe(dark);
+    expect(await page.getByTestId('theme-toggle').getAttribute('data-theme-choice')).toBe('dark');
+    await shot(page, 'theme-dark');
+    // The next launch listens on another port (another origin); the choice is still there.
+    const { server: next } = await startFakeServer({
+      uiDir: UI_DIR,
+      host: { pickFolder: () => Promise.resolve(null) },
+    });
+    servers.push(next);
+    await page.goto(next.url);
+    await page.getByTestId('theme-toggle').waitFor(UI);
+    expect(await page.getByTestId('theme-toggle').getAttribute('data-theme-choice')).toBe('dark');
+    expect(await bg()).toBe(dark);
+    // Back to the computer setting.
+    await page.getByTestId('theme-toggle').click();
+    expect(await page.evaluate(() => document.documentElement.hasAttribute('data-theme'))).toBe(
+      false,
+    );
+    expect(await bg()).toBe(light);
     expect(errors, errors.join('\n')).toEqual([]);
   });
 

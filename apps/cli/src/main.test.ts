@@ -662,6 +662,51 @@ describe('publish, handoff, auth, gc', () => {
       expect(done.err.join('')).toContain('✔ enhance branch written locally');
     });
 
+    it('resume --change corrects the plan at review in words, and the plan is drafted again (plan 032)', async () => {
+      const { factory, dir, h } = await setup('review-changes');
+      const first = io();
+      expect(
+        await main(
+          ['enhance', dir, '--repo', 'octo/order-desk', '--prompt', REQUEST, '--no-publish'],
+          first.io,
+          factory,
+        ),
+      ).toBe(2);
+      const runId = /incubator resume (\S+)/.exec(first.err.join(''))![1]!;
+      expect(first.err.join('')).toContain(
+        `change the plan with: incubator resume ${runId} --change "what to change"`,
+      );
+      // --change goes on its own, and is refused before the run is touched.
+      const both = io();
+      expect(await main(['resume', runId, '--change', 'x', '--refresh'], both.io, factory)).toBe(2);
+      expect(both.err.join('')).toContain('use --change on its own');
+      expect(h.engine.entries(runId).some((e) => e.type === 'repo.refresh')).toBe(false);
+      // --yes would approve the redrafted plan unseen; --commit has nothing to answer at review.
+      for (const extra of [['--yes'], ['--commit']])
+        expect(await main(['resume', runId, '--change', 'x', ...extra], io().io, factory)).toBe(2);
+      const changed = io();
+      expect(
+        await main(
+          ['resume', runId, '--change', 'Also let kitchen staff filter the export by date.'],
+          changed.io,
+          factory,
+        ),
+      ).toBe(2);
+      expect(changed.err.join('')).toContain('parked at REVIEW');
+      expect(h.engine.entries(runId).filter((e) => e.type === 'review.feedback')).toHaveLength(1);
+      expect(h.engine.finalSpec(runId)!.intent.coreFeatures.map((f) => f.id)).toEqual([
+        'export-orders',
+        'export-filter',
+      ]);
+      // Adopt runs have no plan to revise: their review park does not offer --change.
+      const adopt = io();
+      expect(
+        await main(['adopt', dir, '--repo', 'octo/order-desk', '--no-publish'], adopt.io, factory),
+      ).toBe(2);
+      expect(adopt.err.join('')).toContain('parked at REVIEW');
+      expect(adopt.err.join('')).not.toContain('change the plan with');
+    });
+
     it('asks for the request on a terminal', async () => {
       const { factory, dir } = await setup();
       const asked: string[] = [];

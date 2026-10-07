@@ -591,6 +591,25 @@ describe("update an existing solution in the owner's folder", () => {
     await expect(h.engine.refreshRepo(other)).rejects.toMatchObject({ code: 'not_enhance' });
   });
 
+  it('records nothing when the run is cancelled while the repository is being read (plan 029)', async () => {
+    const { h, ref, dir } = await seeded();
+    const runId = start(h, dir, ref);
+    const waiting = new ScriptedPrompter({}, { approve: false, reason: 'owner is reading' });
+    expect((await h.engine.advance(runId, waiting)).parked).toMatchObject({ state: 'REVIEW' });
+    const read = h.engine.repoMoved.bind(h.engine);
+    // The owner cancels while git is reading the folder.
+    vi.spyOn(h.engine, 'repoMoved').mockImplementationOnce(async (id: string) => {
+      const m = await read(id);
+      h.engine.cancel(id, 'changed my mind');
+      return m;
+    });
+    await expect(h.engine.refreshRepo(runId)).rejects.toMatchObject({ code: 'too_late' });
+    const types = h.engine.entries(runId).map((e) => e.type);
+    expect(types).toContain('run.cancel');
+    expect(types).not.toContain('repo.refresh');
+    expect(h.engine.state(runId)).toMatchObject({ done: true, cancelled: true });
+  });
+
   it('says there is nowhere to push when the folder has no GitHub origin, and ends committed locally', async () => {
     const { h, dir } = await seeded();
     await git(['remote', 'remove', 'origin'], dir);

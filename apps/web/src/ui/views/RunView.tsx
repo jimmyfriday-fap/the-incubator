@@ -26,6 +26,13 @@ export function RunView({ runId }: { runId: string }) {
   const [confirming, setConfirming] = useState(false);
   const [tab, setTab] = useState<RunTab>('overview');
   const [repo, setRepo] = useState<RepoStatus | null>(null);
+  // why: the owner may commit in their editor while this page is open; ask again when they come back (plan 029).
+  const [looked, setLooked] = useState(0);
+  useEffect(() => {
+    const again = () => setLooked((n) => n + 1);
+    window.addEventListener('focus', again);
+    return () => window.removeEventListener('focus', again);
+  }, []);
 
   const refresh = useCallback(() => {
     get<RunDetail>(`/api/runs/${runId}`)
@@ -98,7 +105,7 @@ export function RunView({ runId }: { runId: string }) {
     return () => {
       live = false;
     };
-  }, [runId, watchRepo, step]);
+  }, [runId, watchRepo, step, looked]);
 
   if (!run) return <p className={error ? 'error' : 'muted'}>{error ?? 'Loading…'}</p>;
   const reviewing = run.state === 'PARKED' && run.parked?.state === 'REVIEW' && !run.busy;
@@ -122,6 +129,13 @@ export function RunView({ runId }: { runId: string }) {
   // no way forward, and after a restart not even the error.
   const stopped = !run.done && !run.busy && run.state !== 'PARKED';
   const act = (p: Promise<unknown>) => p.then(refresh).catch((e: Error) => setError(e.message));
+  // why: after a refresh (plan 025) the request is asked again; until then the banner shows the earlier one.
+  const earlier = (run.parked?.evidence as { previous?: unknown } | null | undefined)?.previous;
+  const enhanceRequest = run.enhance?.request
+    ? run.enhance.request
+    : typeof earlier === 'string'
+      ? earlier
+      : '';
 
   return (
     <div className="run">
@@ -135,9 +149,7 @@ export function RunView({ runId }: { runId: string }) {
       {run.project && (
         <ProjectBanner
           project={run.project}
-          request={
-            run.kind === 'enhance' ? (run.enhance?.request ?? '') : (run.input.narrative ?? '')
-          }
+          request={run.kind === 'enhance' ? enhanceRequest : (run.input.narrative ?? '')}
         />
       )}
       <section className="card wide">

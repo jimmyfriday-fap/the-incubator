@@ -1,6 +1,7 @@
 /** Small inline icons, the logo mark and the illustrations (plan 023). Inline SVG: nothing is fetched. */
 
-export type IconName = 'home' | 'folder' | 'list' | 'gear' | 'back' | 'forward';
+export type IconName =
+  'home' | 'folder' | 'list' | 'gear' | 'back' | 'forward' | 'sun' | 'moon' | 'monitor';
 
 const PATHS: Record<IconName, string[]> = {
   home: ['M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z'],
@@ -19,6 +20,23 @@ const PATHS: Record<IconName, string[]> = {
   ],
   back: ['M15 18l-6-6 6-6'],
   forward: ['M9 18l6-6-6-6'],
+  sun: [
+    'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
+    'M12 2v2',
+    'M12 20v2',
+    'M4.9 4.9l1.4 1.4',
+    'M17.7 17.7l1.4 1.4',
+    'M2 12h2',
+    'M20 12h2',
+    'M4.9 19.1l1.4-1.4',
+    'M17.7 6.3l1.4-1.4',
+  ],
+  moon: ['M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z'],
+  monitor: [
+    'M3 5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z',
+    'M8 20h8',
+    'M12 16v4',
+  ],
 };
 
 export function Icon({ name }: { name: IconName }) {

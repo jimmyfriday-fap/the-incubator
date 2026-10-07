@@ -2577,10 +2577,19 @@ export class Engine {
       });
     const at = s.state === 'PARKED' ? s.parked?.state : s.state;
     if (s.done || !at || !PLANNING_STATES.includes(at))
-      throw new PolicyError(`run ${runId} is past planning: its plan is already being built`, {
-        code: 'too_late',
-      });
+      throw new PolicyError(
+        `run ${runId} ${s.cancelled ? 'was cancelled' : 'is past planning: its plan is already being built'}`,
+        { code: 'too_late' },
+      );
     const m = await this.repoMoved(runId);
+    // why: the run may have been cancelled, or moved past planning, while git was reading (plan 029).
+    const now = this.state(runId);
+    const atNow = now.state === 'PARKED' ? now.parked?.state : now.state;
+    if (now.done || !atNow || !PLANNING_STATES.includes(atNow))
+      throw new PolicyError(
+        `run ${runId} ${now.cancelled ? 'was cancelled' : 'is past planning'} while the repository was read`,
+        { code: 'too_late' },
+      );
     if (this.#active.has(runId))
       throw new PolicyError(`run ${runId} is working`, { code: 'working' });
     const asked = this.requestText(runId);

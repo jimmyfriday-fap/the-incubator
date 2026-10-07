@@ -106,6 +106,7 @@ copy('packages/templates/schema', 'schema');
 copy('packages/spec/schema', 'schema');
 copy('packages/core/prompts', 'prompts');
 copy('packages/analyzer/canonical.json', 'canonical.json');
+copy('apps/desktop/build/icon.png', 'icon.png');
 cpSync(ui, path.join(out, 'ui'), { recursive: true });
 if (testBuild) {
   copy('packages/core/fixtures/discovery', 'fixtures/discovery');

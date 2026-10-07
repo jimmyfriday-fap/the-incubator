@@ -196,6 +196,8 @@ async function main(): Promise<void> {
       width: 1280,
       height: 900,
       title: 'The Incubator',
+      // The taskbar and window icon (plan 031); the packaged app carries it next to the UI.
+      icon: path.join(appRoot, 'icon.png'),
       show: false,
       webPreferences: secureWebPreferences(),
     });

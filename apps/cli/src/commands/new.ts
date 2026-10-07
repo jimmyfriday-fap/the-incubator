@@ -68,6 +68,14 @@ export function reportRun(deps: CliDeps, io: Io, state: RunState, out?: string):
           ? `  refresh with: incubator resume ${state.runId} --refresh\n`
           : `  resume with: incubator resume ${state.runId}${state.parked?.reason === 'needs_input' || state.parked?.reason === 'needs_review' ? ' (interactively, or add --yes)' : ''}\n`,
     );
+    // why: new and update runs plan through discovery, so the owner can correct the plan in words (plan 032).
+    if (
+      state.parked?.state === 'REVIEW' &&
+      (state.input.kind === 'new' || state.input.kind === 'enhance')
+    )
+      io.stderr(
+        `  change the plan with: incubator resume ${state.runId} --change "what to change"\n`,
+      );
     return ExitCode.Policy;
   }
   if (state.state === 'DONE' && state.input.kind === 'enhance')

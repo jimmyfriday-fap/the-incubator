@@ -19,6 +19,7 @@ export async function runResume(
     prompt?: string;
     promptFile?: string;
     refresh?: boolean;
+    change?: string;
   } & FinishFlags &
     CheckOptions,
 ): Promise<number> {
@@ -36,6 +37,13 @@ export async function runResume(
       'use --refresh on its own; confirm what you asked with --prompt afterwards',
       { code: 'usage' },
     );
+  if (
+    opts.change !== undefined &&
+    (opts.refresh || opts.yes || opts.prompt !== undefined || opts.promptFile !== undefined)
+  )
+    throw new PolicyError('use --change on its own, while the run waits at review', {
+      code: 'usage',
+    });
   // Update runs: read the repository again; the run then asks to confirm what was asked (plan 025).
   if (opts.refresh) await deps.engine.refreshRepo(runId);
   const request = opts.promptFile
@@ -47,6 +55,9 @@ export async function runResume(
   applyChecks(deps, runId, opts);
   // The commit and push requests are the owner's: --yes never answers them.
   await answerFinish(deps, runId, opts);
+  // A correction at review (plan 021): the plan is drafted again with it and comes back to review (plan 032).
+  // why: last, so a flag refused above leaves the run untouched at review.
+  if (opts.change !== undefined) deps.engine.requestChanges(runId, opts.change);
   const prompter = choosePrompter(io, opts.yes);
   const run = (id: string) =>
     deps.engine.resume(id, prompter, opts.adapter ? { adapter: opts.adapter } : {});

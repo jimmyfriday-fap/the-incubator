@@ -89,6 +89,10 @@ export async function main(
       '--refresh',
       'update runs: read the repository again, then confirm what you asked (use on its own)',
     )
+    .option(
+      '--change <text>',
+      'at review: correct the plan in your own words; it is drafted again and comes back to review',
+    )
     .option('--commit', "folder runs: commit the agent's changes (message: -m, or the drafted one)")
     .option('-m, --message <text>', 'the commit message for --commit')
     .option('--leave', 'folder runs: keep the changes uncommitted')
@@ -111,6 +115,7 @@ export async function main(
           prompt?: string;
           promptFile?: string;
           refresh?: boolean;
+          change?: string;
           commit?: boolean;
           message?: string;
           leave?: boolean;

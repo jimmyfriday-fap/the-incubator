@@ -657,7 +657,8 @@ export function createApp(opts: ServerOptions): WebApp {
   );
 
   // Whether an update run's repository moved on since the run read it (plan 027). On a GitHub repository each call
-  // asks GitHub (ls-remote), so the screens ask when the run settles or the page loads, never on a timer.
+  // asks GitHub (ls-remote), so the screens ask when the run settles, the page loads or the window regains focus,
+  // never on a timer.
   app.get(
     '/api/runs/:id/repo-status',
     withRun((runId): Promise<RepoStatus> => engine.repoMoved(runId)),
