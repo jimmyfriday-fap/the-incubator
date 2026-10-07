@@ -12,7 +12,11 @@ const UI_DIR = path.resolve(import.meta.dirname, '../dist/ui');
 // Screenshots of each flow land in .reports/e2e (ignored by git; CI can upload them).
 const SHOTS = path.resolve(import.meta.dirname, '../../../.reports/e2e');
 const shot = (page: Page, name: string) =>
-  page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: true });
+  page.screenshot({
+    path: path.join(SHOTS, `${name}.png`),
+    fullPage: true,
+    animations: 'disabled',
+  });
 const servers: RunningServer[] = [];
 let browser: Browser;
 
@@ -245,8 +249,10 @@ describe('web UI (Playwright, fakes)', () => {
       .poll(() => page.getByTestId('spec-diff').textContent(), UI)
       .toContain('/project/slug');
     // The tree preview exists at REVIEW and opens files from memory.
+    await page.getByTestId('runtab-files').click();
     await page.getByTestId('tree').getByRole('button', { name: 'CLAUDE.md', exact: true }).click();
     await expect.poll(() => page.getByTestId('file-view').textContent(), UI).toContain('Stockroom');
+    await page.getByTestId('runtab-plan').click();
 
     expect(await page.getByTestId('approve').isDisabled()).toBe(true);
     await page.getByTestId('owner-login').fill('octo');
@@ -283,6 +289,7 @@ describe('web UI (Playwright, fakes)', () => {
     expect(await page.getByTestId('committed').textContent()).toContain(folder);
     await expect.poll(() => page.getByTestId('run-log').textContent(), UI).toContain('run.done');
     await shot(page, 'greenfield-5-done');
+    await page.getByTestId('runtab-log').click();
     await page.getByTestId('log-filter').selectOption('warn');
     const warned = await page.getByTestId('run-log').locator('li').allTextContents();
     expect(warned.length).toBeGreaterThan(0);
@@ -438,8 +445,14 @@ describe('web UI (Playwright, fakes)', () => {
     // The agent is working: Stop it.
     await page.getByTestId('coding-progress').waitFor({ timeout: 60_000 });
     await shot(page, 'stop-1-coding');
+    // A tab picked while the agent works stays picked as the run refreshes (plan 024).
+    await page.getByTestId('runtab-log').click();
+    const progress = await page.getByTestId('coding-progress').textContent();
+    await expect
+      .poll(() => page.getByTestId('coding-progress').textContent(), UI)
+      .not.toBe(progress);
+    expect(await page.getByTestId('runtab-log').getAttribute('aria-selected')).toBe('true');
     await page.getByTestId('stop').click();
-    await page.getByTestId('stopped').waitFor({ timeout: 60_000 });
     expect(await page.getByTestId('stopped').textContent()).toContain('You stopped this at COMMIT');
     expect(await page.getByTestId('stop').count()).toBe(0);
     await shot(page, 'stop-2-stopped');
@@ -475,6 +488,135 @@ describe('web UI (Playwright, fakes)', () => {
     await expect
       .poll(() => page.getByTestId('runs-page').textContent(), UI)
       .toContain('No runs here.');
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  it('review: the owner corrects the plan in words and gets a new plan and brief (plan 021)', async () => {
+    const { h, page, errors } = await open({ enhance: 'review-changes' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    await intent(page).selectOption({ label: 'Update an existing solution' });
+    await page.getByTestId('folder-path').fill(dir);
+    await page.getByTestId('repo-ref').fill('octo/bare-node');
+    await expect.poll(() => page.getByTestId('start-enhance').isDisabled(), UI).toBe(false);
+    await page.getByTestId('start-enhance').click();
+    await page.waitForURL(/\/runs\/[\w-]+$/);
+    await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
+    await page
+      .getByTestId('request-text')
+      .fill('Kitchen staff need to export the orders list as a CSV file at the end of the day.');
+    await page.getByTestId('submit-request').click();
+    await page.getByTestId('review').waitFor({ timeout: 30_000 });
+
+    // The box sits under "What this run will do"; it needs words before it can be sent.
+    expect(await page.getByTestId('submit-changes').isDisabled()).toBe(true);
+    await page
+      .getByTestId('review-changes-text')
+      .fill('Also let kitchen staff filter the export by date.');
+    await shot(page, 'review-changes-1-typed');
+    await page.getByTestId('submit-changes').click();
+
+    // The run drafts the plan again and comes back to review with the new feature and a new brief.
+    await expect
+      .poll(() => page.getByTestId('brief-headline').textContent(), { timeout: 60_000 })
+      .toContain('filtered by date');
+    await expect
+      .poll(() => page.getByTestId('spec-diff').textContent(), UI)
+      .toContain('export-filter');
+    await expect
+      .poll(() => page.getByTestId('run-log').textContent(), UI)
+      .toContain('correction at review: Also let kitchen staff filter the export by date.');
+    await shot(page, 'review-changes-2-revised');
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  it('look: the navy bar with the logo, the hero illustration, and the Inter font (plan 023)', async () => {
+    const { page, errors } = await open();
+    await page.getByTestId('hero').waitFor(UI);
+    expect(await page.getByTestId('hero-art').count()).toBe(1);
+    expect(await page.locator('.brand svg').count()).toBe(1);
+    expect(await page.locator('.tab svg').count()).toBe(4);
+    const bar = await page
+      .locator('.topbar')
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bar).toBe('rgb(30, 41, 59)');
+    // why: fonts.check() is true when no @font-face matches at all, so assert a face really loaded.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(async () => {
+            await document.fonts.load('16px "Inter Variable"');
+            return [...document.fonts].some(
+              (f) => f.family === 'Inter Variable' && f.status === 'loaded',
+            );
+          }),
+        UI,
+      )
+      .toBe(true);
+    await shot(page, 'look-1-home');
+    await page.getByTestId('tab-runs').click();
+    await page.getByTestId('empty').waitFor(UI);
+    await shot(page, 'look-2-empty');
+    // Dark mode: the active tab keeps dark text on its white pill.
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await expect
+      .poll(
+        () => page.locator('.topbar').evaluate((el) => getComputedStyle(el).backgroundColor),
+        UI,
+      )
+      .toBe('rgb(15, 23, 42)');
+    await expect
+      .poll(
+        () =>
+          page
+            .getByTestId('tab-runs')
+            .evaluate((el) => [getComputedStyle(el).color, getComputedStyle(el).backgroundColor]),
+        UI,
+      )
+      .toEqual(['rgb(15, 23, 42)', 'rgb(255, 255, 255)']);
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  it('tabs: the run page opens Plan at review and switches on request; Settings has sections (plan 024)', async () => {
+    const { h, page, errors } = await open({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    await intent(page).selectOption({ label: 'Update an existing solution' });
+    await page.getByTestId('folder-path').fill(dir);
+    await page.getByTestId('repo-ref').fill('octo/bare-node');
+    await expect.poll(() => page.getByTestId('start-enhance').isDisabled(), UI).toBe(false);
+    await page.getByTestId('start-enhance').click();
+    await page.waitForURL(/\/runs\/[\w-]+$/);
+    await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
+    expect(await page.getByTestId('runtab-overview').getAttribute('aria-selected')).toBe('true');
+    await page
+      .getByTestId('request-text')
+      .fill('Kitchen staff need to export the orders list as a CSV file at the end of the day.');
+    await page.getByTestId('submit-request').click();
+
+    // At review the page opens the Plan tab by itself, and the tab carries a dot.
+    await page.getByTestId('review').waitFor({ timeout: 30_000 });
+    expect(await page.getByTestId('runtab-plan').getAttribute('aria-selected')).toBe('true');
+    expect(await page.getByTestId('runtab-plan').locator('.dot').count()).toBe(1);
+    await shot(page, 'tabs-1-plan');
+
+    // Files and Log are one click away; the review stays in place behind its tab.
+    await page.getByTestId('runtab-files').click();
+    await page.getByTestId('tree').waitFor(UI);
+    expect(await page.getByTestId('review').isVisible()).toBe(false);
+    await shot(page, 'tabs-2-files');
+    await page.getByTestId('runtab-log').click();
+    await page.getByTestId('run-log').waitFor(UI);
+    await page.getByTestId('runtab-plan').click();
+    await page.getByTestId('review').waitFor(UI);
+
+    // Settings has section tabs.
+    await page.getByTestId('tab-settings').click();
+    await page.getByTestId('coding-model').waitFor(UI);
+    await page.getByTestId('settingstab-accounts').click();
+    await page.getByTestId('accounts').waitFor(UI);
+    expect(await page.getByTestId('coding-model').isVisible()).toBe(false);
+    await page.getByTestId('settingstab-limits').click();
+    await page.getByTestId('gc-days').waitFor(UI);
+    await shot(page, 'tabs-3-settings');
     expect(errors, errors.join('\n')).toEqual([]);
   });
 
@@ -627,11 +769,13 @@ describe('web UI (Playwright, fakes)', () => {
     const tree = page.getByTestId('tree');
     await expect.poll(() => tree.textContent(), UI).toContain('docs/plans/001-enhance-20260501.md');
     expect(await tree.textContent()).not.toContain('CLAUDE.md');
+    await page.getByTestId('runtab-files').click();
     await tree
       .getByRole('button', { name: 'docs/plans/001-enhance-20260501.md', exact: true })
       .click();
     await expect.poll(() => page.getByTestId('file-view').textContent(), UI).toContain('Step 1');
     await shot(page, 'enhance-2-review');
+    await page.getByTestId('runtab-plan').click();
     await page.getByTestId('approve').click();
 
     // The agent works in the owner's folder; the run then asks for the commit.

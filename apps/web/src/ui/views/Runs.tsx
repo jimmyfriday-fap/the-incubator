@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { RunListItem } from '../../api-types.js';
 import { get } from '../api.js';
 import { navigate } from '../nav.js';
+import { Empty } from './Icon.js';
 
 type Filter = 'all' | 'active' | 'waiting' | 'finished' | 'cancelled';
 
@@ -55,7 +56,7 @@ export function Runs() {
         ))}
       </div>
       {shown.length === 0 ? (
-        <p className="muted">No runs here.</p>
+        <Empty text="No runs here." />
       ) : (
         <ul className="runs" data-testid="runs">
           {shown.map((r) => (

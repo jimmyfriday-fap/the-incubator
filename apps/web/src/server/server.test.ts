@@ -10,6 +10,7 @@ import type {
   ProjectCard,
   ProjectDetail,
   Question,
+  ReviewSummaryResponse,
   RunDetail,
   RunListItem,
   SettingsView,
@@ -340,6 +341,58 @@ describe('enhance over the API', () => {
       await api.post<FolderCheck>('/api/folders/inspect', { path: other.dir, purpose: 'existing' })
     ).body;
     expect(fresh.project).toBeNull();
+  });
+
+  it('takes the owner corrections at review and comes back with a new plan and brief (plan 021)', async () => {
+    const { api, h } = await boot({ enhance: 'review-changes' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    // A run that is not at review refuses corrections.
+    const waiting = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        repo: dir,
+        repoRef: 'octo/bare-node',
+      })
+    ).body.runId;
+    await until(api, waiting, (x) => !x.busy && x.parked?.reason === 'needs_request');
+    expect((await api.post(`/api/runs/${waiting}/changes`, { text: 'x' })).status).toBe(409);
+
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        repo: dir,
+        repoRef: 'octo/bare-node',
+        request: REQUEST,
+      })
+    ).body;
+    const first = await until(api, runId, (x) => !x.busy && x.parked?.state === 'REVIEW');
+    expect((await api.post(`/api/runs/${runId}/changes`, { text: '   ' })).status).toBe(422);
+    expect((await api.post(`/api/runs/${runId}/changes`, {})).status).toBe(400);
+    const sent = await api.post(`/api/runs/${runId}/changes`, {
+      text: 'Also let kitchen staff filter the export by date.',
+    });
+    expect(sent.status).toBe(200);
+    const second = await until(
+      api,
+      runId,
+      (x) => !x.busy && x.parked?.state === 'REVIEW' && x.rev > first.rev,
+    );
+    expect(second.parked?.state).toBe('REVIEW');
+    const spec = (
+      await api.get<{ spec: { intent: { coreFeatures: { id: string }[] } } }>(
+        `/api/runs/${runId}/spec-diff`,
+      )
+    ).body.spec;
+    expect(spec.intent.coreFeatures.map((f) => f.id)).toEqual(['export-orders', 'export-filter']);
+    let brief = (await api.get<ReviewSummaryResponse>(`/api/runs/${runId}/review-summary`)).body;
+    for (let i = 0; i < 100 && brief.status === 'pending'; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+      brief = (await api.get<ReviewSummaryResponse>(`/api/runs/${runId}/review-summary`)).body;
+    }
+    expect(brief).toMatchObject({
+      status: 'ready',
+      summary: { headline: expect.stringContaining('filtered by date') as string },
+    });
   });
 
   it('serves a plain-English review summary at REVIEW, and says what the scan found', async () => {

@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { SettingsPatch, SettingsView } from '../../api-types.js';
 import { get, put } from '../api.js';
+import { TabPanel, Tabs } from './Tabs.js';
+
+type Section = 'models' | 'limits' | 'accounts';
 
 const MODELS = [
   'opus',
@@ -43,6 +46,7 @@ export function Settings() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [section, setSection] = useState<Section>('models');
 
   useEffect(() => {
     get<SettingsView>('/api/settings')
@@ -127,159 +131,173 @@ export function Settings() {
         </ul>
       </section>
 
-      <section className="card wide">
-        <h3>AI for planning</h3>
-        <label>
-          Tool
-          <select
-            data-testid="planning-tool"
-            value={form.planningTool}
-            onChange={(ev) => set({ planningTool: ev.target.value })}
-          >
-            <option value="auto">Automatic (first one that works)</option>
-            {view.adapters.map((a) => (
-              <option key={a.id} value={a.id} disabled={!a.canPlan}>
-                {a.id}
-                {a.installed ? (a.version ? ` ${a.version}` : '') : ' (not installed)'}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Model
-          <input
-            data-testid="planning-model"
-            list="model-suggestions"
-            value={form.planningModel}
-            placeholder="the tool’s own default"
-            onChange={(ev) => set({ planningModel: ev.target.value })}
-          />
-        </label>
-        {modelProblem(form.planningModel) && (
-          <p className="error">{modelProblem(form.planningModel)}</p>
-        )}
-        {planner && !planner.takesModel && form.planningModel.trim() && (
-          <p className="warn">{planner.id} cannot be told which model to use; this is ignored.</p>
-        )}
-
-        <h3>AI for coding</h3>
-        <label>
-          Agent
-          <select
-            data-testid="coding-agent"
-            value={form.codingAgent}
-            onChange={(ev) => set({ codingAgent: ev.target.value })}
-          >
-            <option value="auto">Automatic (the project decides, usually claude)</option>
-            {AGENTS.map((a) => {
-              const info = view.adapters.find((x) => x.id === `${a}-cli`);
-              return (
-                <option key={a} value={a} disabled={info ? !info.canCode : false}>
-                  {a}
-                  {info && !info.installed ? ' (not installed)' : ''}
-                </option>
-              );
-            })}
-          </select>
-        </label>
-        <label>
-          Model
-          <input
-            data-testid="coding-model"
-            list="model-suggestions"
-            value={form.codingModel}
-            placeholder="the tool’s own default"
-            onChange={(ev) => set({ codingModel: ev.target.value })}
-          />
-        </label>
-        {modelProblem(form.codingModel) && (
-          <p className="error">{modelProblem(form.codingModel)}</p>
-        )}
-        {coder && !coder.takesModel && form.codingModel.trim() && (
-          <p className="warn">
-            {coder.id} has no way to choose a model, so a run would stop and ask you to clear this.
-          </p>
-        )}
-        <datalist id="model-suggestions">
-          {MODELS.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
-        <p className="muted">
-          Leave a model empty to use the tool’s own default. The run page shows which model each job
-          really used.
-        </p>
-
-        <h3>Limits</h3>
-        <label>
-          How long one model call may take, in seconds
-          <input
-            data-testid="timeout-seconds"
-            inputMode="numeric"
-            value={form.timeoutSeconds}
-            placeholder="180"
-            onChange={(ev) => set({ timeoutSeconds: ev.target.value })}
-          />
-        </label>
-        <label>
-          Remove finished runs older than this many days (<code>incubator gc</code>)
-          <input
-            data-testid="gc-days"
-            inputMode="numeric"
-            value={form.gcDays}
-            placeholder="30"
-            onChange={(ev) => set({ gcDays: ev.target.value })}
-          />
-        </label>
-
-        <h3>Where tools live</h3>
-        <p className="muted">
-          For a tool that is not on your PATH, such as the folder with <code>flutter</code> in it.
-        </p>
-        {form.toolPaths.map((t, i) => (
-          <div className="row" key={i}>
-            <input
-              aria-label="Tool name"
-              data-testid={`tool-name-${i}`}
-              value={t.name}
-              placeholder="flutter"
-              onChange={(ev) =>
-                set({
-                  toolPaths: form.toolPaths.map((x, j) =>
-                    j === i ? { ...x, name: ev.target.value } : x,
-                  ),
-                })
-              }
-            />
-            <input
-              aria-label="Full path"
-              data-testid={`tool-path-${i}`}
-              value={t.path}
-              placeholder="full path to the tool"
-              onChange={(ev) =>
-                set({
-                  toolPaths: form.toolPaths.map((x, j) =>
-                    j === i ? { ...x, path: ev.target.value } : x,
-                  ),
-                })
-              }
-            />
-            <button
-              className="secondary"
-              onClick={() => set({ toolPaths: form.toolPaths.filter((_, j) => j !== i) })}
+      <Tabs
+        name="settingstab"
+        label="Settings sections"
+        active={section}
+        onSelect={setSection}
+        tabs={[
+          { id: 'models', label: 'AI models' },
+          { id: 'limits', label: 'Limits & tools' },
+          { id: 'accounts', label: 'Accounts & about' },
+        ]}
+      />
+      <section className="card wide" hidden={section === 'accounts'}>
+        <TabPanel name="settingstab" id="models" active={section}>
+          <h3>AI for planning</h3>
+          <label>
+            Tool
+            <select
+              data-testid="planning-tool"
+              value={form.planningTool}
+              onChange={(ev) => set({ planningTool: ev.target.value })}
             >
-              Remove
-            </button>
-          </div>
-        ))}
-        <button
-          className="secondary"
-          data-testid="add-tool"
-          onClick={() => set({ toolPaths: [...form.toolPaths, { name: '', path: '' }] })}
-        >
-          Add a tool
-        </button>
+              <option value="auto">Automatic (first one that works)</option>
+              {view.adapters.map((a) => (
+                <option key={a.id} value={a.id} disabled={!a.canPlan}>
+                  {a.id}
+                  {a.installed ? (a.version ? ` ${a.version}` : '') : ' (not installed)'}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Model
+            <input
+              data-testid="planning-model"
+              list="model-suggestions"
+              value={form.planningModel}
+              placeholder="the tool’s own default"
+              onChange={(ev) => set({ planningModel: ev.target.value })}
+            />
+          </label>
+          {modelProblem(form.planningModel) && (
+            <p className="error">{modelProblem(form.planningModel)}</p>
+          )}
+          {planner && !planner.takesModel && form.planningModel.trim() && (
+            <p className="warn">{planner.id} cannot be told which model to use; this is ignored.</p>
+          )}
 
+          <h3>AI for coding</h3>
+          <label>
+            Agent
+            <select
+              data-testid="coding-agent"
+              value={form.codingAgent}
+              onChange={(ev) => set({ codingAgent: ev.target.value })}
+            >
+              <option value="auto">Automatic (the project decides, usually claude)</option>
+              {AGENTS.map((a) => {
+                const info = view.adapters.find((x) => x.id === `${a}-cli`);
+                return (
+                  <option key={a} value={a} disabled={info ? !info.canCode : false}>
+                    {a}
+                    {info && !info.installed ? ' (not installed)' : ''}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+          <label>
+            Model
+            <input
+              data-testid="coding-model"
+              list="model-suggestions"
+              value={form.codingModel}
+              placeholder="the tool’s own default"
+              onChange={(ev) => set({ codingModel: ev.target.value })}
+            />
+          </label>
+          {modelProblem(form.codingModel) && (
+            <p className="error">{modelProblem(form.codingModel)}</p>
+          )}
+          {coder && !coder.takesModel && form.codingModel.trim() && (
+            <p className="warn">
+              {coder.id} has no way to choose a model, so a run would stop and ask you to clear
+              this.
+            </p>
+          )}
+          <datalist id="model-suggestions">
+            {MODELS.map((m) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
+          <p className="muted">
+            Leave a model empty to use the tool’s own default. The run page shows which model each
+            job really used.
+          </p>
+        </TabPanel>
+        <TabPanel name="settingstab" id="limits" active={section}>
+          <h3>Limits</h3>
+          <label>
+            How long one model call may take, in seconds
+            <input
+              data-testid="timeout-seconds"
+              inputMode="numeric"
+              value={form.timeoutSeconds}
+              placeholder="180"
+              onChange={(ev) => set({ timeoutSeconds: ev.target.value })}
+            />
+          </label>
+          <label>
+            Remove finished runs older than this many days (<code>incubator gc</code>)
+            <input
+              data-testid="gc-days"
+              inputMode="numeric"
+              value={form.gcDays}
+              placeholder="30"
+              onChange={(ev) => set({ gcDays: ev.target.value })}
+            />
+          </label>
+
+          <h3>Where tools live</h3>
+          <p className="muted">
+            For a tool that is not on your PATH, such as the folder with <code>flutter</code> in it.
+          </p>
+          {form.toolPaths.map((t, i) => (
+            <div className="row" key={i}>
+              <input
+                aria-label="Tool name"
+                data-testid={`tool-name-${i}`}
+                value={t.name}
+                placeholder="flutter"
+                onChange={(ev) =>
+                  set({
+                    toolPaths: form.toolPaths.map((x, j) =>
+                      j === i ? { ...x, name: ev.target.value } : x,
+                    ),
+                  })
+                }
+              />
+              <input
+                aria-label="Full path"
+                data-testid={`tool-path-${i}`}
+                value={t.path}
+                placeholder="full path to the tool"
+                onChange={(ev) =>
+                  set({
+                    toolPaths: form.toolPaths.map((x, j) =>
+                      j === i ? { ...x, path: ev.target.value } : x,
+                    ),
+                  })
+                }
+              />
+              <button
+                className="secondary"
+                onClick={() => set({ toolPaths: form.toolPaths.filter((_, j) => j !== i) })}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <button
+            className="secondary"
+            data-testid="add-tool"
+            onClick={() => set({ toolPaths: [...form.toolPaths, { name: '', path: '' }] })}
+          >
+            Add a tool
+          </button>
+        </TabPanel>
         {problem && <p className="error">{problem}</p>}
         {error && (
           <p className="error" role="alert" data-testid="settings-error">
@@ -302,7 +320,14 @@ export function Settings() {
         </div>
       </section>
 
-      <section className="card wide">
+      <section
+        className="card wide"
+        role="tabpanel"
+        id="settingstab-panel-accounts"
+        aria-labelledby="settingstab-accounts"
+        data-testid="settingstab-panel-accounts"
+        hidden={section !== 'accounts'}
+      >
         <h3>Tools found</h3>
         <ul className="plain" data-testid="adapters">
           {view.adapters.map((a) => (

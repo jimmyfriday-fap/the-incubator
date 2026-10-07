@@ -27,6 +27,10 @@ function describe(e: LogEntry): string {
       return `coding agent started: ${String(e['agent'])}${typeof e['model'] === 'string' ? ` · ${e['model']}` : ''}`;
     case 'handoff.result':
       return `coding agent finished${typeof e['model'] === 'string' ? ` · ${e['model']}` : ''}`;
+    case 'review.feedback':
+      return `correction at review: ${String(e['text'])}`;
+    case 'answers.superseded':
+      return `earlier answers replaced by a correction: ${(e['keys'] as string[]).join(', ')}`;
     case 'questions':
       return `${(e['questions'] as unknown[]).length} question(s)`;
     default:

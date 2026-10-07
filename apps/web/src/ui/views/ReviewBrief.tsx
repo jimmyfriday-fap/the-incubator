@@ -9,6 +9,8 @@ import { get } from '../api.js';
  */
 export function ReviewBrief(props: {
   runId: string;
+  /** The spec revision the brief is for: a new plan (after corrections) asks for its own brief. */
+  rev?: number;
   /** The owner has edited the spec in the editor, so the brief describes the drafted plan only. */
   edited: boolean;
 }) {
@@ -35,7 +37,7 @@ export function ReviewBrief(props: {
       live = false;
       if (timer) clearTimeout(timer);
     };
-  }, [props.runId, attempt]);
+  }, [props.runId, props.rev, attempt]);
 
   if (res?.status === 'unavailable') return null;
   return (

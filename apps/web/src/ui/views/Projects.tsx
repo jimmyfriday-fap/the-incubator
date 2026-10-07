@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ProjectBrief, ProjectCard } from '../../api-types.js';
 import { get } from '../api.js';
 import { navigate } from '../nav.js';
+import { Empty } from './Icon.js';
 
 export const when = (iso: string): string => {
   const d = new Date(iso);
@@ -91,9 +92,7 @@ export function ProjectsPage() {
     <section className="card wide" data-testid="projects-page">
       <h2>Projects</h2>
       {projects.length === 0 ? (
-        <p className="muted">
-          No projects yet. Start a run from Home and the project appears here.
-        </p>
+        <Empty text="No projects yet. Start a run from Home and the project appears here." />
       ) : (
         <ProjectGrid projects={projects} />
       )}

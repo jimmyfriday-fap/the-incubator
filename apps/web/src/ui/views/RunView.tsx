@@ -10,9 +10,12 @@ import { Questions } from './Questions.js';
 import { Review } from './Review.js';
 import { RunLog } from './RunLog.js';
 import { Summary } from './Summary.js';
+import { TabPanel, Tabs } from './Tabs.js';
 import { Tree } from './Tree.js';
 
-/** One run: the step that needs you (questions, review, resume), the outcome, the tree and the log. */
+type RunTab = 'overview' | 'plan' | 'files' | 'log';
+
+/** One run: the header, then tabs for what needs you, the plan, the files and the log (plan 024). */
 export function RunView({ runId }: { runId: string }) {
   const [run, setRun] = useState<RunDetail | null>(null);
   const [entries, setEntries] = useState<LogEntry[]>([]);
@@ -20,6 +23,7 @@ export function RunView({ runId }: { runId: string }) {
   const pending = useRef<number | null>(null);
   const [stopping, setStopping] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [tab, setTab] = useState<RunTab>('overview');
 
   const refresh = useCallback(() => {
     get<RunDetail>(`/api/runs/${runId}`)
@@ -58,6 +62,20 @@ export function RunView({ runId }: { runId: string }) {
   useEffect(() => {
     if (run && !run.busy) setStopping(false);
   }, [run]);
+
+  // The tab follows the run (plan 024): Plan while the plan waits for review, Overview at every other step. A
+  // tab the owner picks stays until the run moves on to another step.
+  const step: string | null = !run
+    ? null
+    : run.busy
+      ? 'working'
+      : [run.state, run.parked?.state ?? '', run.parked?.reason ?? '', run.done ? 'done' : ''].join(
+          ':',
+        );
+  useEffect(() => {
+    const follow: RunTab = step?.startsWith('PARKED:REVIEW:') ? 'plan' : 'overview';
+    if (step) setTab(follow);
+  }, [step]);
 
   if (!run) return <p className={error ? 'error' : 'muted'}>{error ?? 'Loading…'}</p>;
   const reviewing = run.state === 'PARKED' && run.parked?.state === 'REVIEW' && !run.busy;
@@ -236,51 +254,98 @@ export function RunView({ runId }: { runId: string }) {
         )}
       </section>
 
-      {coding && <Coding run={run} />}
-      {committing && run.finish && (
-        <CommitRequest
-          finish={run.finish}
-          onCommit={(message) =>
-            act(post(`/api/runs/${runId}/commit`, { action: 'commit', message }))
-          }
-          onLeave={() => act(post(`/api/runs/${runId}/commit`, { action: 'leave' }))}
-        />
-      )}
-      {pushing && run.finish && (
-        <PushRequest
-          finish={run.finish}
-          onPush={() => act(post(`/api/runs/${runId}/push`, { action: 'push' }))}
-          onSkip={() => act(post(`/api/runs/${runId}/push`, { action: 'skip' }))}
-        />
-      )}
-      {requesting && (
-        <ChangeRequest
-          run={run}
-          onSubmit={(narrative) => act(post(`/api/runs/${runId}/request`, { narrative }))}
-        />
-      )}
-      {asking && run.questions && (
-        <Questions
-          questions={run.questions}
-          round={run.round}
-          onSubmit={(answers) => act(post(`/api/runs/${runId}/answers`, { answers }))}
-        />
-      )}
-      {reviewing && (
-        <Review
-          runId={runId}
-          rev={run.rev}
-          onApprove={(spec) =>
-            post(`/api/runs/${runId}/approve`, spec ? { spec } : {}).then(refresh)
-          }
-          checks={run.enhance?.checks ?? null}
-          stack={run.enhance?.stack ?? null}
-          onChecks={(commands) => post(`/api/runs/${runId}/checks`, { commands })}
-        />
-      )}
-      {run.done && !run.cancelled && <Summary run={run} />}
-      {run.specComplete && <Tree runId={runId} rev={run.rev} />}
-      <RunLog entries={entries} />
+      <Tabs
+        name="runtab"
+        label="Run sections"
+        active={tab}
+        onSelect={setTab}
+        tabs={[
+          {
+            id: 'overview',
+            label: 'Overview',
+            attention: committing || pushing || requesting || asking || stuck || stopped,
+          },
+          { id: 'plan', label: 'Plan', attention: reviewing },
+          { id: 'files', label: 'Files' },
+          { id: 'log', label: 'Log' },
+        ]}
+      />
+      <TabPanel name="runtab" id="overview" active={tab}>
+        {coding && <Coding run={run} />}
+        {reviewing && (
+          <p className="muted" data-testid="overview-review-note">
+            The plan is ready for your review in the Plan tab.
+          </p>
+        )}
+        {committing && run.finish && (
+          <CommitRequest
+            finish={run.finish}
+            onCommit={(message) =>
+              act(post(`/api/runs/${runId}/commit`, { action: 'commit', message }))
+            }
+            onLeave={() => act(post(`/api/runs/${runId}/commit`, { action: 'leave' }))}
+          />
+        )}
+        {pushing && run.finish && (
+          <PushRequest
+            finish={run.finish}
+            onPush={() => act(post(`/api/runs/${runId}/push`, { action: 'push' }))}
+            onSkip={() => act(post(`/api/runs/${runId}/push`, { action: 'skip' }))}
+          />
+        )}
+        {requesting && (
+          <ChangeRequest
+            run={run}
+            onSubmit={(narrative) => act(post(`/api/runs/${runId}/request`, { narrative }))}
+          />
+        )}
+        {asking && run.questions && (
+          <Questions
+            questions={run.questions}
+            round={run.round}
+            onSubmit={(answers) => act(post(`/api/runs/${runId}/answers`, { answers }))}
+          />
+        )}
+        {run.done && !run.cancelled && <Summary run={run} />}
+      </TabPanel>
+      <TabPanel name="runtab" id="plan" active={tab}>
+        {!reviewing && (
+          <p className="muted" data-testid="plan-note">
+            The plan is shown here while it waits for your review.
+          </p>
+        )}
+        {reviewing && (
+          <Review
+            key={run.rev}
+            runId={runId}
+            rev={run.rev}
+            {...(run.kind === 'new' || run.kind === 'enhance'
+              ? {
+                  onRequestChanges: (text: string) =>
+                    post(`/api/runs/${runId}/changes`, { text }).then(refresh),
+                }
+              : {})}
+            onApprove={(spec) =>
+              post(`/api/runs/${runId}/approve`, spec ? { spec } : {}).then(refresh)
+            }
+            checks={run.enhance?.checks ?? null}
+            stack={run.enhance?.stack ?? null}
+            onChecks={(commands) => post(`/api/runs/${runId}/checks`, { commands })}
+          />
+        )}
+      </TabPanel>
+      <TabPanel name="runtab" id="files" active={tab}>
+        {run.specComplete ? (
+          <Tree runId={runId} rev={run.rev} />
+        ) : (
+          <p className="muted" data-testid="files-note">
+            The files appear here once the plan is complete.
+          </p>
+        )}
+      </TabPanel>
+      <TabPanel name="runtab" id="log" active={tab}>
+        <RunLog entries={entries} />
+      </TabPanel>
     </div>
   );
 }

@@ -635,6 +635,25 @@ export function createApp(opts: ServerOptions): WebApp {
     }),
   );
 
+  // The owner's corrections at REVIEW (plan 021): only while the run waits at review.
+  app.post<{ Body: { text: string } }>(
+    '/api/runs/:id/changes',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['text'],
+          properties: { text: { type: 'string', minLength: 1, maxLength: 4000 } },
+        },
+      },
+    },
+    withRun((runId, req: { body: { text: string } }) => {
+      driver.requestChanges(runId, req.body.text);
+      return { accepted: true };
+    }),
+  );
+
   // The owner's decision on what the coding agent may run (ADR-025). An empty list is a decision.
   app.post<{ Body: { commands: string[] } }>(
     '/api/runs/:id/checks',

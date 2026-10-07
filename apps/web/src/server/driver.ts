@@ -160,6 +160,14 @@ export class RunDriver {
     this.spawn(runId, () => this.engine.resume(runId, new WebPrompter()));
   }
 
+  /** The owner's corrections at REVIEW (plan 021): the run drafts the plan again with them, then waits at REVIEW. */
+  requestChanges(runId: string, text: string): void {
+    this.parkedAt(runId, 'REVIEW');
+    if (this.#busy.has(runId)) throw new ConflictError(`run ${runId} is already working`);
+    this.engine.requestChanges(runId, text);
+    this.spawn(runId, () => this.engine.advance(runId, new WebPrompter()));
+  }
+
   /** REVIEW → APPROVED (optionally with an edited spec), then continues in the background. */
   approve(runId: string, spec?: IncubatorSpec): void {
     this.parkedAt(runId, 'REVIEW');

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Revision, SpecChange } from '../../api-types.js';
 import { ApiError, get } from '../api.js';
+import { RequestChanges } from './RequestChanges.js';
 import { ReviewBrief } from './ReviewBrief.js';
 
 interface Decision {
@@ -26,6 +27,8 @@ export function Review(props: {
     approved: string[] | null;
   } | null;
   onChecks?(commands: string[]): Promise<unknown>;
+  /** The owner's corrections at review (plan 021); absent where the run cannot take them. */
+  onRequestChanges?: (text: string) => Promise<unknown>;
   /** What the scan recognised the repository as (update runs). */
   stack?: { label: string; evidence: string[]; packed: boolean } | null;
 }) {
@@ -123,7 +126,12 @@ export function Review(props: {
 
   return (
     <>
-      <ReviewBrief runId={props.runId} edited={original !== '' && text !== original} />
+      <ReviewBrief
+        runId={props.runId}
+        rev={props.rev}
+        edited={original !== '' && text !== original}
+      />
+      {props.onRequestChanges && <RequestChanges onSubmit={props.onRequestChanges} />}
       <section className="card wide review" data-testid="review">
         <h2>Review the spec</h2>
         {noPack && (
