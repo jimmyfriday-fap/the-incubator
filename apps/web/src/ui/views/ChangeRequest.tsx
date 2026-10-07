@@ -12,7 +12,9 @@ export function ChangeRequest({
   run: RunDetail;
   onSubmit: (text: string) => Promise<unknown>;
 }) {
-  const [text, setText] = useState('');
+  // why: after a refresh (plan 025) the run hands back what the owner asked before, to confirm or edit.
+  const previous = (run.parked?.evidence as { previous?: unknown } | null | undefined)?.previous;
+  const [text, setText] = useState(typeof previous === 'string' ? previous : '');
   const [busy, setBusy] = useState(false);
   const report = run.enhance?.scanReport ?? null;
   const coverage = report?.split('\n')[0] ?? null;
@@ -26,6 +28,12 @@ export function ChangeRequest({
       {coverage && (
         <p className="muted" data-testid="scan-coverage">
           {coverage}
+        </p>
+      )}
+      {typeof previous === 'string' && (
+        <p data-testid="request-previous-note">
+          The repository was read again. Below is what you asked before, with any corrections you
+          gave at review: confirm it, or edit it.
         </p>
       )}
       <p className="muted">

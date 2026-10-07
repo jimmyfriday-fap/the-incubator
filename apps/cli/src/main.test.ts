@@ -618,6 +618,50 @@ describe('publish, handoff, auth, gc', () => {
       expect(done.err.join('')).toContain('✔ enhance branch written locally');
     });
 
+    it('resume --refresh reads a repository that moved on again and shows what was asked, to confirm (plan 027)', async () => {
+      const { factory, dir } = await setup('refresh');
+      const first = io();
+      expect(
+        await main(
+          ['enhance', dir, '--repo', 'octo/order-desk', '--prompt', REQUEST, '--no-publish'],
+          first.io,
+          factory,
+        ),
+      ).toBe(2);
+      const runId = /incubator resume (\S+)/.exec(first.err.join(''))![1]!;
+      const git = (args: string[]) => nodeExec.run('git', args, { cwd: dir, timeoutMs: 30_000 });
+      writeFileSync(path.join(dir, 'later.txt'), 'later\n');
+      await git(['add', '-A']);
+      await git([
+        '-c',
+        'user.name=t',
+        '-c',
+        'user.email=t@example.invalid',
+        'commit',
+        '-q',
+        '-m',
+        'later',
+      ]);
+      // Approving stops at the move, and the hint names the refresh.
+      const approve = io();
+      expect(await main(['resume', runId, '--yes'], approve.io, factory)).toBe(2);
+      expect(approve.err.join('')).toContain(`refresh with: incubator resume ${runId} --refresh`);
+      // --refresh goes on its own, and is refused before the run is touched.
+      const both = io();
+      expect(
+        await main(['resume', runId, '--refresh', '--prompt', REQUEST], both.io, factory),
+      ).toBe(2);
+      expect(both.err.join('')).toContain('use --refresh on its own');
+      const refreshed = io();
+      expect(await main(['resume', runId, '--refresh'], refreshed.io, factory)).toBe(2);
+      expect(refreshed.err.join('')).toContain('what you asked before (confirm it or edit it):');
+      expect(refreshed.err.join('')).toContain(`    ${REQUEST}`);
+      expect(refreshed.err.join('')).toContain('(or --prompt-file <file> for a longer text)');
+      const done = io();
+      expect(await main(['resume', runId, '--prompt', REQUEST, '--yes'], done.io, factory)).toBe(0);
+      expect(done.err.join('')).toContain('✔ enhance branch written locally');
+    });
+
     it('asks for the request on a terminal', async () => {
       const { factory, dir } = await setup();
       const asked: string[] = [];

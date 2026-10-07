@@ -105,6 +105,8 @@ export interface RunDetail {
   /** The last attempt stopped on an error; Resume retries `state`. Survives a restart. */
   failure: { state: string; message: string } | null;
   questions: Question[] | null;
+  /** The questions are earlier answers, asked again to confirm after a refresh (plan 026). */
+  carriedQuestions: boolean;
   round: number;
   rev: number;
   /** The latest revision is a complete spec, so the tree preview is available. */
@@ -128,6 +130,18 @@ export interface RunDetail {
   project: ProjectBrief | null;
   /** Which tool and model did each kind of work so far (ADR-029). */
   models: ModelUse[];
+}
+
+/** Whether an update run's repository moved on since the run read it (GET /api/runs/:id/repo-status). */
+export interface RepoStatus {
+  moved: boolean;
+  /** The commit the run read. */
+  recorded: string | null;
+  /** The commit there now. */
+  current: string | null;
+  branch: string | null;
+  /** New commits; null when they cannot be counted (a GitHub repository). */
+  commits: number | null;
 }
 
 export interface ModelUse {

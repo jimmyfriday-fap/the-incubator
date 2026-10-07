@@ -85,6 +85,10 @@ export async function main(
     .option('--adapter <id>', 'switch the LLM adapter for the rest of the run')
     .option('--prompt <text>', 'answer a parked "what do you want to change?" (enhance runs)')
     .option('--prompt-file <path>', 'read that answer from a file')
+    .option(
+      '--refresh',
+      'update runs: read the repository again, then confirm what you asked (use on its own)',
+    )
     .option('--commit', "folder runs: commit the agent's changes (message: -m, or the drafted one)")
     .option('-m, --message <text>', 'the commit message for --commit')
     .option('--leave', 'folder runs: keep the changes uncommitted')
@@ -106,6 +110,7 @@ export async function main(
           out?: string;
           prompt?: string;
           promptFile?: string;
+          refresh?: boolean;
           commit?: boolean;
           message?: string;
           leave?: boolean;

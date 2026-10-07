@@ -56,6 +56,8 @@ export interface GitOps {
   ): Promise<void>;
   /** Checks out an existing local branch. */
   checkout(dir: string, branch: string): Promise<void>;
+  /** How many commits `to` has that `from` does not (`rev-list --count from..to`); null when git cannot tell. */
+  countBetween(dir: string, from: string, to: string): Promise<number | null>;
   /** Adds a remote; a no-op when it already points at `url`, an error when it points elsewhere. */
   remoteAdd(dir: string, name: string, url: string): Promise<void>;
   /** The configured `user.name` and `user.email`, or null when either is unset. */
@@ -194,6 +196,14 @@ export function createGitOps(exec: Exec): GitOps {
     },
     async checkout(dir, branch) {
       await git(['checkout', '-q', branch, '--'], { cwd: dir });
+    },
+    async countBetween(dir, from, to) {
+      // why: only commit ids reach git here, so nothing can be read as an option (plan 025).
+      const sha = /^[0-9a-f]{7,64}$/;
+      if (!sha.test(from) || !sha.test(to)) return null;
+      const r = await git(['rev-list', '--count', `${from}..${to}`], { cwd: dir, allowFail: true });
+      const n = Number.parseInt(r.stdout.trim(), 10);
+      return r.code === 0 && Number.isFinite(n) ? n : null;
     },
     async remoteAdd(dir, name, url) {
       const have = await git(['remote', 'get-url', name], { cwd: dir, allowFail: true });

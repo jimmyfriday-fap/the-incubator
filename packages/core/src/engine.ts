@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   InterruptedError,
@@ -12,7 +12,7 @@ import {
 } from '@incubator/runtime';
 import type { Capabilities, LlmAdapter, LlmAdapterId } from '@incubator/llm';
 import { complete } from '@incubator/llm';
-import type { RepoRef } from '@incubator/git';
+import type { GitOps, RepoRef } from '@incubator/git';
 import {
   ENHANCEMENT_SPEC_VERSION,
   OTHER,
@@ -201,6 +201,31 @@ const PORTFOLIO_EVENTS = new Set([
 
 /** Who asked the work to stop: the owner in the UI, a signal (Ctrl+C), or the app shutting down. */
 export type StopBy = 'owner' | 'signal' | 'shutdown';
+
+/** Where an update run's repository stands against the commit the run read (plan 025). */
+export interface RepoMove {
+  /** The repository has new commits (or another branch is checked out) since the run read it. */
+  moved: boolean;
+  /** The commit the run read, or null when it has not read one yet. */
+  recorded: string | null;
+  /** The commit there now, or null when it could not be read. */
+  current: string | null;
+  /** The branch there now (the default branch for a GitHub repository). */
+  branch: string | null;
+  /** How many commits are new; null when they cannot be counted (a GitHub repository). */
+  commits: number | null;
+}
+
+/** The states in which an update run is still planning, so a refresh can still change the plan (plan 025). */
+const PLANNING_STATES: readonly RunStateName[] = [
+  'INTAKE',
+  'ANALYZE',
+  'REQUEST',
+  'DRAFT_SPEC',
+  'CLARIFY',
+  'REVIEW',
+  'APPROVED',
+];
 
 /** One tool and model that did one kind of work in a run. */
 export interface ModelUse {
@@ -499,19 +524,33 @@ export class Engine {
     return (e?.['baseline'] as string[] | undefined) ?? [];
   }
 
-  /** The owner's change request: a submitted one wins over the one given at start. */
+  /**
+   * The owner's change request: a submitted one wins over the one given at start. After a refresh (plan 025)
+   * only a request submitted since counts; until there is one it is empty and the run asks again.
+   */
   requestText(runId: string): string {
-    const submitted = this.entries(runId).findLast((e) => e.type === 'enhance.request');
-    return sanitizeRequest(
-      typeof submitted?.['text'] === 'string'
-        ? submitted['text']
-        : (this.state(runId).input.request ?? ''),
+    const cut = this.since(runId);
+    const submitted = this.entries(runId).findLast(
+      (e) => e.type === 'enhance.request' && e.seq > cut,
     );
+    const given = cut > 0 ? '' : (this.state(runId).input.request ?? '');
+    return sanitizeRequest(typeof submitted?.['text'] === 'string' ? submitted['text'] : given);
+  }
+
+  /** The seq of the latest repository refresh (plan 025), or 0: what the owner said before it is asked again. */
+  private since(runId: string): number {
+    return this.entries(runId).findLast((e) => e.type === 'repo.refresh')?.seq ?? 0;
+  }
+
+  /** After a refresh (plan 025): the earlier request, with the corrections given at review, to confirm or edit. */
+  previousRequest(runId: string): string | null {
+    const e = this.entries(runId).findLast((x) => x.type === 'repo.refresh');
+    return typeof e?.['previous'] === 'string' && e['previous'] ? e['previous'] : null;
   }
 
   /** Check commands proposed at the scan: built-in constants chosen by the repository's manifests. */
   proposedChecks(runId: string): CheckProposal[] {
-    const e = this.entries(runId).find((x) => x.type === 'enhance.scan');
+    const e = this.entries(runId).findLast((x) => x.type === 'enhance.scan');
     // why: runs journaled before `what` existed carry only the command and the reason.
     return ((e?.['checks'] as Partial<CheckProposal>[] | undefined) ?? []).map((c) => ({
       command: c.command ?? '',
@@ -522,7 +561,9 @@ export class Engine {
 
   /** What the owner approved: a list (possibly empty), or null while they have not decided. */
   approvedChecks(runId: string): string[] | null {
-    const e = this.entries(runId).findLast((x) => x.type === 'enhance.checks');
+    // why: commands approved before a refresh (plan 025) were chosen for the old snapshot: ask again.
+    const cut = this.since(runId);
+    const e = this.entries(runId).findLast((x) => x.type === 'enhance.checks' && x.seq > cut);
     return e ? (e['commands'] as string[]) : null;
   }
 
@@ -709,11 +750,30 @@ export class Engine {
 
   /** REQUEST: the owner says what to change; without it the run parks for the UI or CLI to answer. */
   private requestStep(runId: string): void {
-    if (!this.requestText(runId))
+    if (!this.requestText(runId)) {
+      const previous = this.previousRequest(runId);
+      // why: after a refresh (plan 025) the owner confirms or edits what they asked for before.
+      if (previous)
+        throw new ParkError(
+          'needs_request',
+          'the repository was read again: confirm what you want to change, or edit it',
+          { previous },
+        );
       throw new ParkError(
         'needs_request',
         'describe what you want to change (incubator enhance --prompt, or the "What do you want to change?" step)',
       );
+    }
+    const cut = this.since(runId);
+    // why: after a refresh (plan 026) the owner confirms or changes their earlier answers before the draft.
+    if (cut > 0 && !this.entries(runId).some((e) => e.type === 'questions' && e.seq > cut)) {
+      const carried = this.carriedQuestions(runId);
+      if (carried.length) {
+        this.record(runId, 'questions', { round: 0, carried: true, questions: carried });
+        this.enter(runId, 'CLARIFY', 0);
+        return;
+      }
+    }
     this.enter(runId, 'DRAFT_SPEC', 1);
   }
 
@@ -2172,7 +2232,10 @@ export class Engine {
   private answers(runId: string): { answers: Answer[]; questions: Map<string, AskedInfo> } {
     const answers: Answer[] = [];
     const questions = new Map<string, AskedInfo>();
+    // why: answers given before a refresh (plan 025) are asked again, not taken as decisions.
+    const cut = this.since(runId);
     for (const e of this.entries(runId)) {
+      if (e.seq <= cut) continue;
       if (e.type === 'answers') answers.push(...(e['answers'] as Answer[]));
       if (e.type === 'answers.superseded') {
         // why: a field the owner corrected at review no longer takes the answer given before it (plan 021).
@@ -2187,6 +2250,47 @@ export class Engine {
           });
     }
     return { answers, questions };
+  }
+
+  /**
+   * After a refresh (plan 026): every question the owner answered before it, in the order first asked, with
+   * its exact options and the earlier answer marked recommended. Answers given before a correction at review
+   * are not carried: the correction travels in the confirmed request and may override any of them (request.*
+   * keys are never superseded field by field).
+   */
+  private carriedQuestions(runId: string): AskedQuestion[] {
+    const cut = this.since(runId);
+    const asked = new Map<string, AskedQuestion>();
+    const answered = new Map<string, string>();
+    for (const e of this.entries(runId)) {
+      if (e.seq >= cut) break;
+      if (e.type === 'questions')
+        for (const q of e['questions'] as AskedQuestion[]) asked.set(q.key, q);
+      if (e.type === 'answers')
+        for (const a of e['answers'] as Answer[]) answered.set(a.key, a.value);
+      if (e.type === 'answers.superseded')
+        for (const key of e['keys'] as string[]) answered.delete(key);
+      // why: a correction at review may override any earlier answer; it travels in the confirmed request.
+      if (e.type === 'review.feedback') answered.clear();
+    }
+    const out: AskedQuestion[] = [];
+    for (const [key, q] of asked) {
+      const value = answered.get(key);
+      if (value === undefined || !q.options.some((o) => o.value === value)) continue;
+      out.push({ ...q, options: q.options.map((o) => ({ ...o, recommended: o.value === value })) });
+    }
+    return out;
+  }
+
+  /** The latest answer to each question before the latest refresh (plan 027), with its source. */
+  private answersBeforeRefresh(runId: string): Map<string, Answer> {
+    const cut = this.since(runId);
+    const out = new Map<string, Answer>();
+    for (const e of this.entries(runId)) {
+      if (e.seq >= cut) break;
+      if (e.type === 'answers') for (const a of e['answers'] as Answer[]) out.set(a.key, a);
+    }
+    return out;
   }
 
   /** The text `intent.narrative` carries: the owner's change request on an update run, else the idea. */
@@ -2290,7 +2394,18 @@ export class Engine {
         throw new ToolError(`answer "${a.value}" is not an option of ${a.key}`);
     }
     if (answers.length !== questions.length) throw new ToolError('every question needs an answer');
-    this.record(runId, 'answers', { round: s.round, answers });
+    // why: an earlier answer confirmed after a refresh (plan 026) keeps the source it had then, even when --yes took
+    // it now: the owner's choice stays the owner's, and a default the owner never chose stays a default.
+    const earlier = s.carriedQuestions ? this.answersBeforeRefresh(runId) : null;
+    const recorded = earlier
+      ? answers.map((a) => {
+          const was = earlier.get(a.key);
+          return a.source === 'default' && was?.value === a.value
+            ? { ...a, source: was.source }
+            : a;
+        })
+      : answers;
+    this.record(runId, 'answers', { round: s.round, answers: recorded });
     const { answers: all, questions: texts } = this.answers(runId);
     const draft = mergeTurn({
       before: this.draft(runId),
@@ -2372,11 +2487,119 @@ export class Engine {
     this.enter(runId, 'DRAFT_SPEC', MAX_ROUNDS);
   }
 
-  /** The owner's corrections at review, oldest first (plan 021). */
+  /** The owner's corrections at review, oldest first (plan 021); after a refresh, only those since (plan 025). */
   private reviewFeedback(runId: string): string[] {
+    const cut = this.since(runId);
     return this.entries(runId)
-      .filter((e) => e.type === 'review.feedback' && typeof e['text'] === 'string')
+      .filter((e) => e.type === 'review.feedback' && e.seq > cut && typeof e['text'] === 'string')
       .map((e) => e['text'] as string);
+  }
+
+  /**
+   * Whether the repository an update run read has moved on since (plan 025): new commits, or another branch
+   * checked out in the owner's folder. Only asked while the run is planning; otherwise it says not moved.
+   */
+  async repoMoved(runId: string): Promise<RepoMove> {
+    const none: RepoMove = {
+      moved: false,
+      recorded: null,
+      current: null,
+      branch: null,
+      commits: null,
+    };
+    const s = this.state(runId);
+    const at = s.state === 'PARKED' ? s.parked?.state : s.state;
+    const pub = this.deps.publish;
+    const repo = s.input.repo;
+    if (s.input.kind !== 'enhance' || !repo || s.done || !pub || !at) return none;
+    if (!PLANNING_STATES.includes(at)) return none;
+    try {
+      if (s.input.dir) {
+        const base = s.steps['folder.base']?.data as
+          { head?: string; branch?: string | null } | undefined;
+        if (!base?.head) return none;
+        return await this.compareHead(pub.git, this.runDir(s), base.head, base.branch ?? null);
+      }
+      const existing = (
+        this.draft(runId) as { existingRepo?: { baseSha?: string; defaultBranch?: string } }
+      ).existingRepo;
+      const recorded = existing?.baseSha;
+      if (!recorded || /^0+$/.test(recorded)) return none;
+      if (!/^[a-z]+:\/\//i.test(repo) && !repo.startsWith('git@'))
+        return await this.compareHead(pub.git, path.resolve(repo), recorded, undefined);
+      const branch = existing?.defaultBranch ?? 'main';
+      const token = await pub.resolveToken();
+      const current = await pub.git.remoteSha(repo, `refs/heads/${branch}`, token?.token);
+      const moved = current !== null && current !== recorded;
+      return { moved, recorded, current, branch, commits: null };
+    } catch {
+      return none;
+    }
+  }
+
+  /** A local repository's HEAD against the recorded commit, and its branch when one was recorded (plan 025). */
+  private async compareHead(
+    git: GitOps,
+    dir: string,
+    recorded: string,
+    branchWas: string | null | undefined,
+  ): Promise<RepoMove> {
+    const current = await git.headSha(dir);
+    const branch = await git.currentBranch(dir);
+    const moved =
+      current !== null &&
+      (current !== recorded || (branchWas !== undefined && branch !== branchWas));
+    const commits = moved && current !== null ? await git.countBetween(dir, recorded, current) : 0;
+    return { moved, recorded, current, branch, commits };
+  }
+
+  /** Before the plan is built (plan 025): an update run whose repository moved on parks until it is refreshed. */
+  private async guardRepo(runId: string): Promise<void> {
+    const m = await this.repoMoved(runId);
+    if (!m.moved) return;
+    const count = m.commits ? ` (${m.commits} new commit${m.commits === 1 ? '' : 's'})` : '';
+    throw new ParkError(
+      'repo_moved',
+      `the repository changed since this run read it${count}: refresh the run to read it again`,
+      { recorded: m.recorded, current: m.current, commits: m.commits },
+    );
+  }
+
+  /**
+   * Reads an update run's repository again (plan 025). The run goes back to ANALYZE: a fresh copy, scan and
+   * summary, a new draft from them, and the owner confirms the change request again. Only while planning.
+   */
+  async refreshRepo(runId: string): Promise<RepoMove> {
+    const s = this.state(runId);
+    if (s.input.kind !== 'enhance' || !s.input.repo)
+      throw new PolicyError(`run ${runId} is not an update of an existing repository`, {
+        code: 'not_enhance',
+      });
+    const at = s.state === 'PARKED' ? s.parked?.state : s.state;
+    if (s.done || !at || !PLANNING_STATES.includes(at))
+      throw new PolicyError(`run ${runId} is past planning: its plan is already being built`, {
+        code: 'too_late',
+      });
+    const m = await this.repoMoved(runId);
+    if (this.#active.has(runId))
+      throw new PolicyError(`run ${runId} is working`, { code: 'working' });
+    const asked = this.requestText(runId);
+    const corrections = this.reviewFeedback(runId);
+    const withCorrections = corrections.length
+      ? `${asked}\n\nCorrections you gave at review:\n${corrections.map((c) => `- ${c}`).join('\n')}`
+      : asked;
+    // why: a second refresh before the request was confirmed keeps the text from the first.
+    const previous = asked ? sanitizeRequest(withCorrections) : (this.previousRequest(runId) ?? '');
+    // why: the summary is only rewritten when the model call succeeds; the old snapshot's must not survive.
+    rmSync(this.enhanceFile(runId, 'analysis-summary.md'), { force: true });
+    this.record(runId, 'repo.refresh', {
+      from: m.recorded,
+      to: m.current,
+      commits: m.commits,
+      previous,
+    });
+    this.enter(runId, 'ANALYZE');
+    return m;
   }
 
   /** REVIEW → APPROVED, optionally with a user-edited spec (revalidated). */
@@ -2453,6 +2676,8 @@ export class Engine {
               this.record(runId, 'run.done', { specOnly: true, hash: s.approvedHash });
               break;
             }
+            // why: the plan must be built on the repository as it is now, not as it was read (plan 025).
+            if (s.input.kind === 'enhance') await this.guardRepo(runId);
             this.enter(runId, 'SCAFFOLD');
             break;
           case 'SCAFFOLD':

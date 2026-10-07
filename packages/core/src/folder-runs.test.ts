@@ -10,10 +10,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GitHubMethod, GitOps } from '@incubator/git';
-import type { Capabilities } from '@incubator/llm';
+import type { Capabilities, FakeLlmAdapter } from '@incubator/llm';
 import { ToolError, nodeExec } from '@incubator/runtime';
 import { completeSpec, type IncubatorSpec } from '@incubator/spec';
-import { DefaultsPrompter, NonInteractivePrompter } from './prompter.js';
+import { DefaultsPrompter, NonInteractivePrompter, ScriptedPrompter } from './prompter.js';
 import { enhanceFixtureDir, fakePublishEngine, hashTree, seedExistingRepo } from './testing.js';
 
 const fakeAgent = path.resolve(import.meta.dirname, '../fixtures/handoff/fake-agent.mjs');
@@ -424,7 +424,7 @@ describe("update an existing solution in the owner's folder", () => {
     });
   });
 
-  it('parks, touching nothing, when the folder moved on between the scan and the delivery', async () => {
+  it('parks at approval, touching nothing, when the folder has new commits since the scan (plan 025)', async () => {
     const { h, ref, dir } = await seeded();
     const runId = start(h, dir, ref);
     const s = await h.engine.advance(runId, new NonInteractivePrompter());
@@ -435,10 +435,160 @@ describe("update an existing solution in the owner's folder", () => {
     const head = await out(['rev-parse', 'HEAD'], dir);
     h.engine.approve(runId);
     const parked = await h.engine.advance(runId, new DefaultsPrompter());
-    expect(parked.parked).toMatchObject({ reason: 'folder_changed' });
+    expect(parked.parked).toMatchObject({ state: 'APPROVED', reason: 'repo_moved' });
     expect(await out(['rev-parse', 'HEAD'], dir)).toBe(head);
     expect(await out(['branch', '--list', ENHANCE], dir)).toBe('');
     expect(await out(['status', '--porcelain'], dir)).toBe('');
+  });
+
+  it('parks, touching nothing, when uncommitted work appears in the folder between the scan and the delivery', async () => {
+    const { h, ref, dir } = await seeded();
+    const runId = start(h, dir, ref);
+    const s = await h.engine.advance(runId, new NonInteractivePrompter());
+    expect(s.parked).toMatchObject({ state: 'REVIEW' });
+    writeFileSync(path.join(dir, 'later.txt'), 'the owner kept working\n');
+    const head = await out(['rev-parse', 'HEAD'], dir);
+    h.engine.approve(runId);
+    const parked = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(parked.parked).toMatchObject({ reason: 'folder_changed' });
+    expect(await out(['rev-parse', 'HEAD'], dir)).toBe(head);
+    expect(await out(['branch', '--list', ENHANCE], dir)).toBe('');
+    expect(await out(['status', '--porcelain'], dir)).toBe('?? later.txt');
+  });
+
+  it('notices new commits, refuses to build on the old snapshot, and a refresh reads the folder again and asks to confirm the request (plan 025)', async () => {
+    const h = harness({ llm: { dir: enhanceFixtureDir('refresh') } });
+    const { ref, dir } = await seedExistingRepo(
+      h.github,
+      'bare-node',
+      path.join(analyzerFixtures, 'bare-node'),
+    );
+    await setOwner(dir);
+    const runId = start(h, dir, ref);
+    const waiting = new ScriptedPrompter({}, { approve: false, reason: 'owner is reading' });
+    expect((await h.engine.advance(runId, waiting)).parked).toMatchObject({ state: 'REVIEW' });
+    expect(await h.engine.repoMoved(runId)).toMatchObject({ moved: false });
+    const correction = 'Also let kitchen staff filter the export by date.';
+    h.engine.requestChanges(runId, correction);
+    expect((await h.engine.advance(runId, waiting)).parked).toMatchObject({ state: 'REVIEW' });
+    // The owner keeps working on the folder.
+    const before = await out(['rev-parse', 'HEAD'], dir);
+    mkdirSync(path.join(dir, 'src'), { recursive: true });
+    writeFileSync(path.join(dir, 'src', 'report.js'), 'export const report = () => [];\n');
+    await git(['add', '-A'], dir);
+    await git(['commit', '-q', '-m', 'add a report'], dir);
+    const head = await out(['rev-parse', 'HEAD'], dir);
+    expect(await h.engine.repoMoved(runId)).toEqual({
+      moved: true,
+      recorded: before,
+      current: head,
+      branch: 'main',
+      commits: 1,
+    });
+    // Approving does not build on the old snapshot.
+    h.engine.approve(runId);
+    const stopped = await h.engine.advance(runId, waiting);
+    expect(stopped.parked).toMatchObject({
+      state: 'APPROVED',
+      reason: 'repo_moved',
+      evidence: { recorded: before, current: head, commits: 1 },
+    });
+    expect(await out(['branch', '--list', ENHANCE], dir)).toBe('');
+    // The refresh reads the folder again and asks to confirm the request, the correction included.
+    await h.engine.refreshRepo(runId);
+    const asked = await h.engine.advance(runId, waiting);
+    const previous = `${REQUEST}\n\nCorrections you gave at review:\n- ${correction}`;
+    expect(asked.parked).toMatchObject({
+      state: 'REQUEST',
+      reason: 'needs_request',
+      evidence: { previous },
+    });
+    expect(h.engine.requestText(runId)).toBe('');
+    expect(h.engine.previousRequest(runId)).toBe(previous);
+    const scans = h.engine.entries(runId).filter((e) => e.type === 'enhance.scan');
+    expect(scans).toHaveLength(2);
+    expect(scans[1]!['hash']).not.toBe(scans[0]!['hash']);
+    const draft = h.engine.draft(runId) as { existingRepo?: { baseSha?: string } };
+    expect(draft.existingRepo?.baseSha).toBe(head);
+    expect(h.engine.state(runId).steps['folder.base']?.data).toMatchObject({ head });
+    expect(await h.engine.repoMoved(runId)).toMatchObject({ moved: false, commits: 0 });
+    // Confirming it drafts against the new scan; the old correction travels in the request text only.
+    h.engine.submitRequest(runId, previous);
+    expect((await h.engine.resume(runId, waiting)).parked).toMatchObject({ state: 'REVIEW' });
+    const llm = h.llm as FakeLlmAdapter;
+    expect(llm.calls.filter((c) => c.schemaName === 'AnalysisSummary')).toHaveLength(2);
+    const turns = llm.calls.filter((c) => c.schemaName === 'DiscoveryTurn');
+    expect(turns).toHaveLength(3);
+    expect(turns[2]!.user).toContain('Corrections you gave at review:');
+    expect(turns[2]!.user).not.toContain("## Owner's corrections at review");
+    expect(llm.remaining).toBe(0);
+    expect(h.engine.finalSpec(runId)!.intent.coreFeatures.map((f) => f.id)).toEqual([
+      'export-orders',
+      'export-filter',
+    ]);
+    // A second refresh sets aside the request confirmed since the first one, and keeps it to confirm again.
+    await h.engine.refreshRepo(runId);
+    expect(h.engine.requestText(runId)).toBe('');
+    expect(h.engine.previousRequest(runId)).toBe(previous);
+    expect(existsSync(path.join(h.store.runDir(runId), 'enhance', 'analysis-summary.md'))).toBe(
+      false,
+    );
+  });
+
+  it('notices a push to the GitHub repository of an update run outside a folder (plan 025)', async () => {
+    const h = harness({ llm: { dir: enhanceFixtureDir('refresh') } });
+    const { ref, dir } = await seedExistingRepo(
+      h.github,
+      'bare-node',
+      path.join(analyzerFixtures, 'bare-node'),
+    );
+    await setOwner(dir);
+    const runId = h.engine.start({
+      kind: 'enhance',
+      repo: h.github.remoteUrl(ref),
+      repoRef: ref,
+      request: REQUEST,
+      yes: true,
+      noPublish: true,
+      surface: 'test',
+    });
+    const waiting = new ScriptedPrompter({}, { approve: false, reason: 'owner is reading' });
+    expect((await h.engine.advance(runId, waiting)).parked).toMatchObject({ state: 'REVIEW' });
+    const before = await out(['rev-parse', 'HEAD'], dir);
+    expect(await h.engine.repoMoved(runId)).toMatchObject({ moved: false, recorded: before });
+    writeFileSync(path.join(dir, 'later.txt'), 'pushed by someone else\n');
+    await git(['add', '-A'], dir);
+    await git(['commit', '-q', '-m', 'later'], dir);
+    await git(['push', '-q', 'origin', 'HEAD:refs/heads/main'], dir);
+    const head = await out(['rev-parse', 'HEAD'], dir);
+    expect(await h.engine.repoMoved(runId)).toEqual({
+      moved: true,
+      recorded: before,
+      current: head,
+      branch: 'main',
+      commits: null,
+    });
+    h.engine.approve(runId);
+    expect((await h.engine.advance(runId, waiting)).parked).toMatchObject({
+      state: 'APPROVED',
+      reason: 'repo_moved',
+      evidence: { recorded: before, current: head, commits: null },
+    });
+  });
+
+  it('refuses a refresh once the plan is being built, and on a run that is not an update (plan 025)', async () => {
+    const { h, ref, dir } = await seeded();
+    const runId = start(h, dir, ref);
+    const s = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(s.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(await h.engine.repoMoved(runId)).toMatchObject({ moved: false });
+    await expect(h.engine.refreshRepo(runId)).rejects.toMatchObject({ code: 'too_late' });
+    const other = h.engine.startFromSpec(spec(), {
+      kind: 'new',
+      surface: 'test',
+      dir: freshFolder(),
+    });
+    await expect(h.engine.refreshRepo(other)).rejects.toMatchObject({ code: 'not_enhance' });
   });
 
   it('says there is nowhere to push when the folder has no GitHub origin, and ends committed locally', async () => {

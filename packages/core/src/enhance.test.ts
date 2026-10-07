@@ -453,6 +453,166 @@ describe('enhance', () => {
     );
   });
 
+  it('after a refresh, asks the earlier questions again with the earlier answers chosen (plan 026)', async () => {
+    const h = engineFor('refresh-questions');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const runId = start(h, dir, ref, { noPublish: true });
+    const reading = { approve: false, reason: 'owner is reading' } as const;
+    // The owner picks the answer that was not recommended for one of the two questions.
+    const first = new ScriptedPrompter({ 'request.dashboardExtras': 'nothing' }, reading);
+    expect((await h.engine.advance(runId, first)).parked).toMatchObject({ state: 'REVIEW' });
+    // The repository gets a new commit; the owner refreshes and confirms the request.
+    writeFileSync(path.join(dir, 'later.txt'), 'later\n');
+    await git(['add', '-A'], dir);
+    await git(
+      ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'later'],
+      dir,
+    );
+    expect(await h.engine.repoMoved(runId)).toMatchObject({ moved: true, commits: 1 });
+    await h.engine.refreshRepo(runId);
+    const waiting = new NonInteractivePrompter();
+    expect((await h.engine.advance(runId, waiting)).parked).toMatchObject({
+      state: 'REQUEST',
+      reason: 'needs_request',
+    });
+    h.engine.submitRequest(runId, h.engine.previousRequest(runId)!);
+    // Before any model call, the earlier questions come back with the earlier answers chosen.
+    const confirm = await h.engine.resume(runId, waiting);
+    expect(confirm.parked).toMatchObject({ state: 'CLARIFY', reason: 'needs_input' });
+    expect(confirm.round).toBe(0);
+    expect(confirm.carriedQuestions).toBe(true);
+    const llm = h.llm as FakeLlmAdapter;
+    expect(llm.calls.filter((c) => c.schemaName === 'DiscoveryTurn')).toHaveLength(2);
+    const q = confirm.pendingQuestions!;
+    expect(q.map((x) => x.key)).toEqual(['request.dashboardRecords', 'request.dashboardExtras']);
+    expect(q.map((x) => x.options.filter((o) => o.recommended).map((o) => o.value))).toEqual([
+      ['events-and-meets'],
+      ['nothing'],
+    ]);
+    // The owner keeps one answer and changes the other; the model then drafts with them as decisions.
+    const second = new ScriptedPrompter({ 'request.dashboardRecords': 'events-only' }, reading);
+    const done = await h.engine.resume(runId, second);
+    expect(done.parked).toMatchObject({ state: 'REVIEW' });
+    expect(done.carriedQuestions).toBe(false);
+    expect(h.engine.entries(runId).findLast((e) => e.type === 'answers')).toMatchObject({
+      round: 0,
+      answers: [
+        { key: 'request.dashboardRecords', value: 'events-only', source: 'user' },
+        { key: 'request.dashboardExtras', value: 'nothing', source: 'user' },
+      ],
+    });
+    expect(llm.calls.filter((c) => c.schemaName === 'DiscoveryTurn')).toHaveLength(3);
+    const redraft = llm.calls.filter((c) => c.schemaName === 'DiscoveryTurn')[2]!.user;
+    expect(redraft).toContain('# Discovery round 1 of 2');
+    expect(redraft).toContain(
+      '- request.dashboardRecords: "Which records should the Dashboard work on?" -> Events only (user)',
+    );
+    expect(llm.remaining).toBe(0);
+    const answered = h.engine
+      .finalSpec(runId)!
+      .decisions.filter((d) => d.key.startsWith('request.'));
+    expect(answered.map((d) => d.answer).sort()).toEqual(['Events only', 'Only the three actions']);
+  });
+
+  it('after a refresh, does not bring back answers given before a correction at review (plan 026)', async () => {
+    const h = engineFor('refresh-corrected');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const runId = start(h, dir, ref, { noPublish: true });
+    const reading = { approve: false, reason: 'owner is reading' } as const;
+    const first = new ScriptedPrompter({ 'request.dashboardExtras': 'nothing' }, reading);
+    expect((await h.engine.advance(runId, first)).parked).toMatchObject({ state: 'REVIEW' });
+    // The correction contradicts the earlier answer; it is a request.* key, so nothing supersedes it.
+    h.engine.requestChanges(runId, 'Show upcoming events on the Dashboard after all.');
+    expect((await h.engine.advance(runId, first)).parked).toMatchObject({ state: 'REVIEW' });
+    writeFileSync(path.join(dir, 'later.txt'), 'later\n');
+    await git(['add', '-A'], dir);
+    await git(
+      ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'later'],
+      dir,
+    );
+    await h.engine.refreshRepo(runId);
+    const waiting = new NonInteractivePrompter();
+    expect((await h.engine.advance(runId, waiting)).parked).toMatchObject({
+      reason: 'needs_request',
+    });
+    h.engine.submitRequest(runId, h.engine.previousRequest(runId)!);
+    const s = await h.engine.resume(runId, waiting);
+    // No carried round: the correction travels in the confirmed request, and no earlier answer is re-asserted.
+    expect(s.parked).toMatchObject({ state: 'REVIEW', reason: 'needs_review' });
+    expect(
+      h.engine.entries(runId).filter((e) => e.type === 'questions' && e['carried'] === true),
+    ).toEqual([]);
+    const redraft = (h.llm as FakeLlmAdapter).calls.filter(
+      (c) => c.schemaName === 'DiscoveryTurn',
+    )[3]!.user;
+    expect(redraft).toContain('Show upcoming events on the Dashboard after all.');
+    expect(redraft).not.toContain('Only the three actions');
+  });
+
+  it("records an earlier answer confirmed with --yes after a refresh as the owner's (plan 027)", async () => {
+    const h = engineFor('refresh-questions');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const runId = start(h, dir, ref, { noPublish: true });
+    const reading = { approve: false, reason: 'owner is reading' } as const;
+    const first = new ScriptedPrompter({ 'request.dashboardExtras': 'nothing' }, reading);
+    expect((await h.engine.advance(runId, first)).parked).toMatchObject({ state: 'REVIEW' });
+    writeFileSync(path.join(dir, 'later.txt'), 'later\n');
+    await git(['add', '-A'], dir);
+    await git(
+      ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'later'],
+      dir,
+    );
+    await h.engine.refreshRepo(runId);
+    const waiting = new NonInteractivePrompter();
+    expect((await h.engine.advance(runId, waiting)).parked).toMatchObject({
+      reason: 'needs_request',
+    });
+    h.engine.submitRequest(runId, h.engine.previousRequest(runId)!);
+    expect((await h.engine.resume(runId, waiting)).parked).toMatchObject({ state: 'CLARIFY' });
+    const done = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(done.state).toBe('DONE');
+    expect(
+      h.engine.entries(runId).find((e) => e.type === 'answers' && e['round'] === 0),
+    ).toMatchObject({
+      answers: [
+        { key: 'request.dashboardRecords', value: 'events-and-meets', source: 'user' },
+        { key: 'request.dashboardExtras', value: 'nothing', source: 'user' },
+      ],
+    });
+  });
+
+  it('keeps an earlier --yes default a default when it is confirmed again after a refresh (plan 027)', async () => {
+    const h = engineFor('refresh-questions');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const runId = start(h, dir, ref, { noPublish: true });
+    const reading = { approve: false, reason: 'owner is reading' } as const;
+    // --yes answered the first round: the owner never chose these answers.
+    const first = Object.assign(new DefaultsPrompter(), { review: () => Promise.resolve(reading) });
+    expect((await h.engine.advance(runId, first)).parked).toMatchObject({ state: 'REVIEW' });
+    writeFileSync(path.join(dir, 'later.txt'), 'later\n');
+    await git(['add', '-A'], dir);
+    await git(
+      ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'later'],
+      dir,
+    );
+    await h.engine.refreshRepo(runId);
+    const waiting = new NonInteractivePrompter();
+    expect((await h.engine.advance(runId, waiting)).parked).toMatchObject({
+      reason: 'needs_request',
+    });
+    h.engine.submitRequest(runId, h.engine.previousRequest(runId)!);
+    expect((await h.engine.resume(runId, waiting)).parked).toMatchObject({ state: 'CLARIFY' });
+    expect((await h.engine.resume(runId, new DefaultsPrompter())).state).toBe('DONE');
+    expect(
+      h.engine.entries(runId).find((e) => e.type === 'answers' && e['round'] === 0),
+    ).toMatchObject({
+      answers: [
+        { key: 'request.dashboardRecords', value: 'events-and-meets', source: 'default' },
+        { key: 'request.dashboardExtras', value: 'upcoming', source: 'default' },
+      ],
+    });
+  });
+
   it('heals a run whose draft an earlier build corrupted with option slugs', async () => {
     const h = engineFor('dashboard-questions');
     const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));

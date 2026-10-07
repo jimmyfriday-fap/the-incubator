@@ -10,6 +10,7 @@ import type {
   ProjectCard,
   ProjectDetail,
   Question,
+  RepoStatus,
   ReviewSummaryResponse,
   RunDetail,
   RunListItem,
@@ -393,6 +394,85 @@ describe('enhance over the API', () => {
       status: 'ready',
       summary: { headline: expect.stringContaining('filtered by date') as string },
     });
+  });
+
+  it("says when an update run's repository moved on, and a refresh reads it again and asks to confirm the request (plan 027)", async () => {
+    const { api, h } = await boot({ enhance: 'refresh' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        repo: dir,
+        repoRef: 'octo/bare-node',
+        request: REQUEST,
+      })
+    ).body;
+    await until(api, runId, (x) => !x.busy && x.parked?.state === 'REVIEW');
+    const before = (await api.get<RepoStatus>(`/api/runs/${runId}/repo-status`)).body;
+    expect(before).toMatchObject({ moved: false });
+    const git = (args: string[]) => nodeExec.run('git', args, { cwd: dir, timeoutMs: 30_000 });
+    writeFileSync(path.join(dir, 'later.txt'), 'later\n');
+    await git(['add', '-A']);
+    await git([
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@example.invalid',
+      'commit',
+      '-q',
+      '-m',
+      'later',
+    ]);
+    const moved = (await api.get<RepoStatus>(`/api/runs/${runId}/repo-status`)).body;
+    expect(moved).toMatchObject({ moved: true, recorded: before.recorded, commits: 1 });
+    expect((await api.post(`/api/runs/${runId}/refresh`)).status).toBe(200);
+    const asked = await until(api, runId, (x) => !x.busy && x.parked?.reason === 'needs_request');
+    expect(asked.parked?.evidence).toEqual({ previous: REQUEST });
+    expect(asked.enhance?.request).toBe('');
+    expect(asked.carriedQuestions).toBe(false);
+    const after = (await api.get<RepoStatus>(`/api/runs/${runId}/repo-status`)).body;
+    expect(after).toMatchObject({ moved: false, recorded: moved.current });
+    expect((await api.get('/api/runs/20200101-000000-aaaaaa/repo-status')).status).toBe(404);
+  });
+
+  it('marks the earlier questions asked again after a refresh as carried (plan 027)', async () => {
+    const { api, h } = await boot({ enhance: 'refresh-questions' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        repo: dir,
+        repoRef: 'octo/bare-node',
+        request: REQUEST,
+      })
+    ).body;
+    const first = await until(api, runId, (x) => !x.busy && x.parked?.state === 'CLARIFY');
+    expect(first.carriedQuestions).toBe(false);
+    const answers = first.questions!.map((q) => ({
+      key: q.key,
+      value: q.options.find((o) => o.recommended)!.value,
+    }));
+    expect((await api.post(`/api/runs/${runId}/answers`, { answers })).status).toBe(200);
+    await until(api, runId, (x) => !x.busy && x.parked?.state === 'REVIEW');
+    const git = (args: string[]) => nodeExec.run('git', args, { cwd: dir, timeoutMs: 30_000 });
+    writeFileSync(path.join(dir, 'later.txt'), 'later\n');
+    await git(['add', '-A']);
+    await git([
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@example.invalid',
+      'commit',
+      '-q',
+      '-m',
+      'later',
+    ]);
+    expect((await api.post(`/api/runs/${runId}/refresh`)).status).toBe(200);
+    await until(api, runId, (x) => !x.busy && x.parked?.reason === 'needs_request');
+    expect((await api.post(`/api/runs/${runId}/request`, { narrative: REQUEST })).status).toBe(200);
+    const again = await until(api, runId, (x) => !x.busy && x.parked?.state === 'CLARIFY');
+    expect(again).toMatchObject({ round: 0, carriedQuestions: true });
+    expect(again.questions?.map((q) => q.key)).toEqual(answers.map((a) => a.key));
   });
 
   it('serves a plain-English review summary at REVIEW, and says what the scan found', async () => {

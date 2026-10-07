@@ -22,6 +22,7 @@ import type {
   ProjectBrief,
   ProjectCard,
   ProjectDetail,
+  RepoStatus,
   RunDetail,
   RunListItem,
   SettingsView,
@@ -496,6 +497,7 @@ export function createApp(opts: ServerOptions): WebApp {
         failure: s.failure,
         questions:
           s.state === 'PARKED' && s.parked?.state === 'CLARIFY' ? s.pendingQuestions : null,
+        carriedQuestions: s.carriedQuestions,
         round: s.round,
         rev: s.rev,
         specComplete: engine.finalSpec(runId) !== null,
@@ -650,6 +652,22 @@ export function createApp(opts: ServerOptions): WebApp {
     },
     withRun((runId, req: { body: { text: string } }) => {
       driver.requestChanges(runId, req.body.text);
+      return { accepted: true };
+    }),
+  );
+
+  // Whether an update run's repository moved on since the run read it (plan 027). On a GitHub repository each call
+  // asks GitHub (ls-remote), so the screens ask when the run settles or the page loads, never on a timer.
+  app.get(
+    '/api/runs/:id/repo-status',
+    withRun((runId): Promise<RepoStatus> => engine.repoMoved(runId)),
+  );
+
+  // Reads an update run's repository again (plan 025): the owner then confirms what they asked for.
+  app.post(
+    '/api/runs/:id/refresh',
+    withRun(async (runId) => {
+      await driver.refresh(runId);
       return { accepted: true };
     }),
   );

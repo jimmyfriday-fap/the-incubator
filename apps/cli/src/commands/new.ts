@@ -54,10 +54,19 @@ export function reportRun(deps: CliDeps, io: Io, state: RunState, out?: string):
     io.stderr(
       `⏸ run ${state.runId} parked at ${state.parked?.state ?? '?'}: ${state.parked?.message ?? ''}\n`,
     );
+    const previous = (state.parked?.evidence as { previous?: unknown } | null | undefined)
+      ?.previous;
+    // why: after a refresh (plan 025) the owner confirms or edits what they asked for before.
+    if (state.parked?.reason === 'needs_request' && typeof previous === 'string')
+      io.stderr(
+        `  what you asked before (confirm it or edit it):\n${previous.replace(/^/gm, '    ')}\n`,
+      );
     io.stderr(
       state.parked?.reason === 'needs_request'
-        ? `  answer with: incubator resume ${state.runId} --prompt "what you want to change"\n`
-        : `  resume with: incubator resume ${state.runId}${state.parked?.reason === 'needs_input' || state.parked?.reason === 'needs_review' ? ' (interactively, or add --yes)' : ''}\n`,
+        ? `  answer with: incubator resume ${state.runId} --prompt "what you want to change"${typeof previous === 'string' ? ' (or --prompt-file <file> for a longer text)' : ''}\n`
+        : state.parked?.reason === 'repo_moved'
+          ? `  refresh with: incubator resume ${state.runId} --refresh\n`
+          : `  resume with: incubator resume ${state.runId}${state.parked?.reason === 'needs_input' || state.parked?.reason === 'needs_review' ? ' (interactively, or add --yes)' : ''}\n`,
     );
     return ExitCode.Policy;
   }

@@ -7,6 +7,8 @@ const recommended = (q: Question) => (q.options.find((o) => o.recommended) ?? q.
 export function Questions(props: {
   questions: Question[];
   round: number;
+  /** Earlier answers asked again after a refresh (plan 028): each one's earlier answer is selected. */
+  carried?: boolean;
   onSubmit(answers: { key: string; value: string }[]): Promise<unknown>;
 }) {
   const [chosen, setChosen] = useState<Record<string, string>>(() =>
@@ -21,7 +23,13 @@ export function Questions(props: {
   };
   return (
     <section className="card wide" data-testid="questions">
-      <h2>A few questions (round {props.round})</h2>
+      <h2>{props.carried ? 'Your earlier answers' : `A few questions (round ${props.round})`}</h2>
+      {props.carried && (
+        <p className="muted" data-testid="carried-note">
+          The repository was read again. These are the questions you answered before, with your
+          answer selected: keep it or pick another.
+        </p>
+      )}
       {props.questions.map((q) => (
         <fieldset key={q.key} className="question" data-testid={`question-${q.key}`}>
           <legend>{q.question}</legend>
@@ -35,7 +43,9 @@ export function Questions(props: {
                 onChange={() => setChosen((c) => ({ ...c, [q.key]: o.value }))}
               />
               {o.label}
-              {o.recommended && <span className="badge">recommended</span>}
+              {o.recommended && (
+                <span className="badge">{props.carried ? 'your answer' : 'recommended'}</span>
+              )}
             </label>
           ))}
         </fieldset>
@@ -52,7 +62,7 @@ export function Questions(props: {
             submit(Object.fromEntries(props.questions.map((q) => [q.key, recommended(q)])))
           }
         >
-          Accept all defaults
+          {props.carried ? 'Keep all my answers' : 'Accept all defaults'}
         </button>
       </div>
     </section>

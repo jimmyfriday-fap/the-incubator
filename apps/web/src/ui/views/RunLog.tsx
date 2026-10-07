@@ -31,8 +31,13 @@ function describe(e: LogEntry): string {
       return `correction at review: ${String(e['text'])}`;
     case 'answers.superseded':
       return `earlier answers replaced by a correction: ${(e['keys'] as string[]).join(', ')}`;
+    case 'repo.refresh': {
+      const to = typeof e['to'] === 'string' ? ` at ${e['to'].slice(0, 7)}` : '';
+      const n = typeof e['commits'] === 'number' ? e['commits'] : 0;
+      return `repository read again${to}${n > 0 ? ` (${n} new commit${n === 1 ? '' : 's'})` : ''}`;
+    }
     case 'questions':
-      return `${(e['questions'] as unknown[]).length} question(s)`;
+      return `${(e['questions'] as unknown[]).length} question(s)${e['carried'] === true ? ', asked again from before the refresh' : ''}`;
     default:
       return e.type;
   }

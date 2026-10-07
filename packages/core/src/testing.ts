@@ -230,6 +230,7 @@ export function faultyGit(inner: GitOps) {
         'checkout',
         'remoteAdd',
         'identity',
+        'countBetween',
       ] as const
     ).map((m) => [m, wrap(m)]),
   ) as unknown as GitOps;

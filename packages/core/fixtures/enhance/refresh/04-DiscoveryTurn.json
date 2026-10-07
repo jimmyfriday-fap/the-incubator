@@ -1,0 +1,32 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "plan 021: the update plan after the owner asked for a date filter",
+  "response": {
+    "draftSpec": {
+      "intent": {
+        "coreFeatures": [
+          {
+            "id": "export-orders",
+            "summary": "Export the day's orders as CSV from the existing /orders route",
+            "lane": "enhancement/existing"
+          },
+          {
+            "id": "export-filter",
+            "summary": "Filter the CSV export of orders by date on the existing /orders route",
+            "lane": "enhancement/existing"
+          }
+        ]
+      },
+      "decisions": [
+        {
+          "key": "intent.coreFeatures",
+          "question": "Which existing behaviour changes",
+          "answer": "GET /orders gains a CSV export with a date filter",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [],
+    "done": true
+  }
+}

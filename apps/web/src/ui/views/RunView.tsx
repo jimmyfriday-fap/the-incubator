@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { LogEntry, RunDetail } from '../../api-types.js';
+import type { LogEntry, RepoStatus, RunDetail } from '../../api-types.js';
 import { get, post } from '../api.js';
 import { ChangeRequest } from './ChangeRequest.js';
 import { Coding } from './Coding.js';
@@ -7,6 +7,7 @@ import { CommitRequest, PushRequest } from './FinishChanges.js';
 import { Crumbs, ProjectBanner } from './Projects.js';
 import { ModelsUsed } from './ModelsUsed.js';
 import { Questions } from './Questions.js';
+import { RepoMoved } from './RepoMoved.js';
 import { Review } from './Review.js';
 import { RunLog } from './RunLog.js';
 import { Summary } from './Summary.js';
@@ -24,6 +25,7 @@ export function RunView({ runId }: { runId: string }) {
   const [stopping, setStopping] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [tab, setTab] = useState<RunTab>('overview');
+  const [repo, setRepo] = useState<RepoStatus | null>(null);
 
   const refresh = useCallback(() => {
     get<RunDetail>(`/api/runs/${runId}`)
@@ -77,6 +79,27 @@ export function RunView({ runId }: { runId: string }) {
     if (step) setTab(follow);
   }, [step]);
 
+  // Whether the repository moved on since the run read it (plan 028): asked again each time the run settles.
+  const watchRepo = run?.kind === 'enhance' && !run.done && !run.busy;
+  useEffect(() => {
+    if (!watchRepo) {
+      setRepo(null);
+      return;
+    }
+    // why: an answer that lands after the run moved on (or after a newer ask) must not bring the banner back.
+    let live = true;
+    get<RepoStatus>(`/api/runs/${runId}/repo-status`)
+      .then((s) => {
+        if (live) setRepo(s);
+      })
+      .catch(() => {
+        if (live) setRepo(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [runId, watchRepo, step]);
+
   if (!run) return <p className={error ? 'error' : 'muted'}>{error ?? 'Loading…'}</p>;
   const reviewing = run.state === 'PARKED' && run.parked?.state === 'REVIEW' && !run.busy;
   const asking = run.state === 'PARKED' && run.parked?.reason === 'needs_input' && !run.busy;
@@ -84,8 +107,11 @@ export function RunView({ runId }: { runId: string }) {
   const committing = run.state === 'PARKED' && run.parked?.reason === 'needs_commit' && !run.busy;
   const pushing = run.state === 'PARKED' && run.parked?.reason === 'needs_push' && !run.busy;
   const coding = run.busy && (run.state === 'CODE' || run.finish?.stage === 'coding');
+  // why: a run parked because its repository moved on (plan 025) is refreshed, not resumed; the banner says so.
+  const movedAway = run.state === 'PARKED' && run.parked?.reason === 'repo_moved' && !!repo?.moved;
   const stuck =
     run.state === 'PARKED' &&
+    !movedAway &&
     !reviewing &&
     !asking &&
     !requesting &&
@@ -208,6 +234,9 @@ export function RunView({ runId }: { runId: string }) {
             {error}
           </p>
         )}
+        {repo?.moved && (
+          <RepoMoved status={repo} onRefresh={() => act(post(`/api/runs/${runId}/refresh`))} />
+        )}
         {stuck && run.parked && (
           <div className="parked" data-testid="parked">
             <p>
@@ -303,6 +332,7 @@ export function RunView({ runId }: { runId: string }) {
           <Questions
             questions={run.questions}
             round={run.round}
+            carried={run.carriedQuestions}
             onSubmit={(answers) => act(post(`/api/runs/${runId}/answers`, { answers }))}
           />
         )}

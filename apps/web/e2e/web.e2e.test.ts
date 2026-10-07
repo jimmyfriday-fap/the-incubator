@@ -620,6 +620,79 @@ describe('web UI (Playwright, fakes)', () => {
     expect(errors, errors.join('\n')).toEqual([]);
   });
 
+  it('refresh: the repository moved on; the owner reads it again and confirms the request and earlier answers (plan 028)', async () => {
+    const REQ = 'Kitchen staff need to export the orders list as a CSV file at the end of the day.';
+    const { h, page, errors } = await open({ enhance: 'refresh-web' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    await intent(page).selectOption({ label: 'Update an existing solution' });
+    await page.getByTestId('folder-path').fill(dir);
+    await page.getByTestId('repo-ref').fill('octo/bare-node');
+    await expect.poll(() => page.getByTestId('start-enhance').isDisabled(), UI).toBe(false);
+    await page.getByTestId('start-enhance').click();
+    await page.waitForURL(/\/runs\/[\w-]+$/);
+    await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
+    expect(await page.getByTestId('request-previous-note').count()).toBe(0);
+    await page.getByTestId('request-text').fill(REQ);
+    await page.getByTestId('submit-request').click();
+    // The first questions: the owner picks the answer that is not recommended for one of them.
+    await page.getByTestId('questions').waitFor({ timeout: 30_000 });
+    await page
+      .getByTestId('question-request.dashboardExtras')
+      .getByLabel('Only the three actions')
+      .check();
+    await page.getByTestId('submit-answers').click();
+    await page.getByTestId('review').waitFor({ timeout: 30_000 });
+    await page.getByTestId('brief-headline').waitFor({ timeout: 30_000 });
+    expect(await page.getByTestId('repo-moved').count()).toBe(0);
+
+    // The owner keeps working on the folder; on the next visit the page says so.
+    writeFileSync(path.join(dir, 'later.txt'), 'the owner kept working\n');
+    await nodeExec.run('git', ['add', '-A'], { cwd: dir, timeoutMs: 30_000 });
+    await nodeExec.run('git', ['commit', '-q', '-m', 'later'], { cwd: dir, timeoutMs: 30_000 });
+    await page.reload();
+    await page.getByTestId('repo-moved').waitFor({ timeout: 30_000 });
+    expect(await page.getByTestId('repo-moved').textContent()).toContain('1 new commit');
+    await shot(page, 'refresh-1-moved');
+    // Approving now would build on code that changed: the run parks and offers Refresh, not a Resume.
+    await page.getByTestId('approve').click();
+    await expect.poll(() => page.getByTestId('review').count(), UI).toBe(0);
+    await page.getByTestId('repo-moved').waitFor({ timeout: 30_000 });
+    expect(await state(page).textContent()).toBe('PARKED');
+    expect(await page.getByTestId('parked').count()).toBe(0);
+    expect(await page.getByTestId('resume').count()).toBe(0);
+    await page.getByTestId('refresh-repo').click();
+
+    // The request comes back filled in, to confirm or edit.
+    await page.getByTestId('request-previous-note').waitFor({ timeout: 30_000 });
+    expect(await page.getByTestId('request-text').inputValue()).toBe(REQ);
+    expect(await page.getByTestId('repo-moved').count()).toBe(0);
+    await shot(page, 'refresh-2-request');
+    await page.getByTestId('submit-request').click();
+
+    // The earlier questions come back with the earlier answers selected.
+    await page.getByTestId('carried-note').waitFor({ timeout: 30_000 });
+    expect(
+      await page
+        .getByTestId('question-request.dashboardExtras')
+        .getByLabel('Only the three actions')
+        .isChecked(),
+    ).toBe(true);
+    expect(await page.getByTestId('accept-defaults').textContent()).toBe('Keep all my answers');
+    expect(await page.getByTestId('questions').textContent()).not.toContain('recommended');
+    await shot(page, 'refresh-3-answers');
+    await page.getByTestId('submit-answers').click();
+    await page.getByTestId('review').waitFor({ timeout: 30_000 });
+    await page.getByTestId('brief-headline').waitFor({ timeout: 30_000 });
+    await page.getByTestId('runtab-log').click();
+    await expect
+      .poll(() => page.getByTestId('run-log').textContent(), UI)
+      .toContain('repository read again');
+    await expect
+      .poll(() => page.getByTestId('run-log').textContent(), UI)
+      .toContain('asked again from before the refresh');
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
   it('update: a GitHub remote that is not origin is suggested and pre-fills the repository field', async () => {
     const { h, page, errors } = await open();
     const { dir } = await seedAdoptRepo(h, 'bare-node');

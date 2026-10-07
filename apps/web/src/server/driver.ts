@@ -168,6 +168,20 @@ export class RunDriver {
     this.spawn(runId, () => this.engine.advance(runId, new WebPrompter()));
   }
 
+  /** Reads an update run's repository again (plan 025); the run then asks the owner to confirm their request. */
+  async refresh(runId: string): Promise<void> {
+    if (this.#busy.has(runId)) throw new ConflictError(`run ${runId} is already working`);
+    try {
+      await this.engine.refreshRepo(runId);
+    } catch (err) {
+      // why: work started while the repository was being read; that is a conflict, not a bad request.
+      if (err instanceof PolicyError && err.code === 'working')
+        throw new ConflictError(err.message);
+      throw err;
+    }
+    this.spawn(runId, () => this.engine.advance(runId, new WebPrompter()));
+  }
+
   /** REVIEW → APPROVED (optionally with an edited spec), then continues in the background. */
   approve(runId: string, spec?: IncubatorSpec): void {
     this.parkedAt(runId, 'REVIEW');

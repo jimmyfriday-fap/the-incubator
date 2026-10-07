@@ -22,7 +22,9 @@ export class TerminalPrompter implements Prompter {
 
   async ask(questions: readonly AskedQuestion[], round: number): Promise<Answer[]> {
     this.io.stderr(
-      `\nRound ${round}: ${questions.length} question(s). The recommended option is preselected.\n`,
+      round === 0
+        ? `\nYour earlier answers, from before the repository was read again: ${questions.length} question(s). Your answer then is preselected.\n`
+        : `\nRound ${round}: ${questions.length} question(s). The recommended option is preselected.\n`,
     );
     const answers: Answer[] = [];
     for (const q of questions) {

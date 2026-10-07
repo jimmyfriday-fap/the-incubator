@@ -139,6 +139,21 @@ describe('GitOps', () => {
     expect(await git.headSha(path.join(root, 'dest'))).toBeTruthy();
   });
 
+  it('counts the commits between two points, and says null for anything that is not a commit id (plan 025)', async () => {
+    const dir = await repo();
+    const a = (await git.headSha(dir))!;
+    writeFileSync(path.join(dir, 'b.txt'), 'two\n');
+    await git.addAll(dir);
+    await git.commit(dir, 'chore: two', ident);
+    writeFileSync(path.join(dir, 'c.txt'), 'three\n');
+    await git.addAll(dir);
+    const c = await git.commit(dir, 'chore: three', ident);
+    expect(await git.countBetween(dir, a, c)).toBe(2);
+    expect(await git.countBetween(dir, c, a)).toBe(0);
+    expect(await git.countBetween(dir, '--all', c)).toBeNull();
+    expect(await git.countBetween(dir, 'f'.repeat(40), c)).toBeNull();
+  });
+
   it('reports the checked-out branch, and null when HEAD is unborn or detached', async () => {
     const dir = tmp('gitops-branch-');
     await git.init(dir, 'trunk');

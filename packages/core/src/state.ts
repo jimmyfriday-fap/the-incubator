@@ -22,6 +22,9 @@ export const RUN_STATES = [
 ] as const;
 export type RunStateName = (typeof RUN_STATES)[number];
 
+/** The steps a repository refresh runs again (plan 025): the folder check, the copy, and the summary. */
+const REFRESHED_STEPS: readonly string[] = ['folder.base', 'adopt.acquire', 'enhance.summary'];
+
 export interface AskedOption {
   value: string;
   label: string;
@@ -48,6 +51,8 @@ export interface RunState {
   /** Latest spec revision number (0 = none). */
   rev: number;
   pendingQuestions: AskedQuestion[] | null;
+  /** The pending questions were answered before a refresh and are asked again to confirm (plan 026). */
+  carriedQuestions: boolean;
   parked: { state: RunStateName; reason: string; message: string; evidence?: unknown } | null;
   /** The last attempt stopped on an error (not a park); resume retries `state`. */
   failure: { state: RunStateName; message: string } | null;
@@ -71,6 +76,7 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
     round: 0,
     rev: 0,
     pendingQuestions: null,
+    carriedQuestions: false,
     parked: null,
     failure: null,
     stopped: null,
@@ -111,10 +117,14 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
         s = { ...s, llmCostUsd: s.llmCostUsd + ((e['costUsd'] as number | undefined) ?? 0) };
         break;
       case 'questions':
-        s = { ...s, pendingQuestions: e['questions'] as AskedQuestion[] };
+        s = {
+          ...s,
+          pendingQuestions: e['questions'] as AskedQuestion[],
+          carriedQuestions: e['carried'] === true,
+        };
         break;
       case 'answers':
-        s = { ...s, pendingQuestions: null };
+        s = { ...s, pendingQuestions: null, carriedQuestions: false };
         break;
       case 'spec.approved':
         s = { ...s, approvedHash: e['hash'] as string };
@@ -180,6 +190,19 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
         break;
       case 'run.done':
         s = { ...s, state: 'DONE', done: true, failure: null, stopped: null };
+        break;
+      case 'repo.refresh':
+        // why: a refresh (plan 025) reads the repository again, so the steps that checked, copied and
+        // summarised it run again, and the new plan needs approving again.
+        s = {
+          ...s,
+          steps: Object.fromEntries(
+            Object.entries(s.steps).filter(([id]) => !REFRESHED_STEPS.includes(id)),
+          ),
+          pendingQuestions: null,
+          carriedQuestions: false,
+          approvedHash: null,
+        };
         break;
       default:
         break;

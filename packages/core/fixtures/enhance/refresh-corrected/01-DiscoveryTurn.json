@@ -1,0 +1,37 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "attempt 2: the same questions keyed request.<topic>",
+  "response": {
+    "draftSpec": {
+      "intent": {
+        "coreFeatures": [
+          { "id": "dashboard", "summary": "A Dashboard landing page", "lane": "enhancement/new" }
+        ]
+      },
+      "decisions": [
+        { "key": "intent.coreFeatures", "question": "Scope", "answer": "dashboard", "source": "inferred" }
+      ]
+    },
+    "questions": [
+      {
+        "key": "request.dashboardRecords",
+        "question": "Which records should the Dashboard work on?",
+        "impact": 8,
+        "options": [
+          { "value": "events-and-meets", "label": "Events and meets", "recommended": true },
+          { "value": "events-only", "label": "Events only", "recommended": false }
+        ]
+      },
+      {
+        "key": "request.dashboardExtras",
+        "question": "What else should the Dashboard show?",
+        "impact": 5,
+        "options": [
+          { "value": "upcoming", "label": "Upcoming events", "recommended": true },
+          { "value": "nothing", "label": "Only the three actions", "recommended": false }
+        ]
+      }
+    ],
+    "done": false
+  }
+}

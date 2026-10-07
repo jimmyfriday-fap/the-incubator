@@ -18,6 +18,7 @@ export async function runResume(
     out?: string;
     prompt?: string;
     promptFile?: string;
+    refresh?: boolean;
   } & FinishFlags &
     CheckOptions,
 ): Promise<number> {
@@ -30,6 +31,13 @@ export async function runResume(
   );
   if (opts.prompt && opts.promptFile)
     throw new PolicyError('use either --prompt or --prompt-file, not both', { code: 'usage' });
+  if (opts.refresh && (opts.prompt !== undefined || opts.promptFile !== undefined))
+    throw new PolicyError(
+      'use --refresh on its own; confirm what you asked with --prompt afterwards',
+      { code: 'usage' },
+    );
+  // Update runs: read the repository again; the run then asks to confirm what was asked (plan 025).
+  if (opts.refresh) await deps.engine.refreshRepo(runId);
   const request = opts.promptFile
     ? readFileSync(path.resolve(opts.promptFile), 'utf8')
     : opts.prompt;

@@ -1,0 +1,22 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "round 2: the model folds the answers into the feature list itself",
+  "response": {
+    "draftSpec": {
+      "intent": {
+        "coreFeatures": [
+          {
+            "id": "dashboard",
+            "summary": "A Dashboard landing page with Create, Search and Update for events and meets, plus upcoming events",
+            "lane": "enhancement/new"
+          }
+        ]
+      },
+      "decisions": [
+        { "key": "intent.coreFeatures", "question": "Scope", "answer": "dashboard", "source": "inferred" }
+      ]
+    },
+    "questions": [],
+    "done": true
+  }
+}
