@@ -499,6 +499,13 @@ select {
   min-width: 14rem;
 }
 
+input[type='file'] {
+  display: block;
+  margin-top: 6px;
+  font: inherit;
+  font-weight: 400;
+}
+
 input[type='checkbox'],
 input[type='radio'] {
   accent-color: var(--primary);
