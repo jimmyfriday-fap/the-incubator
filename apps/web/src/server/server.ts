@@ -31,9 +31,9 @@ import type {
 } from '../api-types.js';
 import { ConflictError, RunDriver } from './driver.js';
 import { expectedOrigin } from './origin.js';
-import { CSRF_HEADER, Guard, SECURITY_HEADERS } from './security.js';
+import { CSRF_HEADER, Guard, SECURITY_HEADERS, parseCookies } from './security.js';
 import { specDiff } from './spec-diff.js';
-import { defaultUiDir, readAsset } from './static.js';
+import { defaultUiDir, readAsset, stampTheme } from './static.js';
 
 /**
  * Things only the embedding host can do for the page (ADR-022). The renderer never reaches the
@@ -830,6 +830,18 @@ export function createApp(opts: ServerOptions): WebApp {
         .code(404)
         .type('text/plain; charset=utf-8')
         .send('Not found. (Is the UI built? pnpm --filter @incubator/web build:ui)');
+    // why: the app shell carries the owner's light or dark choice, so it paints in that theme at once (plan 033);
+    // no-store, because the same address answers differently once the choice changes.
+    if (asset.type.startsWith('text/html'))
+      return reply
+        .type(asset.type)
+        .header('cache-control', 'no-store')
+        .send(
+          stampTheme(
+            asset.body.toString('utf8'),
+            parseCookies(req.headers.cookie)['incubator_theme'],
+          ),
+        );
     return reply.type(asset.type).send(asset.body);
   });
 

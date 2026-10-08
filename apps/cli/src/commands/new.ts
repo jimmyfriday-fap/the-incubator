@@ -72,10 +72,17 @@ export function reportRun(deps: CliDeps, io: Io, state: RunState, out?: string):
     if (
       state.parked?.state === 'REVIEW' &&
       (state.input.kind === 'new' || state.input.kind === 'enhance')
-    )
+    ) {
+      // why: the plan to approve, in the terminal too; after --change it is the plan drafted again (plan 034).
+      const features = deps.engine.finalSpec(state.runId)?.intent.coreFeatures ?? [];
+      if (features.length > 0)
+        io.stderr(
+          `  the plan:\n${features.map((f) => `    - ${f.id}: ${f.summary}`).join('\n')}\n`,
+        );
       io.stderr(
         `  change the plan with: incubator resume ${state.runId} --change "what to change"\n`,
       );
+    }
     return ExitCode.Policy;
   }
   if (state.state === 'DONE' && state.input.kind === 'enhance')

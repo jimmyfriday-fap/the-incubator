@@ -4,12 +4,18 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
-import { RUN_ID_PATTERN, ToolError, incubatorHome, newRunId, type Clock } from '@incubator/runtime';
+import {
+  RUN_ID_PATTERN,
+  ToolError,
+  incubatorHome,
+  newRunId,
+  removeTree,
+  type Clock,
+} from '@incubator/runtime';
 import { serializeSpec } from '@incubator/spec';
 import { Journal } from './journal.js';
 
@@ -139,6 +145,6 @@ export class RunStore {
   }
 
   remove(runId: string): void {
-    rmSync(this.runDir(runId), { recursive: true, force: true });
+    removeTree(this.runDir(runId));
   }
 }

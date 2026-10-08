@@ -10,3 +10,4 @@ export * from './ids.js';
 export * from './exec.js';
 export * from './log.js';
 export * from './keychain.js';
+export * from './fs-remove.js';
