@@ -124,7 +124,8 @@ export const PACKAGE_MANAGERS_FOR_PACK: Record<
   other: ['other'],
 };
 
-export const DEFAULT_RUN_CEILINGS = { turns: 60, toolCalls: 400, minutes: 45, usd: 10 } as const;
+// why: 150 turns (replies) per agent session; 60 stopped real update runs a few minutes in (plan 035).
+export const DEFAULT_RUN_CEILINGS = { turns: 150, toolCalls: 400, minutes: 45, usd: 10 } as const;
 
 export const DEFAULT_DENIED_ACTIONS: readonly string[] = [
   'force-push',

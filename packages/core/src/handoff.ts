@@ -119,6 +119,8 @@ export class CeilingMonitor {
   /** The model the agent says it is using (its `system` init event). */
   model: string | null = null;
   #buf = '';
+  /** The replies already counted as turns (plan 035). */
+  #replies = new Set<string>();
 
   constructor(
     private readonly ceilings: Ceilings,
@@ -141,7 +143,7 @@ export class CeilingMonitor {
       type?: string;
       subtype?: string;
       model?: unknown;
-      message?: { content?: { type?: string; text?: unknown }[] };
+      message?: { id?: unknown; content?: { type?: string; text?: unknown }[] };
       result?: unknown;
       total_cost_usd?: number;
       cost_usd?: number;
@@ -154,7 +156,13 @@ export class CeilingMonitor {
     if (e.type === 'system' && e.subtype === 'init' && typeof e.model === 'string')
       this.model = cleanAgentText(e.model, 100);
     if (e.type === 'assistant') {
-      this.turns++;
+      // why: Claude's stream sends one `assistant` event per content block of a reply, all with the reply's
+      // message id; a turn is one reply (plan 035). Events without an id count one turn each, as before.
+      const id = typeof e.message?.id === 'string' ? e.message.id : null;
+      if (id === null || !this.#replies.has(id)) {
+        if (id !== null) this.#replies.add(id);
+        this.turns++;
+      }
       const blocks = e.message?.content ?? [];
       this.toolCalls += blocks.filter((c) => c.type === 'tool_use').length;
       const text = blocks.find(

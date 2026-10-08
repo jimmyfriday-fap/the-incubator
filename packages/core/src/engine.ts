@@ -14,6 +14,7 @@ import type { Capabilities, LlmAdapter, LlmAdapterId } from '@incubator/llm';
 import { complete } from '@incubator/llm';
 import type { GitOps, RepoRef } from '@incubator/git';
 import {
+  DEFAULT_RUN_CEILINGS,
   ENHANCEMENT_SPEC_VERSION,
   OTHER,
   completeSpec,
@@ -2023,7 +2024,7 @@ export class Engine {
       throw new PolicyError(`${AGENT_ADAPTERS[agent]} is not installed`, { code: 'agent_missing' });
     const c = spec.agents.runCeilings;
     const ceilings = {
-      turns: c.turns > 0 ? c.turns : 60,
+      turns: c.turns > 0 ? c.turns : DEFAULT_RUN_CEILINGS.turns,
       toolCalls: c.toolCalls > 0 ? c.toolCalls : 400,
       minutes: c.minutes > 0 ? c.minutes : 45,
       usd: c.usd > 0 ? c.usd : 10,

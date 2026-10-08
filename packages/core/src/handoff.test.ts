@@ -163,6 +163,32 @@ describe('handoff', () => {
     );
   });
 
+  it('counts one turn per reply when a reply arrives as several events (plan 035)', () => {
+    const m = new CeilingMonitor({ turns: 2, toolCalls: 99, minutes: 1, usd: 9 }, false);
+    const block = (id: string, type: 'text' | 'tool_use') =>
+      `${JSON.stringify({ type: 'assistant', message: { id, content: [type === 'text' ? { type, text: 'x' } : { type }] } })}\n`;
+    m.feed(block('msg_1', 'text') + block('msg_1', 'tool_use') + block('msg_1', 'tool_use'));
+    expect([m.turns, m.toolCalls]).toEqual([1, 2]);
+    expect(m.feed(block('msg_2', 'tool_use') + block('msg_2', 'tool_use'))).toBeNull();
+    expect([m.turns, m.toolCalls]).toEqual([2, 4]);
+    expect(m.feed(block('msg_3', 'text'))).toBe('turns 3 > 2');
+  });
+
+  it('replays the shape of a real run that was stopped too early: 61 events, 27 replies (plan 035)', () => {
+    const m = new CeilingMonitor({ turns: 60, toolCalls: 400, minutes: 45, usd: 10 }, false);
+    let events = 0;
+    for (let i = 0; i < 27; i++)
+      for (let j = 0; j < (i < 7 ? 3 : 2); j++) {
+        events++;
+        m.feed(
+          `${JSON.stringify({ type: 'assistant', message: { id: `msg_${i}`, content: [{ type: j === 0 ? 'text' : 'tool_use', text: 'x' }] } })}\n`,
+        );
+      }
+    expect(events).toBe(61);
+    expect(m.turns).toBe(27);
+    expect(m.tripped).toBeNull();
+  });
+
   it('keeps what the agent said: the result text, else its last message, cleaned and capped', () => {
     const line = (e: unknown) => `${JSON.stringify(e)}\n`;
     const text = (t: string) => ({

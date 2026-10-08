@@ -113,7 +113,7 @@
       "cursor"
     ],
     "runCeilings": {
-      "turns": 60,
+      "turns": 150,
       "toolCalls": 400,
       "minutes": 45,
       "usd": 10
@@ -293,7 +293,7 @@
     {
       "key": "agents.runCeilings.turns",
       "question": "Default for agents.runCeilings.turns",
-      "answer": "60",
+      "answer": "150",
       "source": "default"
     },
     {
