@@ -80,3 +80,24 @@ export function historyActionForKey(input: KeyInput, platform: string): HistoryA
 export function historyActionForCommand(command: string): HistoryAction | null {
   return command === 'browser-backward' ? 'back' : command === 'browser-forward' ? 'forward' : null;
 }
+
+/** The cookie that holds the page's light or dark choice (plan 030); `apps/web/src/ui/theme.ts` writes it. */
+export const THEME_COOKIE = 'incubator_theme';
+
+/** What the window's title bar follows for a cookie value (plan 033): the choice, or the computer's setting. */
+export function themeSourceFor(value: string | undefined): 'system' | 'light' | 'dark' {
+  return value === 'light' || value === 'dark' ? value : 'system';
+}
+
+/** The title bar's theme after a cookie change Chromium reports (plan 033); null leaves it as it is. */
+export function themeSourceAfterChange(
+  name: string,
+  value: string,
+  cause: string,
+  removed: boolean,
+): 'system' | 'light' | 'dark' | null {
+  if (name !== THEME_COOKIE) return null;
+  // why: replacing a cookie first reports the old one removed ('overwrite'), then the new one added.
+  if (removed && cause === 'overwrite') return null;
+  return removed ? 'system' : themeSourceFor(value);
+}

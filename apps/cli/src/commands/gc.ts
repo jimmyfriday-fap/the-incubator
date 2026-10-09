@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { ExitCode } from '@incubator/runtime';
+import { ExitCode, removeTree } from '@incubator/runtime';
 import type { CliDeps } from '../deps.js';
 import type { Io } from '../io.js';
 
@@ -29,7 +29,7 @@ export function runGc(deps: CliDeps, io: Io, opts: { days?: string; dryRun?: boo
     const age = last ? Date.parse(last) : 0;
     if (age <= cutoff) {
       io.stdout(`${opts.dryRun ? 'would remove' : 'removed'} run ${runId}\n`);
-      if (!opts.dryRun) rmSync(dir, { recursive: true, force: true });
+      if (!opts.dryRun) removeTree(dir);
       removed++;
       continue;
     }
@@ -37,7 +37,7 @@ export function runGc(deps: CliDeps, io: Io, opts: { days?: string; dryRun?: boo
       const w = path.join(dir, sub);
       if (!existsSync(w)) continue;
       io.stdout(`${opts.dryRun ? 'would remove' : 'removed'} ${sub} of ${runId}\n`);
-      if (!opts.dryRun) rmSync(w, { recursive: true, force: true });
+      if (!opts.dryRun) removeTree(w);
       workspaces++;
     }
   }

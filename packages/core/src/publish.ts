@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import {
   PolicyError,
+  removeTree,
   sha256Hex,
   type Clock,
   type Logger,
@@ -261,7 +262,7 @@ export class Publisher {
       this.renderIntoFolder(ctx, dirs, out.result);
       ctx.record('step.ok', { step: 'render', data: want });
     } else if (!intact) {
-      rmSync(ctx.workspace, { recursive: true, force: true });
+      removeTree(ctx.workspace);
       mkdirSync(ctx.workspace, { recursive: true });
       writeTree(out.result, dirs.app, {
         mode: 'fresh',
@@ -468,12 +469,9 @@ export class Publisher {
         )
       )?.created ?? [];
     if (!ctx.keep && !ctx.localDir)
-      await this.step(
-        ctx,
-        'cleanup',
-        () => Promise.resolve(rmSync(ctx.workspace, { recursive: true, force: true })),
-        { fatal: false },
-      );
+      await this.step(ctx, 'cleanup', () => Promise.resolve(removeTree(ctx.workspace)), {
+        fatal: false,
+      });
     const url = (ref: RepoRef) => `https://github.com/${ref.owner}/${ref.name}`;
     return {
       repo: url(app),

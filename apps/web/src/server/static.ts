@@ -48,3 +48,13 @@ export function readAsset(root: string, urlPath: string): { type: string; body: 
     body: readFileSync(file),
   };
 }
+
+/**
+ * The app shell with the owner's light or dark choice already on `<html>` (plan 033), so a dark choice is dark from
+ * the first paint. `choice` is the `incubator_theme` cookie; anything but `light` or `dark` leaves the page as is.
+ */
+export function stampTheme(html: string, choice: string | undefined): string {
+  return choice === 'light' || choice === 'dark'
+    ? html.replace('<html lang="en">', `<html lang="en" data-theme="${choice}">`)
+    : html;
+}

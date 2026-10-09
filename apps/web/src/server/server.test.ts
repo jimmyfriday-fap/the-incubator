@@ -22,7 +22,7 @@ import { apiClient, seedAdoptRepo, startFakeServer } from '../testing-fixtures/f
 import type { RunningServer } from './server.js';
 import { Guard, parseCookies, safeEqual } from './security.js';
 import { specDiff } from './spec-diff.js';
-import { readAsset, resolveAsset } from './static.js';
+import { readAsset, resolveAsset, stampTheme } from './static.js';
 
 const open: RunningServer[] = [];
 afterEach(async () => {
@@ -898,6 +898,40 @@ describe('helpers', () => {
     expect(readAsset(root, '/runs/abc')?.type).toBe('text/html; charset=utf-8');
     expect(readAsset(root, '/assets/missing.js')).toBeNull();
     expect(readAsset(path.join(root, 'none'), '/')).toBeNull();
+  });
+
+  it('stamps the light or dark choice on the app shell, so it paints in that theme (plan 033)', async () => {
+    const shell = '<html lang="en"><head>';
+    expect(stampTheme(shell, 'dark')).toBe('<html lang="en" data-theme="dark"><head>');
+    expect(stampTheme(shell, 'light')).toBe('<html lang="en" data-theme="light"><head>');
+    for (const other of [undefined, '', 'system', '"><script>'])
+      expect(stampTheme(shell, other)).toBe(shell);
+    // The real app shell starts with the tag the stamp looks for.
+    expect(readFileSync(path.resolve(import.meta.dirname, '../ui/index.html'), 'utf8')).toContain(
+      '<html lang="en">',
+    );
+    const root = mkdtempSync(path.join(os.tmpdir(), 'ui-'));
+    writeFileSync(
+      path.join(root, 'index.html'),
+      '<!doctype html>\n<html lang="en"><body></body></html>',
+    );
+    const { server } = await startFakeServer({ uiDir: root });
+    open.push(server);
+    const api = await apiClient(server);
+    const page = (cookie: string) => fetch(`${server.origin}/runs/x`, { headers: { cookie } });
+    const dark = await page(`${api.cookie}; incubator_theme=dark`);
+    expect(dark.status).toBe(200);
+    expect(await dark.text()).toContain('<html lang="en" data-theme="dark"><body>');
+    expect(dark.headers.get('cache-control')).toBe('no-store');
+    expect(await (await page(api.cookie)).text()).toContain('<html lang="en"><body>');
+    // Only the app shell is stamped and kept out of caches; scripts, styles and fonts are served as they are.
+    mkdirSync(path.join(root, 'assets'));
+    writeFileSync(path.join(root, 'assets', 'a.js'), '// <html lang="en">');
+    const js = await fetch(`${server.origin}/assets/a.js`, {
+      headers: { cookie: `${api.cookie}; incubator_theme=dark` },
+    });
+    expect(await js.text()).toBe('// <html lang="en">');
+    expect(js.headers.get('cache-control')).toBeNull();
   });
 });
 

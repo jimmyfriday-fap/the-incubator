@@ -8,6 +8,7 @@ import {
   BrowserWindow,
   dialog,
   Menu,
+  nativeTheme,
   session,
   shell,
   type MenuItemConstructorOptions,
@@ -25,6 +26,9 @@ import {
   leantimeHosts,
   navigationAllowed,
   secureWebPreferences,
+  THEME_COOKIE,
+  themeSourceAfterChange,
+  themeSourceFor,
 } from './window.js';
 
 declare const __INCUBATOR_TEST_BUILD__: boolean;
@@ -192,6 +196,15 @@ async function main(): Promise<void> {
         return [];
       }
     };
+    // The title bar follows the page's light or dark choice (plan 033). The page keeps it in a cookie; the window
+    // reads that cookie at start and whenever it changes (no IPC, ADR-012).
+    // why: a cookie store that cannot be read must not stop the app; the title bar then follows the computer.
+    const saved = await session.defaultSession.cookies.get({ name: THEME_COOKIE }).catch(() => []);
+    nativeTheme.themeSource = themeSourceFor(saved[0]?.value);
+    session.defaultSession.cookies.on('changed', (_e, cookie, cause, removed) => {
+      const next = themeSourceAfterChange(cookie.name, cookie.value, cause, removed);
+      if (next) nativeTheme.themeSource = next;
+    });
     const main = new BrowserWindow({
       width: 1280,
       height: 900,

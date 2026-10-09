@@ -777,6 +777,10 @@ describe('web UI (Playwright, fakes)', () => {
     expect(await bg()).toBe(dark);
     expect(await page.getByTestId('theme-toggle').getAttribute('data-theme-choice')).toBe('dark');
     await shot(page, 'theme-dark');
+    // The server stamps the choice on the page itself, so it is dark before any script runs (plan 033).
+    expect(await (await page.request.get(page.url())).text()).toContain(
+      '<html lang="en" data-theme="dark">',
+    );
     // The next launch listens on another port (another origin); the choice is still there.
     const { server: next } = await startFakeServer({
       uiDir: UI_DIR,

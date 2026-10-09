@@ -698,6 +698,10 @@ describe('publish, handoff, auth, gc', () => {
         'export-orders',
         'export-filter',
       ]);
+      // The revised plan is shown on the command line (plan 034).
+      expect(changed.err.join('')).toContain('  the plan:\n');
+      for (const f of h.engine.finalSpec(runId)!.intent.coreFeatures)
+        expect(changed.err.join('')).toContain(`    - ${f.id}: ${f.summary}\n`);
       // Adopt runs have no plan to revise: their review park does not offer --change.
       const adopt = io();
       expect(

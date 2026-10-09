@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LogEntry, RepoStatus, RunDetail } from '../../api-types.js';
 import { get, post } from '../api.js';
+import { recheckOnFocus } from '../recheck.js';
 import { ChangeRequest } from './ChangeRequest.js';
 import { Coding } from './Coding.js';
 import { CommitRequest, PushRequest } from './FinishChanges.js';
@@ -28,8 +29,13 @@ export function RunView({ runId }: { runId: string }) {
   const [repo, setRepo] = useState<RepoStatus | null>(null);
   // why: the owner may commit in their editor while this page is open; ask again when they come back (plan 029).
   const [looked, setLooked] = useState(0);
+  // why: a GitHub run's check asks GitHub over the network; coming back asks it at most once a minute (plan 034).
+  const lastRepo = useRef<RepoStatus | null>(null);
+  const askedAt = useRef(0);
   useEffect(() => {
-    const again = () => setLooked((n) => n + 1);
+    const again = () => {
+      if (recheckOnFocus(lastRepo.current, askedAt.current, Date.now())) setLooked((n) => n + 1);
+    };
     window.addEventListener('focus', again);
     return () => window.removeEventListener('focus', again);
   }, []);
@@ -90,14 +96,18 @@ export function RunView({ runId }: { runId: string }) {
   const watchRepo = run?.kind === 'enhance' && !run.done && !run.busy;
   useEffect(() => {
     if (!watchRepo) {
+      lastRepo.current = null;
       setRepo(null);
       return;
     }
     // why: an answer that lands after the run moved on (or after a newer ask) must not bring the banner back.
     let live = true;
+    askedAt.current = Date.now();
     get<RepoStatus>(`/api/runs/${runId}/repo-status`)
       .then((s) => {
-        if (live) setRepo(s);
+        if (!live) return;
+        lastRepo.current = s;
+        setRepo(s);
       })
       .catch(() => {
         if (live) setRepo(null);

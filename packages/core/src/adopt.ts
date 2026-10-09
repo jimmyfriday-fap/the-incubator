@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { PolicyError, sha256Hex, type Clock } from '@incubator/runtime';
+import { PolicyError, removeTree, sha256Hex, type Clock } from '@incubator/runtime';
 import type { GitIdentity, RepoRef } from '@incubator/git';
 import { completeSpec, type IncubatorSpec } from '@incubator/spec';
 import { PAIRED_PREFIX, render, writeTree, type RenderResult } from '@incubator/templates';
@@ -60,7 +60,7 @@ export class Adopter {
     const done = ctx.steps['adopt.acquire'];
     if (done?.status === 'ok' && existsSync(path.join(dir, '.git')))
       return { dir, ref: (done.data as { ref: RepoRef | null }).ref };
-    rmSync(ctx.workspace, { recursive: true, force: true });
+    removeTree(ctx.workspace);
     mkdirSync(ctx.workspace, { recursive: true });
     const local = !/^[a-z]+:\/\//i.test(repo) && !repo.startsWith('git@');
     let origin = repo;
