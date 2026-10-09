@@ -40,19 +40,23 @@ if (mode === 'slow') {
   let n = 1;
   while (existsSync(path.join('src', `part-${n}.txt`))) n++;
   // FAKE_AGENT_SWITCH=1: the agent (or the owner) moves the folder to another branch before the limit trips.
-  // Retried, and the error shown in the hand-off log: under a heavily loaded machine git can briefly fail to
-  // take a lock on .git, and a crash here made "never commits on a branch other than the run's own" flaky.
+  // Inside a git hook (the pre-push gate) git exports variables that pin it to the hooked repository, and
+  // this node process inherits them: without dropping them the switch below moved the REAL repository to a
+  // branch called "elsewhere". Exec drops them only for direct git children; this agent is a node child.
   if (process.env.FAKE_AGENT_SWITCH === '1') {
-    for (let i = 1; ; i++) {
-      try {
-        execFileSync('git', ['switch', '-q', '-c', 'elsewhere'], { stdio: 'pipe' });
-        break;
-      } catch (e) {
-        process.stderr.write(`git switch failed (try ${i}): ${String(e.stderr ?? e)}\n`);
-        if (i >= 5) throw e;
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
-      }
-    }
+    const env = { ...process.env };
+    for (const k of [
+      'GIT_DIR',
+      'GIT_WORK_TREE',
+      'GIT_INDEX_FILE',
+      'GIT_COMMON_DIR',
+      'GIT_PREFIX',
+      'GIT_OBJECT_DIRECTORY',
+      'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+      'GIT_IMPLICIT_WORK_TREE',
+    ])
+      delete env[k];
+    execFileSync('git', ['switch', '-q', '-c', 'elsewhere'], { env, stdio: 'pipe' });
   }
   if (n <= writes) {
     mkdirSync('src', { recursive: true });
