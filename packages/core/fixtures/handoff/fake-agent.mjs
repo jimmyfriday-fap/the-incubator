@@ -40,7 +40,20 @@ if (mode === 'slow') {
   let n = 1;
   while (existsSync(path.join('src', `part-${n}.txt`))) n++;
   // FAKE_AGENT_SWITCH=1: the agent (or the owner) moves the folder to another branch before the limit trips.
-  if (process.env.FAKE_AGENT_SWITCH === '1') execFileSync('git', ['switch', '-q', '-c', 'elsewhere']);
+  // Retried, and the error shown in the hand-off log: under a heavily loaded machine git can briefly fail to
+  // take a lock on .git, and a crash here made "never commits on a branch other than the run's own" flaky.
+  if (process.env.FAKE_AGENT_SWITCH === '1') {
+    for (let i = 1; ; i++) {
+      try {
+        execFileSync('git', ['switch', '-q', '-c', 'elsewhere'], { stdio: 'pipe' });
+        break;
+      } catch (e) {
+        process.stderr.write(`git switch failed (try ${i}): ${String(e.stderr ?? e)}\n`);
+        if (i >= 5) throw e;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+      }
+    }
+  }
   if (n <= writes) {
     mkdirSync('src', { recursive: true });
     writeFileSync(
