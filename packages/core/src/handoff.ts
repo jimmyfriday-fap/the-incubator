@@ -102,6 +102,30 @@ export function handoffPrompt(planText: string, external?: { checks: readonly st
   return `${loadPrompt('handoff-external').body}\n\n## Approved check commands\n\n${checks}\n\n## Executor plan\n\n${planText.trim()}\n`;
 }
 
+/** A part of the coding work already committed by the engine (plan 036). */
+export interface CodePart {
+  part: number;
+  sha: string;
+  tripped: string | null;
+}
+
+/** The section added to the prompt of a continuing part: what the earlier parts committed (plan 036). */
+export function continuationText(c: {
+  part: number;
+  max: number;
+  base: string | null;
+  earlier: readonly CodePart[];
+}): string {
+  const list = c.earlier
+    .map(
+      (e) =>
+        `- part ${e.part}: commit ${e.sha.slice(0, 12)}${e.tripped ? ` (stopped at ${e.tripped})` : ''}`,
+    )
+    .join('\n');
+  const since = c.base ? ` since ${c.base.slice(0, 12)}` : '';
+  return `## Continuing: part ${c.part} of up to ${c.max}\n\n${loadPrompt('handoff-continue').body}\n\nEarlier parts, committed on this branch${since}:\n\n${list}\n`;
+}
+
 /**
  * Counts turns, tool calls and cost from a stream-json event stream (Claude-style `assistant`
  * messages with `tool_use` blocks and a final `result` with `total_cost_usd`; other CLIs that emit

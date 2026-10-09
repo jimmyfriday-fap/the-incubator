@@ -4,7 +4,8 @@
 // hook); slow works slowly and never ends by itself (for stopping it); edit does the same and also writes src/agent-work.txt and a result text, like a real coding
 // run; idle stops without touching a file; runaway keeps calling tools until it is killed; spend
 // reports a large cost.
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const mode = process.env.FAKE_AGENT_MODE ?? 'complete';
@@ -30,6 +31,37 @@ if (mode === 'slow') {
     setTimeout(tick, 200);
   };
   tick();
+} else if (mode === 'parts') {
+  // Works in parts (plan 036): each launch writes the next src/part-N.txt (only the first FAKE_AGENT_WRITES of
+  // them) and notes whether its prompt asked it to continue. Launches before FAKE_AGENT_PARTS keep calling
+  // tools until a ceiling stops them; that launch finishes the plan.
+  const parts = Number(process.env.FAKE_AGENT_PARTS ?? 3);
+  const writes = Number(process.env.FAKE_AGENT_WRITES ?? 99);
+  let n = 1;
+  while (existsSync(path.join('src', `part-${n}.txt`))) n++;
+  // FAKE_AGENT_SWITCH=1: the agent (or the owner) moves the folder to another branch before the limit trips.
+  if (process.env.FAKE_AGENT_SWITCH === '1') execFileSync('git', ['switch', '-q', '-c', 'elsewhere']);
+  if (n <= writes) {
+    mkdirSync('src', { recursive: true });
+    writeFileSync(
+      path.join('src', `part-${n}.txt`),
+      `part ${n}; continuing: ${prompt.includes('## Continuing: part ')}\n`,
+    );
+  }
+  if (n < parts) {
+    const tick = () => {
+      assistant(5);
+      setTimeout(tick, 5);
+    };
+    tick();
+  } else {
+    assistant(1);
+    const id = readFileSync(path.join('.incubator', 'state', 'active-ticket'), 'utf8').trim();
+    const file = path.join('.incubator', 'tickets', `${id}.json`);
+    const t = JSON.parse(readFileSync(file, 'utf8'));
+    writeFileSync(file, `${JSON.stringify({ ...t, state: 'READY_FOR_TEST' }, null, 2)}\n`);
+    emit({ type: 'result', subtype: 'success', total_cost_usd: Number(process.env.FAKE_AGENT_COST ?? 0.42), result: `Finished the plan in part ${n}.` });
+  }
 } else if (mode === 'runaway') {
   const tick = () => {
     assistant(5);

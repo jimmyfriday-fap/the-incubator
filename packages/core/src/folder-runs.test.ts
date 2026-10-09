@@ -872,3 +872,139 @@ describe('check commands on a repository the Incubator did not build (ADR-025)',
     expect(h.engine.entries(runId).some((e) => e.type === 'handoff.launch')).toBe(false);
   });
 });
+
+describe('coding in parts (plan 036)', () => {
+  /** A git identity for the checkpoint commits (the hermetic default has none). */
+  const withIdentity = () => {
+    const cfg = path.join(mkdtempSync(path.join(os.tmpdir(), 'gitcfg ')), 'gitconfig');
+    writeFileSync(cfg, '[user]\n\tname = Owner Person\n\temail = owner@example.invalid\n');
+    vi.stubEnv('GIT_CONFIG_GLOBAL', cfg);
+  };
+  const of = (h: Harness, runId: string, type: string) =>
+    h.engine.entries(runId).filter((e) => e.type === type);
+  const since = async (h: Harness, runId: string, dir: string) => {
+    const base = (h.engine.state(runId).steps['code.start']!.data as { base: string }).base;
+    return (await out(['log', '--format=%s', `${base}..HEAD`], dir)).split('\n').filter(Boolean);
+  };
+
+  it('commits a part stopped at a run limit and continues from it, until the agent finishes', async () => {
+    withIdentity();
+    vi.stubEnv('FAKE_AGENT_MODE', 'parts');
+    const h = harness();
+    const dir = freshFolder();
+    const { runId, s } = await newSolution(h, dir);
+    expect(s.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(3);
+    expect(of(h, runId, 'code.part').map((e) => e['part'])).toEqual([1, 2]);
+    const subjects = await since(h, runId, dir);
+    expect(subjects).toHaveLength(2);
+    expect(subjects[0]).toMatch(/^chore: part 2 of up to 5: /);
+    expect(subjects[1]).toMatch(/^chore: part 1 of up to 5: /);
+    expect(await out(['log', '-1', '--format=%B'], dir)).toContain(
+      `Incubator-Run: ${runId}\nIncubator-Part: code-2`,
+    );
+    expect(await out(['show', '--name-only', '--format=', 'HEAD~1'], dir)).toContain(
+      'src/part-1.txt',
+    );
+    // The first part was not told to continue; the later parts were.
+    expect(readFileSync(path.join(dir, 'src', 'part-1.txt'), 'utf8')).toBe(
+      'part 1; continuing: false\n',
+    );
+    expect(readFileSync(path.join(dir, 'src', 'part-2.txt'), 'utf8')).toBe(
+      'part 2; continuing: true\n',
+    );
+    expect(readFileSync(path.join(dir, 'src', 'part-3.txt'), 'utf8')).toBe(
+      'part 3; continuing: true\n',
+    );
+    // The last part is the owner's to review and commit, as before.
+    const detail = await h.engine.finishDetail(runId);
+    expect(detail!.files.map((f) => f.path)).toContain('src/part-3.txt');
+    expect(detail!.files.map((f) => f.path)).not.toContain('src/part-1.txt');
+    expect(h.engine.state(runId).steps['code.done']!.data).toMatchObject({
+      verdict: 'ready',
+      parts: 3,
+    });
+  });
+
+  it('stops after five parts and leaves the last one for the owner', async () => {
+    withIdentity();
+    vi.stubEnv('FAKE_AGENT_MODE', 'parts');
+    vi.stubEnv('FAKE_AGENT_PARTS', '99');
+    const h = harness();
+    const dir = freshFolder();
+    const { runId, s } = await newSolution(h, dir);
+    expect(s.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(5);
+    expect(of(h, runId, 'code.part').map((e) => e['part'])).toEqual([1, 2, 3, 4]);
+    expect(await since(h, runId, dir)).toHaveLength(4);
+    expect(h.engine.state(runId).steps['code.done']!.data).toMatchObject({
+      verdict: 'ceiling',
+      parts: 5,
+    });
+    expect((await h.engine.finishDetail(runId))!.files.map((f) => f.path)).toContain(
+      'src/part-5.txt',
+    );
+  });
+
+  it('stops when a part changes nothing', async () => {
+    withIdentity();
+    vi.stubEnv('FAKE_AGENT_MODE', 'parts');
+    vi.stubEnv('FAKE_AGENT_PARTS', '99');
+    vi.stubEnv('FAKE_AGENT_WRITES', '1');
+    const h = harness();
+    const dir = freshFolder();
+    const { runId, s } = await newSolution(h, dir);
+    // Nothing is left uncommitted, so the run goes straight to the push request.
+    expect(s.parked).toMatchObject({ state: 'PUSH', reason: 'needs_push' });
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(2);
+    expect(of(h, runId, 'code.part').map((e) => e['part'])).toEqual([1]);
+    expect(h.engine.state(runId).steps['code.done']!.data).toMatchObject({
+      verdict: 'ceiling',
+      parts: 2,
+    });
+  });
+
+  it("never commits on a branch other than the run's own", async () => {
+    withIdentity();
+    vi.stubEnv('FAKE_AGENT_MODE', 'parts');
+    vi.stubEnv('FAKE_AGENT_SWITCH', '1');
+    const h = harness();
+    const dir = freshFolder();
+    const { runId } = await newSolution(h, dir);
+    expect(await out(['branch', '--show-current'], dir)).toBe('elsewhere');
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(1);
+    expect(of(h, runId, 'code.part')).toHaveLength(0);
+    expect(await out(['log', '--format=%s', '-1'], dir)).not.toMatch(/^chore: part /);
+  });
+
+  it('does not continue a part that finished its ticket and then went over the cost limit', async () => {
+    withIdentity();
+    vi.stubEnv('FAKE_AGENT_MODE', 'parts');
+    vi.stubEnv('FAKE_AGENT_PARTS', '1');
+    vi.stubEnv('FAKE_AGENT_COST', '999');
+    const h = harness();
+    const dir = freshFolder();
+    const { runId, s } = await newSolution(h, dir);
+    expect(s.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(1);
+    expect(of(h, runId, 'code.part')).toHaveLength(0);
+    expect(h.engine.state(runId).steps['code.done']!.data).toMatchObject({
+      verdict: 'ceiling',
+      parts: 1,
+    });
+  });
+
+  it('does not commit without a git identity: one part, left for the owner', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'parts');
+    const h = harness();
+    const dir = freshFolder();
+    const { runId } = await newSolution(h, dir);
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(1);
+    expect(of(h, runId, 'code.part')).toHaveLength(0);
+    expect(await since(h, runId, dir)).toHaveLength(0);
+    expect(h.engine.state(runId).steps['code.done']!.data).toMatchObject({
+      verdict: 'ceiling',
+      parts: 1,
+    });
+  });
+});

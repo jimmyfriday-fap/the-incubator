@@ -26,6 +26,8 @@ export interface AgentReport {
   turns: number;
   toolCalls: number;
   costUsd: number | null;
+  /** How many parts the agent worked in (plan 036); absent in reports journaled before. */
+  parts?: number;
 }
 
 export function agentReport(out: HandoffOutcome): AgentReport {
@@ -73,6 +75,19 @@ export function finalMessage(approved: string, fallback: string, runId: string):
 
 export const finishTrailer = (runId: string): string =>
   `Incubator-Run: ${runId}\nIncubator-Part: finish`;
+
+/** The most parts one coding stage may take (plan 036); each part keeps the spec's run limits. */
+export const MAX_CODE_PARTS = 5;
+
+/** The checkpoint commit after a part stopped at a run limit (plan 036): local only, never the owner's commit. */
+export function partMessage(
+  opts: { title: string; part: number; tripped: string | null },
+  runId: string,
+): string {
+  const head = subject('chore', `part ${opts.part} of up to ${MAX_CODE_PARTS}: ${opts.title}`);
+  const why = `The coding agent stopped at a run limit (${opts.tripped ?? 'unknown'}); the next part continues from here.`;
+  return `${head}\n\n${why}\n\nIncubator-Run: ${runId}\nIncubator-Part: code-${opts.part}\n`;
+}
 
 /**
  * Hides the agent's bookkeeping (`.incubator/state/`) from `git status` without touching any tracked

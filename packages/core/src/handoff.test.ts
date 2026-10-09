@@ -8,13 +8,14 @@ import {
   CeilingMonitor,
   buildHandoffArgv,
   cleanAgentText,
+  continuationText,
   handoffPrompt,
   HANDOFF_ALLOWED_TOOLS,
   type HandoffProgress,
 } from './handoff.js';
 import { loadPrompt } from './prompts.js';
 import type { EngineDeps } from './engine.js';
-import { agentReport } from './finish.js';
+import { MAX_CODE_PARTS, agentReport, partMessage } from './finish.js';
 import { fakePublishEngine } from './testing.js';
 
 const fakeAgent = path.resolve(import.meta.dirname, '../fixtures/handoff/fake-agent.mjs');
@@ -343,6 +344,36 @@ describe('handoff on a repository the Incubator did not build (ADR-025)', () => 
     expect(buildHandoffArgv(caps(flags), ceilings).slice(-1)).toEqual([
       HANDOFF_ALLOWED_TOOLS.join(','),
     ]);
+  });
+
+  it('tells a continuing part what the earlier parts committed (plan 036)', () => {
+    const p = loadPrompt('handoff-continue');
+    expect(p.name).toBe('handoff-continue');
+    expect(p.version).toBe('1.0.0');
+    expect(MAX_CODE_PARTS).toBe(5);
+    const text = continuationText({
+      part: 3,
+      max: MAX_CODE_PARTS,
+      base: 'a'.repeat(40),
+      earlier: [
+        { part: 1, sha: 'b'.repeat(40), tripped: 'turns 151 > 150' },
+        { part: 2, sha: 'c'.repeat(40), tripped: null },
+      ],
+    });
+    expect(text.startsWith('## Continuing: part 3 of up to 5\n\n')).toBe(true);
+    expect(text).toContain('leave your work as uncommitted changes');
+    expect(text).toContain(`Earlier parts, committed on this branch since ${'a'.repeat(12)}:`);
+    expect(text).toContain(`- part 1: commit ${'b'.repeat(12)} (stopped at turns 151 > 150)\n`);
+    expect(text).toContain(`- part 2: commit ${'c'.repeat(12)}\n`);
+    const msg = partMessage(
+      { title: 'build Tallyho', part: 2, tripped: 'tool calls 401 > 400' },
+      'r1',
+    );
+    expect(msg).toBe(
+      'chore: part 2 of up to 5: build Tallyho\n\nThe coding agent stopped at a run limit (tool calls 401 > 400); the next part continues from here.\n\nIncubator-Run: r1\nIncubator-Part: code-2\n',
+    );
+    // A checkpoint is never taken for the owner's finish commit.
+    expect(msg).not.toContain('Incubator-Part: finish');
   });
 
   it('ships the external prompt versioned and byte-pinned', () => {

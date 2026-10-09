@@ -48,6 +48,8 @@ import {
   finalMessage,
   finishBody,
   finishTrailer,
+  MAX_CODE_PARTS,
+  partMessage,
   type AgentChecks,
   type AgentReport,
   type FinishDetail,
@@ -142,6 +144,7 @@ import {
   AGENT_ADAPTERS,
   activeTicket,
   buildHandoffArgv,
+  continuationText,
   handoffPrompt,
   launchHandoff,
   type HandoffAgent,
@@ -149,6 +152,7 @@ import {
   type HandoffProgress,
   cleanAgentText,
   type HandoffPlan,
+  type CodePart,
 } from './handoff.js';
 
 /**
@@ -1728,18 +1732,75 @@ export class Engine {
           message:
             'no check commands were approved for this repository: the agent can edit files but cannot run anything, so its work is untested',
         });
-      let last = 0;
-      const out = await this.launchHandoff(runId, {
-        onProgress: (p) => {
-          // why: a long run reports every turn; the journal keeps the first and then one a second.
-          if (last && Date.now() - last < 1000) return;
-          last = Date.now();
-          this.record(runId, 'handoff.progress', { ...p });
-        },
+      // The agent works in parts (plan 036): a part stopped at a run limit is committed on the run's branch
+      // (local only; the owner still decides the push), and the next part continues from there.
+      const start = this.state(runId).steps['code.start']?.data as
+        { branch?: string | null; base?: string | null } | undefined;
+      const base = start?.base;
+      const earlier = this.codeParts(runId);
+      let out: HandoffOutcome;
+      for (;;) {
+        let last = 0;
+        const part = earlier.length + 1;
+        out = await this.launchHandoff(runId, {
+          onProgress: (p) => {
+            // why: a long run reports every turn; the journal keeps the first and then one a second.
+            if (last && Date.now() - last < 1000) return;
+            last = Date.now();
+            this.record(runId, 'handoff.progress', { ...p });
+          },
+          ...(part > 1
+            ? { continuation: { part, max: MAX_CODE_PARTS, base: base ?? null, earlier } }
+            : {}),
+        });
+        if (agentReport(out).verdict !== 'ceiling' || part >= MAX_CODE_PARTS) break;
+        // why: a part that changed nothing would spend the next part's limits the same way.
+        if ((await git.status(dir)).length === 0) break;
+        // why: without an identity there is nobody to commit as; the commit request then says what to set.
+        if (!(await git.identity(dir))) break;
+        // why: a checkpoint is only ever made on the run's own branch, never on a branch the owner switched to.
+        if (
+          !start?.branch?.startsWith('incubator/') ||
+          (await git.currentBranch(dir)) !== start.branch
+        )
+          break;
+        // why: a Stop pressed as the limit tripped, or a plan already finished (cost arrives in the last event).
+        if (
+          this.#active.get(runId)?.controller.signal.aborted ||
+          out.ticketState === 'READY_FOR_TEST'
+        )
+          break;
+        await git.addAll(dir);
+        const title = this.finishTitle(runId, this.state(runId));
+        const sha = await git.commit(
+          dir,
+          partMessage({ title, part, tripped: out.tripped }, runId),
+          {},
+        );
+        const done: CodePart = { part, sha, tripped: out.tripped };
+        this.record(runId, 'code.part', { ...done });
+        earlier.push(done);
+      }
+      this.record(runId, 'step.ok', {
+        step: 'code.done',
+        data: { ...agentReport(out), checks, parts: earlier.length + 1 },
       });
-      this.record(runId, 'step.ok', { step: 'code.done', data: { ...agentReport(out), checks } });
     });
     this.enter(runId, 'COMMIT');
+  }
+
+  /** The coding parts already committed since coding last started (plan 036). */
+  private codeParts(runId: string): CodePart[] {
+    const entries = this.entries(runId);
+    const from =
+      entries.findLast((e) => e.type === 'step.ok' && e['step'] === 'code.start')?.seq ?? 0;
+    return entries
+      .filter((e) => e.type === 'code.part' && e.seq > from)
+      .map((e) => ({
+        part: Number(e['part']),
+        sha: String(e['sha']),
+        tripped: typeof e['tripped'] === 'string' ? e['tripped'] : null,
+      }));
   }
 
   /** The review the owner needs at the commit request, computed from the folder as it is now. */
@@ -1971,7 +2032,7 @@ export class Engine {
    */
   async prepareHandoff(
     runId: string,
-    opts: { agent?: HandoffAgent } = {},
+    opts: { agent?: HandoffAgent; continuation?: Parameters<typeof continuationText>[0] } = {},
   ): Promise<{ plan: HandoffPlan; prompt: string; ticket: string | null; checks: AgentChecks }> {
     const s = this.state(runId);
     // A folder run codes before it is finished; every other run is handed off once it is done.
@@ -2062,10 +2123,11 @@ export class Engine {
     };
     return {
       plan,
-      prompt: handoffPrompt(
-        readFileSync(planPath, 'utf8'),
-        external ? { checks: checks.commands } : undefined,
-      ),
+      prompt:
+        handoffPrompt(
+          readFileSync(planPath, 'utf8'),
+          external ? { checks: checks.commands } : undefined,
+        ) + (opts.continuation ? `\n${continuationText(opts.continuation)}` : ''),
       ticket: activeTicket(repo, spec, delivered?.features.map(ticketId)),
       checks,
     };
@@ -2076,6 +2138,8 @@ export class Engine {
     runId: string,
     opts: {
       agent?: HandoffAgent;
+      /** A continuing part (plan 036): the prompt then lists what the earlier parts committed. */
+      continuation?: Parameters<typeof continuationText>[0];
       onEvent?: (chunk: string) => void;
       onProgress?: (p: HandoffProgress) => void;
       /** Stops the agent; when absent the run's own stop (Stop in the app) applies. */
