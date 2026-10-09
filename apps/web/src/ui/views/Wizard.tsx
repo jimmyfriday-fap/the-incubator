@@ -22,7 +22,7 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
   const [folder, setFolder] = useState('');
   const [check, setCheck] = useState<FolderCheck | null>(null);
   const [narrative, setNarrative] = useState('');
-  // The markdown files whose text was added to the description (plan 033), and why the last choice was refused.
+  // The markdown files whose text was added to the description (plan 035), and why the last choice was refused.
   const [added, setAdded] = useState<string[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [repoRef, setRepoRef] = useState('');

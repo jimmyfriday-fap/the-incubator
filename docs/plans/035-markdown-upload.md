@@ -14,7 +14,7 @@
 
 };
 
-# Plan 033: describe the solution with markdown files, as well as typing
+# Plan 035: describe the solution with markdown files, as well as typing
 
 ## Executor preamble
 
@@ -87,7 +87,7 @@ export function isMarkdownName(name: string): boolean {
 
 /**
  * Appends the text of markdown files to the description the owner already typed, each after a blank line.
- * All or nothing: one bad file leaves the description as it was and says why (plan 033).
+ * All or nothing: one bad file leaves the description as it was and says why (plan 035).
  */
 export async function addMarkdownFiles(
   current: string,
@@ -137,7 +137,7 @@ const file = (name: string, text: string, size = text.length): FileLike => ({
   text: () => Promise.resolve(text),
 });
 
-describe('adding markdown files to the description (plan 033)', () => {
+describe('adding markdown files to the description (plan 035)', () => {
   it('recognises markdown file names, in any letter case', () => {
     expect(isMarkdownName('idea.md')).toBe(true);
     expect(isMarkdownName('IDEA.MD')).toBe(true);
@@ -239,7 +239,7 @@ Replace with:
 
 ```text
   const [narrative, setNarrative] = useState('');
-  // The markdown files whose text was added to the description (plan 033), and why the last choice was refused.
+  // The markdown files whose text was added to the description (plan 035), and why the last choice was refused.
   const [added, setAdded] = useState<string[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
 ```
@@ -330,7 +330,7 @@ Find:
 Replace with:
 
 ```text
-    // why: the server accepts at most 4000 characters of idea here; an uploaded file can be longer (plan 033).
+    // why: the server accepts at most 4000 characters of idea here; an uploaded file can be longer (plan 035).
     post<StackRecommendResponse>('/api/stacks/recommend', { idea: props.idea.slice(0, 4000) })
 ```
 
@@ -433,7 +433,7 @@ Replace with:
 Run exactly (PowerShell, from the repository root):
 
 ```powershell
-pnpm exec prettier --write apps/web/src/ui/markdownFiles.ts apps/web/src/ui/markdownFiles.test.ts apps/web/src/ui/views/Wizard.tsx apps/web/src/ui/styles.css apps/web/e2e/web.e2e.test.ts docs/plans/033-markdown-upload.md
+pnpm exec prettier --write apps/web/src/ui/markdownFiles.ts apps/web/src/ui/markdownFiles.test.ts apps/web/src/ui/views/Wizard.tsx apps/web/src/ui/styles.css apps/web/e2e/web.e2e.test.ts docs/plans/035-markdown-upload.md
 ```
 
 Then run the commands under "Acceptance commands". Leave every change uncommitted.
@@ -443,7 +443,7 @@ Then run the commands under "Acceptance commands". Leave every change uncommitte
 | File                                    | Marker                                                    |
 | --------------------------------------- | --------------------------------------------------------- |
 | `apps/web/src/ui/markdownFiles.ts`      | `export async function addMarkdownFiles(`                 |
-| `apps/web/src/ui/markdownFiles.test.ts` | `adding markdown files to the description (plan 033)`     |
+| `apps/web/src/ui/markdownFiles.test.ts` | `adding markdown files to the description (plan 035)`     |
 | `apps/web/src/ui/views/Wizard.tsx`      | `data-testid="narrative-files"`                           |
 | `apps/web/src/ui/views/Wizard.tsx`      | `import { addMarkdownFiles } from '../markdownFiles.js';` |
 | `apps/web/src/ui/views/Wizard.tsx`      | `const onFiles = (e: ChangeEvent<HTMLInputElement>) => {` |

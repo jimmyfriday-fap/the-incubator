@@ -18,7 +18,7 @@ export function isMarkdownName(name: string): boolean {
 
 /**
  * Appends the text of markdown files to the description the owner already typed, each after a blank line.
- * All or nothing: one bad file leaves the description as it was and says why (plan 033).
+ * All or nothing: one bad file leaves the description as it was and says why (plan 035).
  */
 export async function addMarkdownFiles(
   current: string,

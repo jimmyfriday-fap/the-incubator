@@ -15,7 +15,7 @@ const file = (name: string, text: string, size = text.length): FileLike => ({
   text: () => Promise.resolve(text),
 });
 
-describe('adding markdown files to the description (plan 033)', () => {
+describe('adding markdown files to the description (plan 035)', () => {
   it('recognises markdown file names, in any letter case', () => {
     expect(isMarkdownName('idea.md')).toBe(true);
     expect(isMarkdownName('IDEA.MD')).toBe(true);
