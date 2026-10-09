@@ -115,6 +115,8 @@ export function continuationText(c: {
   max: number;
   base: string | null;
   earlier: readonly CodePart[];
+  /** A continued run (plan 037): the commit the earlier coding session's work ends at. */
+  before?: { sha: string; since: string | null; tripped: string | null };
 }): string {
   const list = c.earlier
     .map(
@@ -123,6 +125,11 @@ export function continuationText(c: {
     )
     .join('\n');
   const since = c.base ? ` since ${c.base.slice(0, 12)}` : '';
+  if (c.before && c.earlier.length === 0) {
+    const why = c.before.tripped ? ` (it stopped at ${c.before.tripped})` : '';
+    const from = c.before.since ? ` since ${c.before.since.slice(0, 12)}` : '';
+    return `## Continuing: part ${c.part} of up to ${c.max}\n\n${loadPrompt('handoff-continue').body}\n\nThe earlier coding session's work is committed on this branch${from}; it ends at commit ${c.before.sha.slice(0, 12)}${why}.\n`;
+  }
   return `## Continuing: part ${c.part} of up to ${c.max}\n\n${loadPrompt('handoff-continue').body}\n\nEarlier parts, committed on this branch${since}:\n\n${list}\n`;
 }
 

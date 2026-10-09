@@ -547,6 +547,24 @@ export class Engine {
     return this.entries(runId).findLast((e) => e.type === 'repo.refresh')?.seq ?? 0;
   }
 
+  /** The seq of the latest "continue coding" (plan 037), or 0: the owner's commit and push answers before it are spent. */
+  private continuedAt(runId: string): number {
+    return this.entries(runId).findLast((e) => e.type === 'code.continue')?.seq ?? 0;
+  }
+
+  /** The commit a continued run started from, and why its earlier coding stopped (plan 037), or null. */
+  private continuedFrom(
+    runId: string,
+  ): { sha: string; since: string | null; tripped: string | null } | null {
+    const e = this.entries(runId).findLast((x) => x.type === 'code.continue');
+    if (!e || typeof e['from'] !== 'string') return null;
+    return {
+      sha: e['from'],
+      since: typeof e['since'] === 'string' ? e['since'] : null,
+      tripped: typeof e['tripped'] === 'string' ? e['tripped'] : null,
+    };
+  }
+
   /** After a refresh (plan 025): the earlier request, with the corrections given at review, to confirm or edit. */
   previousRequest(runId: string): string | null {
     const e = this.entries(runId).findLast((x) => x.type === 'repo.refresh');
@@ -1713,8 +1731,15 @@ export class Engine {
     await this.effect(runId, async () => {
       if (s.steps['code.start']?.status !== 'ok') {
         let branch = await git.currentBranch(dir);
-        // A new solution is coded on its own branch: the staging branch deploys.
-        if (s.input.kind === 'new') {
+        // A continued run (plan 037) codes only on the branch continueCoding checked; the owner may have switched since.
+        const continued = this.entries(runId).findLast((e) => e.type === 'code.continue');
+        if (continued && branch !== continued['branch'])
+          throw new ParkError(
+            'wrong_branch',
+            `the folder is on ${branch ?? 'a detached HEAD'}, not the run's branch ${String(continued['branch'])}: check it out, then resume`,
+          );
+        // A new solution is coded on its own branch: the staging branch deploys. A continued run stays where it is.
+        if (s.input.kind === 'new' && !continued) {
           const target = `incubator/build-${enhanceDate(this.deps.clock)}`;
           if (branch !== target) await git.checkoutNewBranch(dir, target);
           branch = target;
@@ -1738,6 +1763,8 @@ export class Engine {
         { branch?: string | null; base?: string | null } | undefined;
       const base = start?.base;
       const earlier = this.codeParts(runId);
+      // A continued run (plan 037): the work before it is committed, and even its first part is told so.
+      const resumed = this.continuedFrom(runId);
       let out: HandoffOutcome;
       for (;;) {
         let last = 0;
@@ -1749,8 +1776,16 @@ export class Engine {
             last = Date.now();
             this.record(runId, 'handoff.progress', { ...p });
           },
-          ...(part > 1
-            ? { continuation: { part, max: MAX_CODE_PARTS, base: base ?? null, earlier } }
+          ...(part > 1 || resumed
+            ? {
+                continuation: {
+                  part,
+                  max: MAX_CODE_PARTS,
+                  base: base ?? null,
+                  earlier,
+                  ...(resumed ? { before: resumed } : {}),
+                },
+              }
             : {}),
         });
         if (agentReport(out).verdict !== 'ceiling' || part >= MAX_CODE_PARTS) break;
@@ -1827,10 +1862,17 @@ export class Engine {
     const agent = (s.steps['code.done']?.data as AgentReport | undefined) ?? null;
     const files = stage === 'commit' && existsSync(dir) ? await git.status(dir) : [];
     const target = this.pushTarget(runId, s);
-    const approved = this.entries(runId).findLast((e) => e.type === 'finish.approve');
-    const progress = this.entries(runId).findLast((e) => e.type === 'handoff.progress');
-    const pr = this.entries(runId).findLast((e) => e.type === 'finish.summary')?.['pr'] as
-      { number: number; url: string } | undefined;
+    // why: answers and outcomes from before "continue coding" (plan 037) were about the earlier code.
+    const after = this.continuedAt(runId);
+    const approved = this.entries(runId).findLast(
+      (e) => e.type === 'finish.approve' && e.seq > after,
+    );
+    const progress = this.entries(runId).findLast(
+      (e) => e.type === 'handoff.progress' && e.seq > after,
+    );
+    const pr = this.entries(runId).findLast((e) => e.type === 'finish.summary' && e.seq > after)?.[
+      'pr'
+    ] as { number: number; url: string } | undefined;
     return {
       stage,
       dir,
@@ -1903,7 +1945,8 @@ export class Engine {
       };
       const head = await git.headSha(dir);
       // A crash after the commit but before the journal entry: take the commit as it is.
-      if ((await git.headMessage(dir))?.includes(finishTrailer(runId))) {
+      // why: after "continue coding" (plan 037) HEAD starts as the earlier finish commit; only a newer one counts.
+      if (head !== start.base && (await git.headMessage(dir))?.includes(finishTrailer(runId))) {
         done({ sha: head, branch: start.branch });
         return this.enter(runId, 'PUSH');
       }
@@ -1917,7 +1960,10 @@ export class Engine {
         done({ sha: head, branch: start.branch });
         return this.enter(runId, 'PUSH');
       }
-      const approval = this.entries(runId).findLast((e) => e.type === 'finish.approve');
+      const after = this.continuedAt(runId);
+      const approval = this.entries(runId).findLast(
+        (e) => e.type === 'finish.approve' && e.seq > after,
+      );
       if (!approval)
         throw new ParkError(
           'needs_commit',
@@ -1961,7 +2007,8 @@ export class Engine {
       this.record(runId, 'run.done', { committedLocally: true, reason: target.reason });
       return;
     }
-    const decision = this.entries(runId).findLast((e) => e.type === 'finish.push');
+    const after = this.continuedAt(runId);
+    const decision = this.entries(runId).findLast((e) => e.type === 'finish.push' && e.seq > after);
     if (!decision)
       throw new ParkError(
         'needs_push',
@@ -2674,6 +2721,59 @@ export class Engine {
     });
     this.enter(runId, 'ANALYZE');
     return m;
+  }
+
+  /**
+   * Continue coding (plan 037): a finished folder run whose agent did not finish the plan goes back to CODE on the
+   * same branch. Its parts continue from the folder as it is now; the owner reviews the commit and the push again,
+   * and the push updates the same pull request.
+   */
+  async continueCoding(runId: string): Promise<void> {
+    const s = this.state(runId);
+    if (!s.input.dir || !this.deps.publish)
+      throw new PolicyError(`run ${runId} did not code in a folder`, { code: 'not_folder' });
+    if (!s.done || s.cancelled)
+      throw new PolicyError(`run ${runId} ${s.cancelled ? 'was cancelled' : 'is not finished'}`, {
+        code: 'not_done',
+      });
+    const agent = s.steps['code.done']?.data as AgentReport | undefined;
+    if (!agent) throw new PolicyError(`run ${runId} never reached coding`, { code: 'not_coded' });
+    if (agent.verdict === 'ready')
+      throw new PolicyError(
+        `the agent finished the plan of run ${runId}: there is nothing to continue`,
+        {
+          code: 'finished',
+        },
+      );
+    if (this.#active.has(runId))
+      throw new PolicyError(`run ${runId} is working`, { code: 'working' });
+    const dir = this.runDir(s);
+    const git = this.deps.publish.git;
+    const committed = s.steps['finish.commit']?.data as { branch?: string | null } | undefined;
+    const start = s.steps['code.start']?.data as { branch?: string | null } | undefined;
+    const branch = committed?.branch ?? start?.branch ?? null;
+    const current = await git.currentBranch(dir);
+    if (!branch || current !== branch)
+      throw new PolicyError(
+        `the folder is on ${current ?? 'a detached HEAD'}, not the run's branch ${branch ?? '(unknown)'}: check it out, then continue (if it was deleted after a merge, start a new update run instead)`,
+        { code: 'wrong_branch' },
+      );
+    if ((await git.status(dir)).length > 0)
+      throw new PolicyError(
+        'the folder has uncommitted changes: commit or stash them first, then continue',
+        { code: 'dirty_tree' },
+      );
+    const first = this.entries(runId).find(
+      (e) => e.type === 'step.ok' && e['step'] === 'code.start',
+    )?.['data'] as { base?: string | null } | undefined;
+    this.record(runId, 'code.continue', {
+      branch,
+      from: await git.headSha(dir),
+      since: first?.base ?? null,
+      verdict: agent.verdict,
+      tripped: agent.tripped,
+    });
+    this.enter(runId, 'CODE');
   }
 
   /** REVIEW → APPROVED, optionally with a user-edited spec (revalidated). */

@@ -25,6 +25,15 @@ export type RunStateName = (typeof RUN_STATES)[number];
 /** The steps a repository refresh runs again (plan 025): the folder check, the copy, and the summary. */
 const REFRESHED_STEPS: readonly string[] = ['folder.base', 'adopt.acquire', 'enhance.summary'];
 
+/** The steps "continue coding" runs again (plan 037): coding, then the owner's commit, push and pull request. */
+const CONTINUED_STEPS: readonly string[] = [
+  'code.start',
+  'code.done',
+  'finish.commit',
+  'finish.push',
+  'finish.pr',
+];
+
 export interface AskedOption {
   value: string;
   label: string;
@@ -190,6 +199,20 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
         break;
       case 'run.done':
         s = { ...s, state: 'DONE', done: true, failure: null, stopped: null };
+        break;
+      case 'code.continue':
+        // why: continue coding (plan 037) reopens a finished folder run at CODE; the commit and the push are asked again.
+        s = {
+          ...s,
+          // why: a crash before the following state.enter must not leave a run at DONE that is not done.
+          state: 'CODE',
+          done: false,
+          failure: null,
+          stopped: null,
+          steps: Object.fromEntries(
+            Object.entries(s.steps).filter(([id]) => !CONTINUED_STEPS.includes(id)),
+          ),
+        };
         break;
       case 'repo.refresh':
         // why: a refresh (plan 025) reads the repository again, so the steps that checked, copied and

@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
@@ -870,6 +871,144 @@ describe('check commands on a repository the Incubator did not build (ADR-025)',
     const s = await h.engine.advance(runId, new DefaultsPrompter());
     expect(s.parked).toMatchObject({ state: 'CODE', reason: 'checks_unenforceable' });
     expect(h.engine.entries(runId).some((e) => e.type === 'handoff.launch')).toBe(false);
+  });
+});
+
+describe('continue coding (plan 037)', () => {
+  const of = (h: Harness, runId: string, type: string) =>
+    h.engine.entries(runId).filter((e) => e.type === type);
+  const prs = (h: Harness, runId: string) =>
+    of(h, runId, 'finish.summary').map((e) => (e['pr'] as { number: number }).number);
+
+  it('continues a run stopped at a limit on the same branch, asks for the commit and push again, and updates the same pull request', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'parts');
+    const h = harness();
+    const dir = freshFolder();
+    const { runId, s } = await newSolution(h, dir);
+    // No git identity yet: one part, stopped at a limit, left for the owner.
+    expect(s.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    await setOwner(dir);
+    h.engine.submitCommit(runId, { action: 'commit' });
+    let r = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(r.parked).toMatchObject({ state: 'PUSH', reason: 'needs_push' });
+    h.engine.submitPush(runId, 'push');
+    r = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(r.done).toBe(true);
+    expect(h.engine.state(runId).steps['code.done']!.data).toMatchObject({ verdict: 'ceiling' });
+    const branch = await out(['branch', '--show-current'], dir);
+    expect(branch).toBe(BUILD);
+
+    // Refused: a dirty folder, and a folder on another branch.
+    writeFileSync(path.join(dir, 'scratch.txt'), 'x');
+    await expect(h.engine.continueCoding(runId)).rejects.toMatchObject({ code: 'dirty_tree' });
+    rmSync(path.join(dir, 'scratch.txt'));
+    await git(['switch', '-q', '-c', 'elsewhere'], dir);
+    await expect(h.engine.continueCoding(runId)).rejects.toMatchObject({ code: 'wrong_branch' });
+    await git(['switch', '-q', BUILD], dir);
+
+    // A day later: a continued new-solution run must not move to a new dated branch.
+    h.clock.advance(86_400_000);
+    await h.engine.continueCoding(runId);
+    expect(h.engine.state(runId)).toMatchObject({ state: 'CODE', done: false });
+    // The earlier pull request is not shown as this stage's own until it is pushed again.
+    expect((await h.engine.finishDetail(runId))!.pr).toBeNull();
+    r = await h.engine.resume(runId, new DefaultsPrompter());
+    // The earlier commit approval is not reused: the owner is asked again.
+    expect(r.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(await out(['branch', '--show-current'], dir)).toBe(BUILD);
+    // The continued stage's first part was told about the earlier work; it stopped, was checkpointed, and part 2 finished.
+    expect(readFileSync(path.join(dir, 'src', 'part-2.txt'), 'utf8')).toBe(
+      'part 2; continuing: true\n',
+    );
+    expect(readFileSync(path.join(dir, 'src', 'part-3.txt'), 'utf8')).toBe(
+      'part 3; continuing: true\n',
+    );
+    expect(of(h, runId, 'code.part').map((e) => e['part'])).toEqual([1]);
+    h.engine.submitCommit(runId, { action: 'commit' });
+    r = await h.engine.resume(runId, new DefaultsPrompter());
+    // The earlier push decision is not reused either.
+    expect(r.parked).toMatchObject({ state: 'PUSH', reason: 'needs_push' });
+    h.engine.submitPush(runId, 'push');
+    r = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(r.done).toBe(true);
+    expect(h.engine.state(runId).steps['code.done']!.data).toMatchObject({ verdict: 'ready' });
+    // The same pull request, and the branch on GitHub is at the new commits.
+    expect(prs(h, runId)).toEqual([1, 1]);
+    expect(await h.github.getBranchSha({ owner: 'octo', name: 'tallyho' }, BUILD)).toBe(
+      await out(['rev-parse', 'HEAD'], dir),
+    );
+    // A finished plan has nothing to continue.
+    await expect(h.engine.continueCoding(runId)).rejects.toMatchObject({ code: 'finished' });
+  });
+
+  it('asks for the commit again when the continued stage finishes in one part (HEAD is the earlier finish commit)', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'parts');
+    const h = harness();
+    const dir = freshFolder();
+    const { runId } = await newSolution(h, dir);
+    await setOwner(dir);
+    h.engine.submitCommit(runId, { action: 'commit' });
+    await h.engine.resume(runId, new DefaultsPrompter());
+    h.engine.submitPush(runId, 'skip');
+    expect((await h.engine.resume(runId, new DefaultsPrompter())).done).toBe(true);
+    vi.stubEnv('FAKE_AGENT_PARTS', '2');
+    await h.engine.continueCoding(runId);
+    const r = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(r.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(of(h, runId, 'code.part')).toHaveLength(0);
+    expect((await h.engine.finishDetail(runId))!.message).toMatch(/^feat: /);
+  });
+
+  it('parks instead of coding when the folder left the run branch after continuing', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'parts');
+    const h = harness();
+    const dir = freshFolder();
+    const { runId } = await newSolution(h, dir);
+    await setOwner(dir);
+    h.engine.submitCommit(runId, { action: 'commit' });
+    await h.engine.resume(runId, new DefaultsPrompter());
+    h.engine.submitPush(runId, 'skip');
+    await h.engine.resume(runId, new DefaultsPrompter());
+    await h.engine.continueCoding(runId);
+    await git(['switch', '-q', '-c', 'elsewhere'], dir);
+    const r = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(r.parked).toMatchObject({ state: 'CODE', reason: 'wrong_branch' });
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(1);
+  });
+
+  it('counts the continued stage parts from its own start', async () => {
+    const cfg = path.join(mkdtempSync(path.join(os.tmpdir(), 'gitcfg ')), 'gitconfig');
+    writeFileSync(cfg, '[user]\n\tname = Owner Person\n\temail = owner@example.invalid\n');
+    vi.stubEnv('GIT_CONFIG_GLOBAL', cfg);
+    vi.stubEnv('FAKE_AGENT_MODE', 'parts');
+    vi.stubEnv('FAKE_AGENT_PARTS', '99');
+    vi.stubEnv('FAKE_AGENT_WRITES', '1');
+    const h = harness();
+    const dir = freshFolder();
+    const { runId, s } = await newSolution(h, dir);
+    // One checkpoint, then a part that changed nothing: straight to the push request.
+    expect(s.parked).toMatchObject({ state: 'PUSH', reason: 'needs_push' });
+    h.engine.submitPush(runId, 'skip');
+    await h.engine.resume(runId, new DefaultsPrompter());
+    vi.stubEnv('FAKE_AGENT_WRITES', '99');
+    vi.stubEnv('FAKE_AGENT_PARTS', '3');
+    await h.engine.continueCoding(runId);
+    await h.engine.resume(runId, new DefaultsPrompter());
+    expect(of(h, runId, 'code.part').map((e) => e['part'])).toEqual([1, 1]);
+  });
+
+  it('refuses a run that is not finished, and one that did not code in a folder', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'parts');
+    const h = harness();
+    const dir = freshFolder();
+    const { runId } = await newSolution(h, dir);
+    await expect(h.engine.continueCoding(runId)).rejects.toMatchObject({ code: 'not_done' });
+    const scaffold = h.engine.startFromSpec(spec(), {
+      kind: 'new',
+      surface: 'test',
+      specOnly: true,
+    });
+    await expect(h.engine.continueCoding(scaffold)).rejects.toMatchObject({ code: 'not_folder' });
   });
 });
 

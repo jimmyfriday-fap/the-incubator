@@ -376,6 +376,21 @@ describe('handoff on a repository the Incubator did not build (ADR-025)', () => 
     expect(msg).not.toContain('Incubator-Part: finish');
   });
 
+  it('tells the first part of a continued run where the earlier session ended (plan 037)', () => {
+    const text = continuationText({
+      part: 1,
+      max: MAX_CODE_PARTS,
+      base: 'd'.repeat(40),
+      earlier: [],
+      before: { sha: 'd'.repeat(40), since: 'e'.repeat(40), tripped: 'turns 151 > 150' },
+    });
+    expect(text.startsWith('## Continuing: part 1 of up to 5\n\n')).toBe(true);
+    expect(text).toContain(
+      `The earlier coding session's work is committed on this branch since ${'e'.repeat(12)}; it ends at commit ${'d'.repeat(12)} (it stopped at turns 151 > 150).`,
+    );
+    expect(text).not.toContain('Earlier parts, committed on this branch');
+  });
+
   it('ships the external prompt versioned and byte-pinned', () => {
     const p = loadPrompt('handoff-external');
     expect(p.name).toBe('handoff-external');
