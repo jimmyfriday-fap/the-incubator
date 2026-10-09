@@ -53,7 +53,8 @@ export function StackChoice(props: {
   const ask = () => {
     setAsking(true);
     setRec(null);
-    post<StackRecommendResponse>('/api/stacks/recommend', { idea: props.idea })
+    // why: the server accepts at most 4000 characters of idea here; an uploaded file can be longer (plan 035).
+    post<StackRecommendResponse>('/api/stacks/recommend', { idea: props.idea.slice(0, 4000) })
       .then(setRec)
       .catch((e: Error) => setRec({ status: 'failed', message: e.message }))
       .finally(() => setAsking(false));

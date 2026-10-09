@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type {
   FolderCheck,
   StackCreateResponse,
@@ -8,6 +8,7 @@ import type {
 import { getSession, post } from '../api.js';
 import { FolderField } from './FolderField.js';
 import { StackChoice } from './StackChoice.js';
+import { addMarkdownFiles } from '../markdownFiles.js';
 
 type Intent = '' | 'new' | 'update';
 
@@ -21,6 +22,9 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
   const [folder, setFolder] = useState('');
   const [check, setCheck] = useState<FolderCheck | null>(null);
   const [narrative, setNarrative] = useState('');
+  // The markdown files whose text was added to the description (plan 035), and why the last choice was refused.
+  const [added, setAdded] = useState<string[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [repoRef, setRepoRef] = useState('');
   const [gaps, setGaps] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -52,6 +56,26 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
     setRepoRef((cur) => (cur === '' || cur === suggestedRef.current ? next : cur));
     suggestedRef.current = next;
   }, []);
+  const onFiles = (e: ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const files = Array.from(input.files ?? []);
+    // why: clear the chooser so the same file can be chosen again after the owner edits the text.
+    input.value = '';
+    if (files.length === 0) return;
+    void addMarkdownFiles(narrative, files)
+      .then((r) => {
+        if (r.ok) {
+          setNarrative(r.text);
+          setAdded((cur) => [...cur, ...r.added]);
+          setUploadError(null);
+        } else {
+          setUploadError(r.error);
+        }
+      })
+      .catch((err: unknown) => {
+        setUploadError(err instanceof Error ? err.message : 'The file could not be read.');
+      });
+  };
   const go = (body: StartRunBody) => {
     setStarting(true);
     void start(body).finally(() => setStarting(false));
@@ -123,6 +147,26 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
               placeholder="Stockroom: a web app for independent cafés to track stock…"
             />
           </label>
+          <label>
+            Or add markdown files (.md) to the description
+            <input
+              data-testid="narrative-files"
+              type="file"
+              accept=".md,.markdown,text/markdown"
+              multiple
+              onChange={onFiles}
+            />
+          </label>
+          {added.length > 0 && (
+            <p className="muted" data-testid="narrative-added">
+              Added to the description: {added.join(', ')}. You can edit the text above.
+            </p>
+          )}
+          {uploadError && (
+            <p className="error" role="alert" data-testid="narrative-upload-error">
+              {uploadError}
+            </p>
+          )}
           <StackChoice
             idea={narrative}
             value={stack}

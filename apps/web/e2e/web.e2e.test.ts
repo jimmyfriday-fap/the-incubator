@@ -208,6 +208,55 @@ describe('web UI (Playwright, fakes)', () => {
     expect(stackCalls.filter((c) => c.args[0] === 'create')).toEqual([]);
   });
 
+  it('new: markdown files fill the description, and a file that is not markdown is refused', async () => {
+    const folder = newFolder();
+    const { page, errors } = await open({ pick: [folder] });
+    await intent(page).selectOption({ label: 'New solution' });
+    await page.getByTestId('pick-folder').click();
+    await expect.poll(() => page.getByTestId('folder-path').inputValue(), UI).toBe(folder);
+    await expect
+      .poll(() => page.getByTestId('folder-ok').textContent(), UI)
+      .toContain('will be created and become the repository');
+    expect(await page.getByTestId('start-new').isDisabled()).toBe(true);
+
+    await page.getByTestId('narrative-files').setInputFiles([
+      {
+        name: 'stockroom.md',
+        mimeType: 'text/markdown',
+        buffer: Buffer.from('# Stockroom\n\nTrack stock levels for cafes.\n'),
+      },
+      {
+        name: 'alerts.md',
+        mimeType: 'text/markdown',
+        buffer: Buffer.from('Reorder alerts when stock runs low.\n'),
+      },
+    ]);
+    await expect
+      .poll(() => page.getByTestId('narrative').inputValue(), UI)
+      .toBe('# Stockroom\n\nTrack stock levels for cafes.\n\nReorder alerts when stock runs low.');
+    expect(await page.getByTestId('narrative-added').textContent()).toContain(
+      'stockroom.md, alerts.md',
+    );
+    // The chooser is cleared after reading, so the same file can be chosen again.
+    expect(
+      await page.getByTestId('narrative-files').evaluate((el) => (el as HTMLInputElement).value),
+    ).toBe('');
+    await expect.poll(() => page.getByTestId('start-new').isDisabled(), UI).toBe(false);
+
+    // A file that is not markdown is refused and the description is left as it was.
+    await page.getByTestId('narrative-files').setInputFiles({
+      name: 'notes.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('x'),
+    });
+    await page.getByTestId('narrative-upload-error').waitFor({ timeout: 15_000 });
+    expect(await page.getByTestId('narrative-upload-error').textContent()).toContain(
+      'notes.txt is not a markdown file',
+    );
+    expect(await page.getByTestId('narrative').inputValue()).toContain('Reorder alerts');
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
   it('new solution: folder → describe → questions → review → publish → coding → commit → push → DONE', async () => {
     const folder = newFolder();
     const { server, h, page, errors } = await open({ pick: [folder] });
