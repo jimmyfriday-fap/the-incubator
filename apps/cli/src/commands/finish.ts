@@ -147,6 +147,11 @@ export async function reportFinish(deps: CliDeps, io: Io, state: RunState): Prom
           : [
               `✔ committed ${d.commit?.sha?.slice(0, 12) ?? ''} on ${d.commit?.branch ?? d.branch ?? '?'} in ${d.dir}`,
             ];
+    // why: the agent stopped before finishing the plan; it can code on in place (plan 037), unless changes were left.
+    if (d.agent && d.agent.verdict !== 'ready' && !d.commit?.left)
+      lines.push(
+        `  the agent stopped before finishing the plan (${d.agent.tripped ?? d.agent.verdict}); continue with: incubator resume ${id} --continue`,
+      );
     io.stderr(`${lines.join('\n')}\n`);
     return ExitCode.Ok;
   }

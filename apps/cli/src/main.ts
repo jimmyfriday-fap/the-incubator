@@ -93,6 +93,10 @@ export async function main(
       '--change <text>',
       'at review: correct the plan in your own words; it is drafted again and comes back to review',
     )
+    .option(
+      '--continue',
+      'folder runs whose agent stopped before finishing the plan: code on from where it stopped, on the same branch (use on its own)',
+    )
     .option('--commit', "folder runs: commit the agent's changes (message: -m, or the drafted one)")
     .option('-m, --message <text>', 'the commit message for --commit')
     .option('--leave', 'folder runs: keep the changes uncommitted')
@@ -116,6 +120,7 @@ export async function main(
           promptFile?: string;
           refresh?: boolean;
           change?: string;
+          continue?: boolean;
           commit?: boolean;
           message?: string;
           leave?: boolean;

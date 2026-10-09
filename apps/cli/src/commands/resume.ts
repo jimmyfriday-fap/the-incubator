@@ -20,6 +20,7 @@ export async function runResume(
     promptFile?: string;
     refresh?: boolean;
     change?: string;
+    continue?: boolean;
   } & FinishFlags &
     CheckOptions,
 ): Promise<number> {
@@ -44,6 +45,25 @@ export async function runResume(
     throw new PolicyError('use --change on its own, while the run waits at review', {
       code: 'usage',
     });
+  if (
+    opts.continue &&
+    (opts.refresh ||
+      opts.yes ||
+      opts.change !== undefined ||
+      opts.prompt !== undefined ||
+      opts.promptFile !== undefined ||
+      opts.commit ||
+      opts.leave ||
+      opts.push ||
+      opts.skipPush ||
+      (opts.check?.length ?? 0) > 0 ||
+      opts.checks === false)
+  )
+    throw new PolicyError('use --continue on its own, on a finished run whose agent stopped', {
+      code: 'usage',
+    });
+  // A finished folder run whose agent stopped before the plan was done codes on (plan 037).
+  if (opts.continue) await deps.engine.continueCoding(runId);
   // Update runs: read the repository again; the run then asks to confirm what was asked (plan 025).
   if (opts.refresh) await deps.engine.refreshRepo(runId);
   const request = opts.promptFile

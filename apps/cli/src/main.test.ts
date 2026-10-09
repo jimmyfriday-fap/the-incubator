@@ -812,6 +812,60 @@ describe('publish, handoff, auth, gc', () => {
       expect(c.err.join('')).toContain('✔ opened https://github.com/octo/order-desk/pull/1');
     });
 
+    it('continues a run whose agent stopped at a limit with --continue (plan 039)', async () => {
+      const { h, dir, factory } = await setup();
+      process.env['FAKE_AGENT_MODE'] = 'parts';
+      process.env['FAKE_AGENT_PARTS'] = '99';
+      try {
+        const a = io();
+        expect(await main(['enhance', dir, ...start], a.io, factory)).toBe(2);
+        const runId = /run (\S+): the agent has stopped/.exec(a.err.join(''))![1]!;
+        expect(h.engine.entries(runId).filter((e) => e.type === 'code.part')).toHaveLength(4);
+        await main(['resume', runId, '--commit'], io().io, factory);
+        const done = io();
+        expect(await main(['resume', runId, '--push'], done.io, factory)).toBe(0);
+        expect(done.err.join('')).toContain(`continue with: incubator resume ${runId} --continue`);
+        // --continue goes on its own, and is refused before the run is touched.
+        const both = io();
+        expect(await main(['resume', runId, '--continue', '--push'], both.io, factory)).toBe(2);
+        expect(both.err.join('')).toContain('use --continue on its own');
+        expect(h.engine.entries(runId).some((e) => e.type === 'code.continue')).toBe(false);
+        process.env['FAKE_AGENT_PARTS'] = '7';
+        const c = io();
+        expect(await main(['resume', runId, '--continue'], c.io, factory)).toBe(2);
+        expect(c.err.join('')).toContain(`run ${runId}: the agent has stopped`);
+        expect(h.engine.entries(runId).some((e) => e.type === 'code.continue')).toBe(true);
+        await main(['resume', runId, '--commit'], io().io, factory);
+        const again = io();
+        expect(await main(['resume', runId, '--push'], again.io, factory)).toBe(0);
+        expect(again.err.join('')).toContain('✔ opened https://github.com/octo/order-desk/pull/1');
+        // The plan is finished now: nothing to continue.
+        expect(again.err.join('')).not.toContain('--continue');
+        expect(h.github.repos.get('octo/order-desk')!.prs).toHaveLength(1);
+      } finally {
+        process.env['FAKE_AGENT_MODE'] = 'edit';
+        delete process.env['FAKE_AGENT_PARTS'];
+      }
+    }, 300_000);
+
+    it('does not offer --continue when the changes were left uncommitted (plan 039)', async () => {
+      const { dir, factory } = await setup();
+      process.env['FAKE_AGENT_MODE'] = 'parts';
+      process.env['FAKE_AGENT_PARTS'] = '99';
+      try {
+        const a = io();
+        expect(await main(['enhance', dir, ...start], a.io, factory)).toBe(2);
+        const runId = /run (\S+): the agent has stopped/.exec(a.err.join(''))![1]!;
+        const left = io();
+        expect(await main(['resume', runId, '--leave'], left.io, factory)).toBe(0);
+        expect(left.err.join('')).toContain('✔ left the changes uncommitted');
+        expect(left.err.join('')).not.toContain('--continue');
+      } finally {
+        process.env['FAKE_AGENT_MODE'] = 'edit';
+        delete process.env['FAKE_AGENT_PARTS'];
+      }
+    }, 300_000);
+
     it('keeps the commit local with --skip-push, and the changes uncommitted with --leave', async () => {
       const first = await setup();
       const a = io();
