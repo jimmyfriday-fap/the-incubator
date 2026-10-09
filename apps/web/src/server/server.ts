@@ -480,11 +480,19 @@ export function createApp(opts: ServerOptions): WebApp {
     withRun(async (runId): Promise<RunDetail> => {
       const s = engine.state(runId);
       const st = driver.status(runId);
+      const finish = await engine.finishDetail(runId);
       return {
         runId,
         kind: s.input.kind,
         state: s.state,
         done: s.done,
+        canContinue:
+          s.done &&
+          !s.cancelled &&
+          Boolean(s.input.dir) &&
+          finish?.agent != null &&
+          finish.agent.verdict !== 'ready' &&
+          !finish.commit?.left,
         busy: st.busy,
         error: st.error ?? s.failure?.message ?? null,
         input: {
@@ -513,7 +521,7 @@ export function createApp(opts: ServerOptions): WebApp {
             : null,
         cancelled: s.cancelled,
         stopped: s.stopped,
-        finish: await engine.finishDetail(runId),
+        finish,
         project: ((p) => (p ? brief(p) : null))(engine.portfolioForRun(runId)),
         models: engine.models(runId),
       };
@@ -662,6 +670,15 @@ export function createApp(opts: ServerOptions): WebApp {
   app.get(
     '/api/runs/:id/repo-status',
     withRun((runId): Promise<RepoStatus> => engine.repoMoved(runId)),
+  );
+
+  // Continues coding a finished folder run whose agent did not finish the plan (plan 037).
+  app.post(
+    '/api/runs/:id/continue',
+    withRun(async (runId) => {
+      await driver.continueCoding(runId);
+      return { accepted: true };
+    }),
   );
 
   // Reads an update run's repository again (plan 025): the owner then confirms what they asked for.

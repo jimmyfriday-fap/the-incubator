@@ -55,6 +55,8 @@ export interface FinishInfo {
   commit: { sha: string | null; branch: string | null; none?: boolean; left?: boolean } | null;
   target: { repo: { owner: string; name: string } | null; reason: string | null };
   pr: { number: number; url: string } | null;
+  /** The parts committed as checkpoints since coding last started (plan 036). */
+  checkpoints: { part: number; sha: string }[];
   progress: {
     turns: number;
     toolCalls: number;
@@ -93,6 +95,8 @@ export interface RunDetail {
   kind: 'new' | 'adopt' | 'enhance' | 'scaffold';
   state: string;
   done: boolean;
+  /** A finished folder run whose agent did not finish the plan can continue coding (plan 037). */
+  canContinue: boolean;
   busy: boolean;
   error: string | null;
   input: {

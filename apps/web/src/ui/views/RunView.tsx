@@ -358,7 +358,9 @@ export function RunView({ runId }: { runId: string }) {
             onSubmit={(answers) => act(post(`/api/runs/${runId}/answers`, { answers }))}
           />
         )}
-        {run.done && !run.cancelled && <Summary run={run} />}
+        {run.done && !run.cancelled && (
+          <Summary run={run} onContinue={() => void act(post(`/api/runs/${runId}/continue`))} />
+        )}
       </TabPanel>
       <TabPanel name="runtab" id="plan" active={tab}>
         {!reviewing && (

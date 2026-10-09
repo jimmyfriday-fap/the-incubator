@@ -182,6 +182,19 @@ export class RunDriver {
     this.spawn(runId, () => this.engine.advance(runId, new WebPrompter()));
   }
 
+  /** Continue coding a finished folder run (plan 037): back to CODE on the same branch, in the background. */
+  async continueCoding(runId: string): Promise<void> {
+    if (this.#busy.has(runId)) throw new ConflictError(`run ${runId} is already working`);
+    try {
+      await this.engine.continueCoding(runId);
+    } catch (err) {
+      if (err instanceof PolicyError && err.code === 'working')
+        throw new ConflictError(err.message);
+      throw err;
+    }
+    this.spawn(runId, () => this.engine.advance(runId, new WebPrompter()));
+  }
+
   /** REVIEW → APPROVED (optionally with an edited spec), then continues in the background. */
   approve(runId: string, spec?: IncubatorSpec): void {
     this.parkedAt(runId, 'REVIEW');

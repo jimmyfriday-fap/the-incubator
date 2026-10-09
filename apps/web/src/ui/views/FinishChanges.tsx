@@ -44,6 +44,14 @@ export function CommitRequest({
           {finish.agent?.tripped ? ` (${finish.agent.tripped})` : ''}
         </p>
       )}
+      {finish.checkpoints.length > 0 && (
+        <p className="muted" data-testid="agent-parts">
+          The agent worked in {finish.checkpoints.length + 1} parts. Parts 1 to{' '}
+          {finish.checkpoints.length} are already committed on <code>{finish.branch}</code> as
+          checkpoints ({finish.checkpoints.map((c) => c.sha.slice(0, 7)).join(', ')}); below is what
+          the last part changed.
+        </p>
+      )}
       {finish.agent?.checks?.mode === 'approved' && (
         <p className="muted" data-testid="agent-checks">
           The agent could run only the commands you approved (

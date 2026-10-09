@@ -1,7 +1,7 @@
 import type { RunDetail } from '../../api-types.js';
 
 /** The outcome of a finished run: the published repository, or the adopt pull request. */
-export function Summary({ run }: { run: RunDetail }) {
+export function Summary({ run, onContinue }: { run: RunDetail; onContinue?: () => void }) {
   return (
     <section className="card wide" data-testid="summary">
       <h2>Done</h2>
@@ -95,6 +95,19 @@ export function Summary({ run }: { run: RunDetail }) {
                 #{run.finish.pr.number}
               </a>
             </p>
+          )}
+          {run.canContinue && (
+            <div data-testid="continue-box">
+              <p className="warn">
+                The agent stopped before finishing the plan
+                {run.finish.agent?.tripped ? ` (${run.finish.agent.tripped})` : ''}. Continue coding
+                on <code>{run.finish.branch}</code>: it picks up where it stopped, and you review
+                the commit and the push again.
+              </p>
+              <button type="button" data-testid="continue-coding" onClick={onContinue}>
+                Continue coding
+              </button>
+            </div>
           )}
         </>
       )}

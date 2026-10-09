@@ -14,7 +14,10 @@ export function Coding({ run }: { run: RunDetail }) {
             on branch <code>{run.finish.branch}</code>
           </>
         ) : null}
-        . Nothing is committed: when it stops you will see what it changed and decide.
+        .{' '}
+        {run.finish?.checkpoints.length
+          ? `Parts 1 to ${run.finish.checkpoints.length} stopped at a run limit and are committed on the branch as checkpoints, not pushed; part ${run.finish.checkpoints.length + 1} is under way.`
+          : 'Nothing is committed: when it stops you will see what it changed and decide.'}
       </p>
       {p ? (
         <p className="muted" data-testid="coding-progress">

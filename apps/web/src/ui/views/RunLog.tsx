@@ -36,6 +36,10 @@ function describe(e: LogEntry): string {
       const n = typeof e['commits'] === 'number' ? e['commits'] : 0;
       return `repository read again${to}${n > 0 ? ` (${n} new commit${n === 1 ? '' : 's'})` : ''}`;
     }
+    case 'code.part':
+      return `part ${String(e['part'])} stopped at a run limit${typeof e['tripped'] === 'string' ? ` (${e['tripped']})` : ''}: committed as checkpoint ${String(e['sha']).slice(0, 7)}`;
+    case 'code.continue':
+      return `continue coding from ${String(e['from']).slice(0, 7)} on ${String(e['branch'])}`;
     case 'questions':
       return `${(e['questions'] as unknown[]).length} question(s)${e['carried'] === true ? ', asked again from before the refresh' : ''}`;
     default:

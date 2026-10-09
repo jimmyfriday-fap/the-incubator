@@ -590,7 +590,7 @@ pnpm exec prettier --write packages/core/src/state.ts packages/core/src/engine.t
 | --------------------------------------- | ------------------------------------------------------------------------------------ |
 | `packages/core/src/state.ts`            | `case 'code.continue':`                                                              |
 | `packages/core/src/engine.ts`           | `async continueCoding(runId: string): Promise<void> {`                               |
-| `packages/core/src/handoff.ts`          | `before?: { sha: string; tripped: string \| null };`                                 |
+| `packages/core/src/handoff.ts`          | `before?: { sha: string; since: string \| null; tripped: string \| null };`          |
 | `packages/core/src/handoff.test.ts`     | `tells the first part of a continued run where the earlier session ended (plan 037)` |
 | `packages/core/src/folder-runs.test.ts` | `describe('continue coding (plan 037)', () => {`                                     |
 

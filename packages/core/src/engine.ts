@@ -1887,6 +1887,7 @@ export class Engine {
       commit: committed ?? null,
       target,
       pr: pr ?? null,
+      checkpoints: this.codeParts(runId).map(({ part, sha }) => ({ part, sha })),
       progress:
         stage === 'coding' && progress
           ? {

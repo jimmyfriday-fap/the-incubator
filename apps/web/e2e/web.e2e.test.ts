@@ -968,6 +968,67 @@ describe('web UI (Playwright, fakes)', () => {
     expect(errors, errors.join('\n')).toEqual([]);
   });
 
+  it('continue coding: an agent stopped at its limit works in parts, then continues after the push into the same pull request (plans 036-038)', async () => {
+    process.env['FAKE_AGENT_MODE'] = 'parts';
+    process.env['FAKE_AGENT_PARTS'] = '99';
+    try {
+      const { h, page, errors } = await open({ enhance: 'export-orders' });
+      const { dir } = await seedAdoptRepo(h, 'bare-node');
+      await intent(page).selectOption({ label: 'Update an existing solution' });
+      await page.getByTestId('folder-path').fill(dir);
+      await page.getByTestId('repo-ref').fill('octo/bare-node');
+      await expect.poll(() => page.getByTestId('start-enhance').isDisabled(), UI).toBe(false);
+      await page.getByTestId('start-enhance').click();
+      await page.waitForURL(/\/runs\/[\w-]+$/);
+      await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
+      await page
+        .getByTestId('request-text')
+        .fill('Kitchen staff need to export the orders list as a CSV file at the end of the day.');
+      await page.getByTestId('submit-request').click();
+      await page.getByTestId('review').waitFor({ timeout: 30_000 });
+      await page.getByTestId('approve').click();
+
+      // Five parts, each stopped at a limit: four checkpoint commits, the fifth part's work waits for the owner.
+      await page.getByTestId('commit-request').waitFor({ timeout: 180_000 });
+      expect(await page.getByTestId('agent-verdict').textContent()).toContain(
+        'stopped at a run limit',
+      );
+      expect(await page.getByTestId('agent-parts').textContent()).toContain(
+        'The agent worked in 5 parts.',
+      );
+      expect(await page.getByTestId('changed-files').textContent()).toContain('src/part-5.txt');
+      await page.getByTestId('commit').click();
+      await page.getByTestId('push-request').waitFor({ timeout: 60_000 });
+      await page.getByTestId('push').click();
+      await page.getByTestId('continue-coding').waitFor({ timeout: 60_000 });
+      const pr = await page.getByTestId('finish-pr-link').textContent();
+      await shot(page, 'continue-1-offered');
+
+      // Continue: part 6 stops at the limit again and is committed; part 7 finishes the plan.
+      process.env['FAKE_AGENT_PARTS'] = '7';
+      await page.getByTestId('continue-coding').click();
+      await page.getByTestId('commit-request').waitFor({ timeout: 180_000 });
+      expect(await page.getByTestId('agent-verdict').textContent()).toContain(
+        'The agent finished and reports the work ready for test.',
+      );
+      expect(await page.getByTestId('agent-parts').textContent()).toContain(
+        'The agent worked in 2 parts.',
+      );
+      await page.getByTestId('commit').click();
+      await page.getByTestId('push-request').waitFor({ timeout: 60_000 });
+      await page.getByTestId('push').click();
+      await page.getByTestId('finish-pr-link').waitFor({ timeout: 60_000 });
+      // The same pull request, and nothing left to continue.
+      expect(await page.getByTestId('finish-pr-link').textContent()).toBe(pr);
+      expect(await page.getByTestId('continue-coding').count()).toBe(0);
+      await shot(page, 'continue-2-done');
+      expect(errors, errors.join('\n')).toEqual([]);
+    } finally {
+      process.env['FAKE_AGENT_MODE'] = 'edit';
+      delete process.env['FAKE_AGENT_PARTS'];
+    }
+  }, 300_000);
+
   it('a page on another origin cannot drive the API, and a reused launch link is refused', async () => {
     const { server, h, page } = await open();
     const evil = http.createServer((_req, res) => {

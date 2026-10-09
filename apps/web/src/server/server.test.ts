@@ -396,6 +396,25 @@ describe('enhance over the API', () => {
     });
   });
 
+  it('offers continue coding only for a finished run, and refuses it before (plan 038)', async () => {
+    const { api, h } = await boot({ enhance: 'refresh' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        dir,
+        repoRef: 'octo/bare-node',
+        request: REQUEST,
+      })
+    ).body;
+    const d = await until(api, runId, (x) => !x.busy && x.parked?.state === 'REVIEW');
+    expect(d.canContinue).toBe(false);
+    const r = await api.post<{ error: string }>(`/api/runs/${runId}/continue`);
+    expect(r.status).toBe(422);
+    expect(r.body.error).toContain('is not finished');
+    expect((await api.post('/api/runs/20200101-000000-aaaaaa/continue')).status).toBe(404);
+  });
+
   it("says when an update run's repository moved on, and a refresh reads it again and asks to confirm the request (plan 027)", async () => {
     const { api, h } = await boot({ enhance: 'refresh' });
     const { dir } = await seedAdoptRepo(h, 'bare-node');
