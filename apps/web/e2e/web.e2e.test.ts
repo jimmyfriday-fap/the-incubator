@@ -1078,6 +1078,51 @@ describe('web UI (Playwright, fakes)', () => {
     }
   }, 300_000);
 
+  it('update: the Incubator runs the approved commands itself, keeps going until every request is done, and shows what it checked (plan 044)', async () => {
+    process.env['FAKE_AGENT_MODE'] = 'steps';
+    process.env['FAKE_AGENT_TICKETS'] = 'E-export-orders,E-export-filter';
+    process.env['FAKE_AGENT_MARKS'] = '1';
+    try {
+      const { h, page, errors } = await open({ enhance: 'two-requests' });
+      const { dir } = await seedAdoptRepo(h, 'bare-node');
+      await intent(page).selectOption({ label: 'Update an existing solution' });
+      await page.getByTestId('folder-path').fill(dir);
+      await page.getByTestId('repo-ref').fill('octo/bare-node');
+      await expect.poll(() => page.getByTestId('start-enhance').isDisabled(), UI).toBe(false);
+      await page.getByTestId('start-enhance').click();
+      await page.waitForURL(/\/runs\/[\w-]+$/);
+      await page.getByTestId('change-request').waitFor({ timeout: 30_000 });
+      await page
+        .getByTestId('request-text')
+        .fill('Kitchen staff need to export the orders list as a CSV file, and filter it by date.');
+      await page.getByTestId('submit-request').click();
+      await page.getByTestId('review').waitFor({ timeout: 30_000 });
+      // A program that is not installed here: the Incubator reports it as not run, never as broken.
+      await page.getByTestId('checks-editor').fill('incubator-no-such-tool test');
+      await page.getByTestId('approve').click();
+
+      // Part 1 marked one request; the Incubator started part 2 for the other, then checked its own way.
+      await page.getByTestId('commit-request').waitFor({ timeout: 180_000 });
+      expect(await page.getByTestId('agent-parts').textContent()).toContain(
+        'The agent worked in 2 parts.',
+      );
+      expect(await page.getByTestId('agent-verdict').textContent()).toContain(
+        'could not run on this computer',
+      );
+      const verify = (await page.getByTestId('agent-verify').textContent()) ?? '';
+      expect(verify).toContain('What the Incubator checked itself');
+      expect(verify).toContain('not run');
+      expect(verify).toContain('incubator-no-such-tool test (not installed on this computer)');
+      expect(await page.getByTestId('verify-remaining').count()).toBe(0);
+      await shot(page, 'enhance-verified');
+      expect(errors, errors.join('\n')).toEqual([]);
+    } finally {
+      process.env['FAKE_AGENT_MODE'] = 'edit';
+      delete process.env['FAKE_AGENT_TICKETS'];
+      delete process.env['FAKE_AGENT_MARKS'];
+    }
+  }, 300_000);
+
   it('a page on another origin cannot drive the API, and a reused launch link is refused', async () => {
     const { server, h, page } = await open();
     const evil = http.createServer((_req, res) => {

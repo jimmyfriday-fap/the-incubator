@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { LogEntry } from '../../api-types.js';
+import { codeLogLine } from '../verify.js';
 
 type Level = 'info' | 'warn' | 'error';
 
@@ -37,7 +38,9 @@ function describe(e: LogEntry): string {
       return `repository read again${to}${n > 0 ? ` (${n} new commit${n === 1 ? '' : 's'})` : ''}`;
     }
     case 'code.part':
-      return `part ${String(e['part'])} stopped at a run limit${typeof e['tripped'] === 'string' ? ` (${e['tripped']})` : ''}: committed as checkpoint ${String(e['sha']).slice(0, 7)}`;
+    case 'code.baseline':
+    case 'code.verify':
+      return codeLogLine(e) ?? e.type;
     case 'code.continue':
       return `continue coding from ${String(e['from']).slice(0, 7)} on ${String(e['branch'])}`;
     case 'questions':

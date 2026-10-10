@@ -821,6 +821,10 @@ describe('publish, handoff, auth, gc', () => {
         expect(await main(['enhance', dir, ...start], a.io, factory)).toBe(2);
         const runId = /run (\S+): the agent has stopped/.exec(a.err.join(''))![1]!;
         expect(h.engine.entries(runId).filter((e) => e.type === 'code.part')).toHaveLength(4);
+        expect(a.err.join('')).toMatch(
+          /the agent has stopped; the last part is not committed \(parts 1 to 4 are committed on \S+, not pushed\)/,
+        );
+        expect(a.err.join('')).not.toContain('nothing is committed');
         await main(['resume', runId, '--commit'], io().io, factory);
         const done = io();
         expect(await main(['resume', runId, '--push'], done.io, factory)).toBe(0);

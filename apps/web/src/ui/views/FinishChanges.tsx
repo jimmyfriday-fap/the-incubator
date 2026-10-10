@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { FinishInfo } from '../../api-types.js';
+import { hasVerdict, runBadge, runNote, verifiedVerdict } from '../verify.js';
 
 const VERDICT: Record<
   NonNullable<FinishInfo['agent']>['verdict'],
@@ -34,7 +35,14 @@ export function CommitRequest({
     setSending(true);
     void p.finally(() => setSending(false));
   };
-  const v = finish.agent ? VERDICT[finish.agent.verdict] : null;
+  const checked = finish.agent?.verify;
+  const verify = hasVerdict(checked) ? checked : null;
+  // The Incubator's own words only for a run that ended normally; a limit, an error or a stop keeps its own text.
+  const v = finish.agent
+    ? verify && (finish.agent.verdict === 'ready' || finish.agent.verdict === 'parked')
+      ? verifiedVerdict(verify)
+      : VERDICT[finish.agent.verdict]
+    : null;
   return (
     <section className="card wide" data-testid="commit-request">
       <h2>Review the changes, then commit</h2>
@@ -55,8 +63,10 @@ export function CommitRequest({
       {finish.agent?.checks?.mode === 'approved' && (
         <p className="muted" data-testid="agent-checks">
           The agent could run only the commands you approved (
-          {finish.agent.checks.commands.join(', ')}). Whether they passed is its own report: read it
-          below.
+          {finish.agent.checks.commands.join(', ')}).{' '}
+          {verify
+            ? 'The Incubator ran them itself when the agent stopped: the results are below.'
+            : 'Whether they passed is its own report: read it below.'}
         </p>
       )}
       {finish.agent?.checks?.mode === 'none' && (
@@ -64,6 +74,27 @@ export function CommitRequest({
           No check commands were approved, so the agent could not run anything. This work is
           untested: run the repository's tests yourself before you commit.
         </p>
+      )}
+      {verify && (
+        <div data-testid="agent-verify">
+          <h3>What the Incubator checked itself</h3>
+          {verify.runs.length > 0 && (
+            <ul className="changes" data-testid="verify-runs">
+              {verify.runs.map((r) => (
+                <li key={r.command} data-result={r.result}>
+                  <span className="badge">{runBadge(r)}</span> {r.command}
+                  {runNote(r, verify.alreadyFailing)}
+                  {r.result === 'failed' && r.tail ? <pre>{r.tail}</pre> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+          {verify.remaining.length > 0 && (
+            <p className="warn" data-testid="verify-remaining">
+              These requests are not marked done: {verify.remaining.join(', ')}.
+            </p>
+          )}
+        </div>
       )}
       {finish.agent?.summary && (
         <>

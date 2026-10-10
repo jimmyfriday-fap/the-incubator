@@ -14,6 +14,20 @@ export interface FinishFlags {
 
 const MAX_LISTED = 25;
 
+/** What the Incubator checked itself after the agent stopped (plan 044): one line per command, one for the requests left. */
+export function verifyLines(
+  v: NonNullable<NonNullable<FinishDetail['agent']>['verify']>,
+): string[] {
+  const word = { passed: '✔ passed', missing: '- not run', failed: '✘ failed' } as const;
+  return [
+    ...v.runs.map(
+      (r) =>
+        `  check      ${word[r.result]}: ${r.command}${r.result === 'failed' && v.alreadyFailing.includes(r.command) ? ' (was already failing before the agent started)' : ''}`,
+    ),
+    ...(v.remaining.length > 0 ? [`  not done   ${v.remaining.join(', ')}`] : []),
+  ];
+}
+
 function describeChanges(d: FinishDetail): string {
   const shown = d.files.slice(0, MAX_LISTED).map((f) => `    ${f.code.trim().padEnd(2)} ${f.path}`);
   const more = d.files.length > MAX_LISTED ? [`    … and ${d.files.length - MAX_LISTED} more`] : [];
@@ -24,6 +38,7 @@ function describeChanges(d: FinishDetail): string {
     ...shown,
     ...more,
     ...(d.agent ? [`  agent      ${d.agent.verdict}: ${d.agent.summary ?? '(no summary)'}`] : []),
+    ...(d.agent?.verify ? verifyLines(d.agent.verify) : []),
   ].join('\n');
 }
 
@@ -124,8 +139,13 @@ export async function reportFinish(deps: CliDeps, io: Io, state: RunState): Prom
   if (state.state === 'PARKED' && state.parked?.reason === 'needs_commit') {
     const d = await deps.engine.finishDetail(id);
     if (d) io.stderr(`${describeChanges(d)}\n`);
+    // Parts committed as checkpoints (plans 036 and 042) are on the branch already; only the last part is open.
+    const parts = d?.checkpoints.length ?? 0;
+    const open = parts
+      ? `the last part is not committed (parts 1 to ${parts} are committed on ${d?.branch ?? 'the branch'}, not pushed)`
+      : 'nothing is committed';
     io.stderr(
-      `⏸ run ${id}: the agent has stopped; nothing is committed\n  commit with: incubator resume ${id} --commit [-m "message"]\n  or keep the changes uncommitted: incubator resume ${id} --leave\n`,
+      `⏸ run ${id}: the agent has stopped; ${open}\n  commit with: incubator resume ${id} --commit [-m "message"]\n  or keep the changes uncommitted: incubator resume ${id} --leave\n`,
     );
     return ExitCode.Policy;
   }

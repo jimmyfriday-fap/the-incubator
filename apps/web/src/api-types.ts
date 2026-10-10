@@ -48,6 +48,20 @@ export interface FinishInfo {
     costUsd: number | null;
     /** What the agent could run to check its work (absent on runs from before ADR-025). */
     checks?: { mode: 'gate' | 'approved' | 'none'; commands: string[] };
+    /** How many parts the agent worked in (plan 036); absent in reports journaled before. */
+    parts?: number;
+    /** The Incubator's own check of an update run (plan 042); absent on other runs. */
+    verify?: {
+      done: boolean;
+      remaining: string[];
+      runs: {
+        command: string;
+        result: 'passed' | 'failed' | 'missing';
+        exitCode: number | null;
+        tail: string;
+      }[];
+      alreadyFailing: string[];
+    };
   } | null;
   files: { code: string; path: string }[];
   message: string;
