@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'n
 import path from 'node:path';
 import type { GitIdentity, RepoRef, StatusEntry } from '@incubator/git';
 import { cleanAgentText, type HandoffOutcome } from './handoff.js';
+import type { CheckRun } from './check-run.js';
 
 /** What the agent's run amounts to, in the words the owner sees at the commit request. */
 export type AgentVerdict = 'ready' | 'parked' | 'ceiling' | 'failed' | 'stopped';
@@ -28,6 +29,8 @@ export interface AgentReport {
   costUsd: number | null;
   /** How many parts the agent worked in (plan 036); absent in reports journaled before. */
   parts?: number;
+  /** The Incubator's own check of an update run (plan 042): tickets not marked, and its check runs. */
+  verify?: { done: boolean; remaining: string[]; runs: CheckRun[]; alreadyFailing: string[] };
 }
 
 export function agentReport(out: HandoffOutcome): AgentReport {
@@ -81,11 +84,13 @@ export const MAX_CODE_PARTS = 5;
 
 /** The checkpoint commit after a part stopped at a run limit (plan 036): local only, never the owner's commit. */
 export function partMessage(
-  opts: { title: string; part: number; tripped: string | null },
+  opts: { title: string; part: number; tripped: string | null; left?: string | null },
   runId: string,
 ): string {
   const head = subject('chore', `part ${opts.part} of up to ${MAX_CODE_PARTS}: ${opts.title}`);
-  const why = `The coding agent stopped at a run limit (${opts.tripped ?? 'unknown'}); the next part continues from here.`;
+  const why = opts.tripped
+    ? `The coding agent stopped at a run limit (${opts.tripped}); the next part continues from here.`
+    : `The coding agent stopped with work left (${opts.left ?? 'unknown'}); the next part continues from here.`;
   return `${head}\n\n${why}\n\nIncubator-Run: ${runId}\nIncubator-Part: code-${opts.part}\n`;
 }
 

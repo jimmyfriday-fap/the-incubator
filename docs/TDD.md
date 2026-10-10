@@ -1108,8 +1108,10 @@ is where the coding agent works and who commits.
   approved command and read-only git. Nothing approved (`--yes` approves nothing) means nothing runs,
   with a recorded warning and an "untested" note at the commit request. The commands are validated
   (plain words only, no shells, no `git`, no bare runners), the agent gets the `handoff-external`
-  prompt, and a CLI that cannot restrict tools parks `checks_unenforceable`. The Incubator itself never
-  runs these commands.
+  prompt, and a CLI that cannot restrict tools parks `checks_unenforceable`. When the agent stops, the Incubator itself runs these
+  commands to verify the work (plans 041 and 042): the run is ready only when every request ticket is marked
+  `READY_FOR_TEST` and every command passes, apart from commands that already failed before the agent started;
+  otherwise another part starts, told what is left, up to five. Checking time is not counted against the run ceilings.
 - **COMMIT.** The run parks `needs_commit` with the changed files (`git status`), the agent's verdict
   and summary, and a drafted message (`feat: <ticket title>`, the summary, an `Incubator-Run` trailer).
   The owner edits and approves; the commit is made with the **owner's** git identity, and the run parks

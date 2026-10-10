@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { completeSpec } from '@incubator/spec';
@@ -11,6 +12,7 @@ import {
   continuationText,
   handoffPrompt,
   HANDOFF_ALLOWED_TOOLS,
+  remainingTickets,
   type HandoffProgress,
 } from './handoff.js';
 import { loadPrompt } from './prompts.js';
@@ -349,7 +351,7 @@ describe('handoff on a repository the Incubator did not build (ADR-025)', () => 
   it('tells a continuing part what the earlier parts committed (plan 036)', () => {
     const p = loadPrompt('handoff-continue');
     expect(p.name).toBe('handoff-continue');
-    expect(p.version).toBe('1.0.0');
+    expect(p.version).toBe('1.1.0');
     expect(MAX_CODE_PARTS).toBe(5);
     const text = continuationText({
       part: 3,
@@ -391,10 +393,44 @@ describe('handoff on a repository the Incubator did not build (ADR-025)', () => 
     expect(text).not.toContain('Earlier parts, committed on this branch');
   });
 
+  it('lists the tickets not marked ready, counts a broken ticket file as not done, and tells the next part what is left (plan 042)', () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'tickets '));
+    const dir = path.join(repo, '.incubator', 'tickets');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, 'E-a.json'),
+      JSON.stringify({ id: 'E-a', state: 'READY_FOR_TEST' }),
+    );
+    writeFileSync(
+      path.join(dir, 'E-b.json'),
+      JSON.stringify({ id: 'E-b', state: 'TAGGED_TO_RELEASE', remediations: ['x'] }),
+    );
+    expect(remainingTickets(repo, ['E-a', 'E-b', 'E-c'])).toEqual(['E-b', 'E-c']);
+    writeFileSync(path.join(dir, 'E-d.json'), '{ not json');
+    expect(remainingTickets(repo, ['E-a', 'E-d'])).toEqual(['E-d']);
+    const text = continuationText({
+      part: 2,
+      max: 5,
+      base: null,
+      earlier: [],
+      remaining: [{ id: 'E-b', summary: 'Export as CSV' }],
+      failing: [{ command: 'flutter test', tail: '2 tests failed\nsee above' }],
+    });
+    expect(text).toContain(
+      'These requests are not done yet: their tickets are not marked READY_FOR_TEST.\n\n- E-b: Export as CSV',
+    );
+    expect(text).toContain(
+      'When you stopped, the Incubator ran the approved commands and these failed:\n\n- flutter test:\n    2 tests failed\n    see above',
+    );
+    expect(loadPrompt('handoff-external').body).toContain(
+      'set that ticket\'s `"state"` to `"READY_FOR_TEST"`',
+    );
+  });
+
   it('ships the external prompt versioned and byte-pinned', () => {
     const p = loadPrompt('handoff-external');
     expect(p.name).toBe('handoff-external');
-    expect(p.version).toBe('1.0.0');
+    expect(p.version).toBe('1.1.0');
     expect(p.body).toMatchSnapshot();
   });
 

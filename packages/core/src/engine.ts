@@ -147,6 +147,7 @@ import {
   continuationText,
   handoffPrompt,
   launchHandoff,
+  remainingTickets,
   type HandoffAgent,
   type HandoffOutcome,
   type HandoffProgress,
@@ -154,6 +155,7 @@ import {
   type HandoffPlan,
   type CodePart,
 } from './handoff.js';
+import { runChecks, type CheckRun } from './check-run.js';
 
 /**
  * The identity of what the owner asked for. `existingRepo` (the base commit and the scan) is left
@@ -1765,10 +1767,29 @@ export class Engine {
       const earlier = this.codeParts(runId);
       // A continued run (plan 037): the work before it is committed, and even its first part is told so.
       const resumed = this.continuedFrom(runId);
+      // An update run on a repository the Incubator did not build (plan 042): when a part ends, the Incubator runs
+      // the approved checks itself, and keeps going until every request's ticket is marked and the checks pass.
+      const external = checks.mode !== 'gate';
+      const tickets = external ? this.planTickets(runId) : [];
+      // why: a check that already failed before the agent started (for example, dependencies not installed) is
+      // reported, but does not hold the agent's work back.
+      const baseline =
+        external && checks.mode === 'approved'
+          ? await this.checkBaseline(runId, dir, checks.commands)
+          : [];
+      const alreadyFailing = baseline.filter((r) => r.result === 'failed').map((r) => r.command);
+      let verify: {
+        done: boolean;
+        remaining: string[];
+        runs: CheckRun[];
+        alreadyFailing: string[];
+      } | null = null;
       let out: HandoffOutcome;
       for (;;) {
         let last = 0;
         const part = earlier.length + 1;
+        // The previous part's verification, when it left work: the next part is told exactly what.
+        const left = verify && !verify.done ? verify : null;
         out = await this.launchHandoff(runId, {
           onProgress: (p) => {
             // why: a long run reports every turn; the journal keeps the first and then one a second.
@@ -1784,13 +1805,51 @@ export class Engine {
                   base: base ?? null,
                   earlier,
                   ...(resumed ? { before: resumed } : {}),
+                  ...(left
+                    ? {
+                        remaining: tickets.filter((t) => left.remaining.includes(t.id)),
+                        failing: left.runs
+                          .filter(
+                            (r) =>
+                              r.result === 'failed' && !left.alreadyFailing.includes(r.command),
+                          )
+                          .map((r) => ({ command: r.command, tail: r.tail })),
+                      }
+                    : {}),
                 },
               }
             : {}),
         });
-        if (agentReport(out).verdict !== 'ceiling' || part >= MAX_CODE_PARTS) break;
+        // why: the checks write files too; whether the agent changed anything is read before they run.
+        const changed = (await git.status(dir)).length > 0;
+        verify = null;
+        if (external && !out.stopped) {
+          const remaining = remainingTickets(
+            dir,
+            tickets.map((t) => t.id),
+          );
+          // why: verify a part that ended normally, or one that finished every request as a limit tripped.
+          if ((out.exitCode === 0 && !out.tripped) || (out.tripped && remaining.length === 0)) {
+            const runs =
+              checks.mode === 'approved'
+                ? await this.verifyChecks(runId, dir, checks.commands)
+                : [];
+            verify = {
+              done:
+                remaining.length === 0 &&
+                runs.every((r) => r.result !== 'failed' || alreadyFailing.includes(r.command)),
+              remaining,
+              runs,
+              alreadyFailing,
+            };
+            this.record(runId, 'code.verify', { part, ...verify });
+            if (verify.done) break;
+          }
+        }
+        const more = out.tripped !== null || (verify !== null && !verify.done);
+        if (!more || part >= MAX_CODE_PARTS) break;
         // why: a part that changed nothing would spend the next part's limits the same way.
-        if ((await git.status(dir)).length === 0) break;
+        if (!changed) break;
         // why: without an identity there is nobody to commit as; the commit request then says what to set.
         if (!(await git.identity(dir))) break;
         // why: a checkpoint is only ever made on the run's own branch, never on a branch the owner switched to.
@@ -1802,26 +1861,95 @@ export class Engine {
         // why: a Stop pressed as the limit tripped, or a plan already finished (cost arrives in the last event).
         if (
           this.#active.get(runId)?.controller.signal.aborted ||
-          out.ticketState === 'READY_FOR_TEST'
+          (!external && out.ticketState === 'READY_FOR_TEST')
         )
           break;
         await git.addAll(dir);
         const title = this.finishTitle(runId, this.state(runId));
+        const unfinished = verify
+          ? `${verify.remaining.length} request(s) not done, ${verify.runs.filter((r) => r.result === 'failed' && !alreadyFailing.includes(r.command)).length} check(s) failing`
+          : null;
         const sha = await git.commit(
           dir,
-          partMessage({ title, part, tripped: out.tripped }, runId),
+          partMessage({ title, part, tripped: out.tripped, left: unfinished }, runId),
           {},
         );
         const done: CodePart = { part, sha, tripped: out.tripped };
         this.record(runId, 'code.part', { ...done });
         earlier.push(done);
       }
+      const report = agentReport(out);
+      // The verdict of an update run counts every request and the Incubator's own checks (plan 042).
+      const verdict =
+        external && verify
+          ? verify.done
+            ? 'ready'
+            : report.verdict === 'ready'
+              ? 'parked'
+              : report.verdict
+          : report.verdict;
       this.record(runId, 'step.ok', {
         step: 'code.done',
-        data: { ...agentReport(out), checks, parts: earlier.length + 1 },
+        data: {
+          ...report,
+          verdict,
+          checks,
+          parts: earlier.length + 1,
+          ...(verify ? { verify } : {}),
+        },
       });
     });
     this.enter(runId, 'COMMIT');
+  }
+
+  /** An update run's tickets with their requests, in plan order (plan 042). Empty for other runs. */
+  private planTickets(runId: string): { id: string; summary: string }[] {
+    const s = this.state(runId);
+    const delivered = s.steps['enhance.plan']?.data as EnhancePlanRecord | undefined;
+    if (s.input.kind !== 'enhance' || !delivered) return [];
+    const features = this.finalSpec(runId)?.intent.coreFeatures ?? [];
+    return delivered.features.map((f) => ({
+      id: ticketId(f),
+      summary: features.find((x) => x.id === f.id)?.summary ?? f.id,
+    }));
+  }
+
+  /** Runs the approved check commands in the folder, with the PATH the agent had (plan 042). */
+  private async verifyChecks(
+    runId: string,
+    dir: string,
+    commands: readonly string[],
+  ): Promise<CheckRun[]> {
+    // why: an engine built without tools (every test engine) must not find the developer's real SDKs.
+    const tools = this.tools() ?? {
+      exec: this.deps.handoff!.exec,
+      userHome: this.deps.store.runDir(runId),
+    };
+    const env = await toolPathEnv(commands, tools);
+    const runs = await runChecks(commands, dir, tools, {
+      ...(env ? { env } : {}),
+      ...this.sig(runId),
+    });
+    // why: a Stop pressed during the last command ends it early; that result says nothing about the code.
+    this.throwIfStopped(runId);
+    return runs;
+  }
+
+  /** The approved checks on the code before the agent's first part of the run, run once (plan 042). */
+  private async checkBaseline(
+    runId: string,
+    dir: string,
+    commands: readonly string[],
+  ): Promise<CheckRun[]> {
+    const entries = this.entries(runId);
+    // why: a continued run (plan 037) keeps the baseline from before the agent's first part: the earlier
+    // session's own failures are not excused. A continued run with no baseline excuses nothing.
+    const known = entries.find((e) => e.type === 'code.baseline');
+    if (known) return known['runs'] as CheckRun[];
+    if (entries.some((e) => e.type === 'code.continue')) return [];
+    const runs = await this.verifyChecks(runId, dir, commands);
+    this.record(runId, 'code.baseline', { runs });
+    return runs;
   }
 
   /** The coding parts already committed since coding last started (plan 036). */

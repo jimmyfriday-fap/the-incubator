@@ -117,6 +117,9 @@ export function continuationText(c: {
   earlier: readonly CodePart[];
   /** A continued run (plan 037): the commit the earlier coding session's work ends at. */
   before?: { sha: string; since: string | null; tripped: string | null };
+  /** Plan 042: the requests not done yet, and the checks that failed when the Incubator ran them. */
+  remaining?: readonly { id: string; summary: string }[];
+  failing?: readonly { command: string; tail: string }[];
 }): string {
   const list = c.earlier
     .map(
@@ -128,9 +131,34 @@ export function continuationText(c: {
   if (c.before && c.earlier.length === 0) {
     const why = c.before.tripped ? ` (it stopped at ${c.before.tripped})` : '';
     const from = c.before.since ? ` since ${c.before.since.slice(0, 12)}` : '';
-    return `## Continuing: part ${c.part} of up to ${c.max}\n\n${loadPrompt('handoff-continue').body}\n\nThe earlier coding session's work is committed on this branch${from}; it ends at commit ${c.before.sha.slice(0, 12)}${why}.\n`;
+    return `## Continuing: part ${c.part} of up to ${c.max}\n\n${loadPrompt('handoff-continue').body}\n\nThe earlier coding session's work is committed on this branch${from}; it ends at commit ${c.before.sha.slice(0, 12)}${why}.\n${leftText(c)}`;
   }
-  return `## Continuing: part ${c.part} of up to ${c.max}\n\n${loadPrompt('handoff-continue').body}\n\nEarlier parts, committed on this branch${since}:\n\n${list}\n`;
+  return `## Continuing: part ${c.part} of up to ${c.max}\n\n${loadPrompt('handoff-continue').body}\n\nEarlier parts, committed on this branch${since}:\n\n${list}\n${leftText(c)}`;
+}
+
+/** Plan 042: what the previous part left: requests whose tickets are not marked, and checks that failed. */
+function leftText(c: {
+  remaining?: readonly { id: string; summary: string }[];
+  failing?: readonly { command: string; tail: string }[];
+}): string {
+  const parts: string[] = [];
+  if (c.remaining?.length)
+    parts.push(
+      `These requests are not done yet: their tickets are not marked READY_FOR_TEST.\n\n${c.remaining.map((r) => `- ${r.id}: ${r.summary}`).join('\n')}`,
+    );
+  if (c.failing?.length)
+    parts.push(
+      `When you stopped, the Incubator ran the approved commands and these failed:\n\n${c.failing
+        .map(
+          (f) =>
+            `- ${f.command}:\n${f.tail
+              .split('\n')
+              .map((l) => `    ${l}`)
+              .join('\n')}`,
+        )
+        .join('\n\n')}`,
+    );
+  return parts.length ? `\n${parts.join('\n\n')}\n` : '';
 }
 
 /**
@@ -271,6 +299,19 @@ export function activeTicket(
       return id;
   }
   return null;
+}
+
+/** The plan's tickets that are not READY_FOR_TEST (or later) yet (plan 042). A missing or unreadable ticket file counts as not done. */
+export function remainingTickets(repo: string, ids: readonly string[]): string[] {
+  return ids.filter((id) => {
+    let s: string | null = null;
+    try {
+      s = ticketState(repo, id);
+    } catch {
+      // why: the agent edits ticket files now; one it left broken is a request that is not done, not a crash.
+    }
+    return s !== 'READY_FOR_TEST' && s !== 'TEST_PASSED' && s !== 'DEPLOYED';
+  });
 }
 
 export function ticketState(repo: string, id: string): string | null {
