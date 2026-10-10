@@ -3,7 +3,7 @@
 // stream-json. FAKE_AGENT_MODE=complete moves the active ticket to READY_FOR_TEST (like the Stop
 // hook); slow works slowly and never ends by itself (for stopping it); edit does the same and also writes src/agent-work.txt and a result text, like a real coding
 // run; idle stops without touching a file; runaway keeps calling tools until it is killed; spend
-// reports a large cost.
+// reports a large cost; steps works like an update run's agent (plan 043).
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -79,6 +79,30 @@ if (mode === 'slow') {
     writeFileSync(file, `${JSON.stringify({ ...t, state: 'READY_FOR_TEST' }, null, 2)}\n`);
     emit({ type: 'result', subtype: 'success', total_cost_usd: Number(process.env.FAKE_AGENT_COST ?? 0.42), result: `Finished the plan in part ${n}.` });
   }
+} else if (mode === 'steps') {
+  // An update run's agent (plan 043). Each launch saves the prompt it was given, writes the next
+  // src/step-N.txt (only for the first FAKE_AGENT_WRITES launches), and marks the next FAKE_AGENT_MARKS
+  // unmarked tickets READY_FOR_TEST, in the order of FAKE_AGENT_TICKETS, as the external prompt asks.
+  const marks = Number(process.env.FAKE_AGENT_MARKS ?? 1);
+  const writes = Number(process.env.FAKE_AGENT_WRITES ?? 99);
+  mkdirSync(path.join('.incubator', 'state'), { recursive: true });
+  let n = 1;
+  while (existsSync(path.join('.incubator', 'state', `prompt-${n}.txt`))) n++;
+  writeFileSync(path.join('.incubator', 'state', `prompt-${n}.txt`), prompt);
+  if (n <= writes) {
+    mkdirSync('src', { recursive: true });
+    writeFileSync(path.join('src', `step-${n}.txt`), `step ${n}\n`);
+  }
+  let left = marks;
+  for (const id of (process.env.FAKE_AGENT_TICKETS ?? '').split(',').filter(Boolean)) {
+    const file = path.join('.incubator', 'tickets', `${id}.json`);
+    const t = JSON.parse(readFileSync(file, 'utf8'));
+    if (left <= 0 || t.state === 'READY_FOR_TEST') continue;
+    left--;
+    writeFileSync(file, `${JSON.stringify({ ...t, state: 'READY_FOR_TEST' }, null, 2)}\n`);
+  }
+  assistant(1);
+  emit({ type: 'result', subtype: 'success', total_cost_usd: 0.42, result: `Finished step ${n}.` });
 } else if (mode === 'runaway') {
   const tick = () => {
     assistant(5);

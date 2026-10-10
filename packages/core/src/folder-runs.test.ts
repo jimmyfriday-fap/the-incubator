@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -1144,6 +1145,252 @@ describe('coding in parts (plan 036)', () => {
     expect(h.engine.state(runId).steps['code.done']!.data).toMatchObject({
       verdict: 'ceiling',
       parts: 1,
+    });
+  });
+});
+
+describe('an update run keeps going until every request is done (plan 043)', () => {
+  const ORDERS = 'E-export-orders';
+  const FILTER = 'E-export-filter';
+  const FILTER_SUMMARY = 'Filter the CSV export of orders by date on the existing /orders route';
+  const of = (h: Harness, runId: string, type: string) =>
+    h.engine.entries(runId).filter((e) => e.type === type);
+  const done = (h: Harness, runId: string) => h.engine.state(runId).steps['code.done']!.data;
+  const prompt = (dir: string, n: number) =>
+    readFileSync(path.join(dir, '.incubator', 'state', `prompt-${n}.txt`), 'utf8');
+  const ticket = (dir: string, id: string) =>
+    (
+      JSON.parse(readFileSync(path.join(dir, '.incubator', 'tickets', `${id}.json`), 'utf8')) as {
+        state: string;
+      }
+    ).state;
+
+  /** The bare-node fixture plus three check scripts: pass, fail, and one that needs the second step. */
+  async function seeded() {
+    vi.stubEnv('FAKE_AGENT_MODE', 'steps');
+    vi.stubEnv('FAKE_AGENT_TICKETS', `${ORDERS},${FILTER}`);
+    const h = harness({ llm: { dir: enhanceFixtureDir('two-requests') } });
+    const { ref, dir } = await seedExistingRepo(h.github, 'bare-node', (d) => {
+      cpSync(path.join(analyzerFixtures, 'bare-node'), d, {
+        recursive: true,
+        filter: (s) => !s.endsWith('expected-gap-report.json'),
+      });
+      mkdirSync(path.join(d, 'scripts'));
+      writeFileSync(path.join(d, 'scripts', 'pass.mjs'), 'process.exit(0);\n');
+      writeFileSync(
+        path.join(d, 'scripts', 'fail.mjs'),
+        "console.error('fail: broken before the agent started');\nprocess.exit(1);\n",
+      );
+      // Passes on the untouched repository, fails once step 1 exists without step 2.
+      writeFileSync(
+        path.join(d, 'scripts', 'verify.mjs'),
+        [
+          "import { existsSync } from 'node:fs';",
+          "if (existsSync('src/step-1.txt') && !existsSync('src/step-2.txt')) {",
+          "  console.error('verify: src/step-2.txt is missing');",
+          '  process.exit(1);',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      // A check that fails as soon as the agent has written anything, and never passes after.
+      writeFileSync(
+        path.join(d, 'scripts', 'never.mjs'),
+        [
+          "import { existsSync } from 'node:fs';",
+          "if (existsSync('src/step-1.txt')) {",
+          "  console.error('never: still failing');",
+          '  process.exit(1);',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      return Promise.resolve();
+    });
+    await setOwner(dir);
+    const runId = h.engine.start({
+      kind: 'enhance',
+      repo: dir,
+      repoRef: ref,
+      dir,
+      request: REQUEST,
+      yes: true,
+      surface: 'test',
+    });
+    return { h, dir, runId };
+  }
+
+  it('ends ready in one part when the agent marks every ticket and the approved checks pass', async () => {
+    const { h, dir, runId } = await seeded();
+    vi.stubEnv('FAKE_AGENT_MARKS', '99');
+    h.engine.submitChecks(runId, ['node scripts/pass.mjs']);
+    const s = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(s.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(1);
+    expect(of(h, runId, 'code.part')).toHaveLength(0);
+    expect(of(h, runId, 'code.baseline')).toHaveLength(1);
+    expect(done(h, runId)).toMatchObject({
+      verdict: 'ready',
+      parts: 1,
+      verify: {
+        done: true,
+        remaining: [],
+        runs: [{ command: 'node scripts/pass.mjs', result: 'passed', exitCode: 0 }],
+      },
+    });
+    expect(ticket(dir, ORDERS)).toBe('READY_FOR_TEST');
+    expect(ticket(dir, FILTER)).toBe('READY_FOR_TEST');
+  });
+
+  it('tells the next part which request is left, and finishes when it is done', async () => {
+    const { h, dir, runId } = await seeded();
+    vi.stubEnv('FAKE_AGENT_MARKS', '1');
+    const s = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(s.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(2);
+    expect(of(h, runId, 'code.part').map((e) => e['part'])).toEqual([1]);
+    expect(prompt(dir, 1)).not.toContain('These requests are not done yet');
+    expect(prompt(dir, 2)).toContain('## Continuing: part 2 of up to 5');
+    expect(prompt(dir, 2)).toContain(
+      `These requests are not done yet: their tickets are not marked READY_FOR_TEST.\n\n- ${FILTER}: ${FILTER_SUMMARY}`,
+    );
+    expect(prompt(dir, 2)).not.toContain(`- ${ORDERS}:`);
+    expect(await out(['log', '-1', '--format=%B'], dir)).toContain(
+      'stopped with work left (1 request(s) not done, 0 check(s) failing)',
+    );
+    expect(done(h, runId)).toMatchObject({ verdict: 'ready', parts: 2, verify: { done: true } });
+    expect(ticket(dir, FILTER)).toBe('READY_FOR_TEST');
+  });
+
+  it("sends a failing check's output to the next part, and ends ready once it passes", async () => {
+    const { h, dir, runId } = await seeded();
+    vi.stubEnv('FAKE_AGENT_MARKS', '99');
+    h.engine.submitChecks(runId, ['node scripts/verify.mjs']);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(2);
+    expect(
+      (of(h, runId, 'code.baseline')[0]!['runs'] as { result: string }[]).map((r) => r.result),
+    ).toEqual(['passed']);
+    expect(prompt(dir, 2)).toContain(
+      'When you stopped, the Incubator ran the approved commands and these failed:',
+    );
+    expect(prompt(dir, 2)).toContain(
+      '- node scripts/verify.mjs:\n    verify: src/step-2.txt is missing',
+    );
+    expect(prompt(dir, 2)).not.toContain('These requests are not done yet');
+    expect(await out(['log', '-1', '--format=%B'], dir)).toContain(
+      'stopped with work left (0 request(s) not done, 1 check(s) failing)',
+    );
+    expect(of(h, runId, 'code.verify').map((e) => e['done'])).toEqual([false, true]);
+    expect(done(h, runId)).toMatchObject({ verdict: 'ready', parts: 2 });
+  });
+
+  it('does not hold the run back for a check that was failing before the agent started', async () => {
+    const { h, dir, runId } = await seeded();
+    vi.stubEnv('FAKE_AGENT_MARKS', '99');
+    h.engine.submitChecks(runId, ['node scripts/fail.mjs', 'node scripts/pass.mjs']);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(1);
+    expect(of(h, runId, 'code.baseline')).toHaveLength(1);
+    expect(
+      (of(h, runId, 'code.baseline')[0]!['runs'] as { command: string; result: string }[]).map(
+        (r) => `${r.command}: ${r.result}`,
+      ),
+    ).toEqual(['node scripts/fail.mjs: failed', 'node scripts/pass.mjs: passed']);
+    expect(done(h, runId)).toMatchObject({
+      verdict: 'ready',
+      parts: 1,
+      verify: { done: true, alreadyFailing: ['node scripts/fail.mjs'] },
+    });
+    expect(prompt(dir, 1)).not.toContain('these failed');
+  });
+
+  it('stops, parked, when a part changes nothing and requests are still left', async () => {
+    const { h, dir, runId } = await seeded();
+    vi.stubEnv('FAKE_AGENT_MARKS', '0');
+    vi.stubEnv('FAKE_AGENT_WRITES', '1');
+    await h.engine.advance(runId, new DefaultsPrompter());
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(2);
+    expect(of(h, runId, 'code.part').map((e) => e['part'])).toEqual([1]);
+    expect(prompt(dir, 2)).toContain(`- ${ORDERS}:`);
+    expect(prompt(dir, 2)).toContain(`- ${FILTER}: ${FILTER_SUMMARY}`);
+    expect(done(h, runId)).toMatchObject({
+      verdict: 'parked',
+      parts: 2,
+      verify: { done: false, remaining: [ORDERS, FILTER] },
+    });
+    expect(ticket(dir, ORDERS)).not.toBe('READY_FOR_TEST');
+  });
+
+  it('is parked, never ready, when every ticket is marked but a check still fails', async () => {
+    const { h, runId } = await seeded();
+    vi.stubEnv('FAKE_AGENT_MARKS', '99');
+    vi.stubEnv('FAKE_AGENT_WRITES', '1');
+    h.engine.submitChecks(runId, ['node scripts/verify.mjs']);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    // Part 1 wrote src/step-1.txt and marked both tickets; verify.mjs then fails (no src/step-2.txt).
+    // Part 2 changes nothing, so the run stops there: the agent's own report says ready, the Incubator's check says not.
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(2);
+    expect(of(h, runId, 'code.verify').map((e) => e['done'])).toEqual([false, false]);
+    expect(done(h, runId)).toMatchObject({
+      verdict: 'parked',
+      parts: 2,
+      verify: { done: false, remaining: [], runs: [{ result: 'failed', exitCode: 1 }] },
+    });
+  });
+
+  it('never sends a check that was failing before the agent started to the next part', async () => {
+    const { h, dir, runId } = await seeded();
+    vi.stubEnv('FAKE_AGENT_MARKS', '1');
+    h.engine.submitChecks(runId, ['node scripts/fail.mjs']);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(2);
+    expect(prompt(dir, 2)).toContain(`- ${FILTER}: ${FILTER_SUMMARY}`);
+    expect(prompt(dir, 2)).not.toContain('these failed');
+    expect(prompt(dir, 2)).not.toContain('- node scripts/fail.mjs:');
+    expect(await out(['log', '-1', '--format=%B'], dir)).toContain(
+      'stopped with work left (1 request(s) not done, 0 check(s) failing)',
+    );
+    expect(done(h, runId)).toMatchObject({
+      verdict: 'ready',
+      parts: 2,
+      verify: { done: true, alreadyFailing: ['node scripts/fail.mjs'] },
+    });
+  });
+
+  it('stops after five parts, parked and not ready, when an approved check never passes', async () => {
+    const { h, runId } = await seeded();
+    vi.stubEnv('FAKE_AGENT_MARKS', '99');
+    h.engine.submitChecks(runId, ['node scripts/never.mjs']);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(5);
+    expect(of(h, runId, 'code.part').map((e) => e['part'])).toEqual([1, 2, 3, 4]);
+    expect(of(h, runId, 'code.verify').map((e) => e['done'])).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(done(h, runId)).toMatchObject({
+      verdict: 'parked',
+      parts: 5,
+      verify: { done: false, remaining: [] },
+    });
+  });
+
+  it('leaves the work unverified, not broken, when an approved program is not installed', async () => {
+    const { h, runId } = await seeded();
+    vi.stubEnv('FAKE_AGENT_MARKS', '99');
+    h.engine.submitChecks(runId, ['incubator-no-such-tool test']);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(1);
+    expect(done(h, runId)).toMatchObject({
+      verdict: 'ready',
+      verify: {
+        done: true,
+        runs: [{ command: 'incubator-no-such-tool test', result: 'missing', exitCode: null }],
+      },
     });
   });
 });

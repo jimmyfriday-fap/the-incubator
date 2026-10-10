@@ -1,0 +1,14 @@
+{
+  "schemaName": "ReviewSummary",
+  "note": "a plain-English brief of the two-requests plan, served at REVIEW",
+  "response": {
+    "headline": "Kitchen staff will be able to export the day's orders as a CSV file, and filter it by date.",
+    "changes": [
+      "Add an export button to the orders list that downloads the day's orders as a CSV file.",
+      "Let the export be limited to one date."
+    ],
+    "approach": "A coding assistant makes the edits in a working copy of your repository, in the part of the app that serves the orders list. Nothing in your repository changes until you approve and later choose to commit; pushing to GitHub is a separate question.",
+    "notIncluded": ["Exporting other lists."],
+    "watchFor": ["Only one route is covered by tests, so check the export by hand."]
+  }
+}
