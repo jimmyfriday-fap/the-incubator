@@ -35,6 +35,15 @@ describe('check commands (ADR-025)', () => {
     expect(validateChecks([])).toEqual([]);
   });
 
+  it('accepts bash running one script in the repository, with arguments (plan 040)', () => {
+    expect(
+      validateChecks(['bash supabase/tests/run.sh', 'bash scripts/test.sh 051', 'bash x.sh']),
+    ).toEqual([]);
+    expect(externalTools(['bash supabase/tests/run.sh'])).toContain(
+      'Bash(bash supabase/tests/run.sh:*)',
+    );
+  });
+
   it('refuses anything that could run something else', () => {
     const cases: [string, RegExp][] = [
       ['flutter test; rm -rf .', /not allowed/],
@@ -46,8 +55,17 @@ describe('check commands (ADR-025)', () => {
       ['flutter test "my dir"', /not allowed/],
       ['flutter test,Bash(rm:*)', /not allowed/],
       ['flutter test:*)', /not allowed/],
-      ['bash', /can run anything/],
+      ['bash', /only runs a script in the repository/],
+      ['bash -c x', /only runs a script in the repository/],
+      ['bash script', /only runs a script in the repository/],
+      ['bash ./run.sh', /only runs a script in the repository/],
+      ['bash /etc/x.sh', /only runs a script in the repository/],
+      ['bash ../x.sh', /may not leave the repository/],
       ['sh run.sh', /can run anything/],
+      ['timeout 5 sh -c id', /can run anything/],
+      ['nohup node scripts/x.mjs', /can run anything/],
+      ['wsl bash x.sh', /can run anything/],
+      ['busybox sh', /can run anything/],
       ['pwsh.exe script', /can run anything/],
       ['git commit -m x', /can run anything/],
       ['sudo make test', /can run anything/],
@@ -59,6 +77,7 @@ describe('check commands (ADR-025)', () => {
       ['python -m pytest', /needs its subcommand/],
       ['node script.js -e x', /inline code/],
       ['../bin/tool test', /may not leave the repository/],
+      ['bash.exe -c x', /only runs a script in the repository/],
       ['tool ../../etc', /may not leave the repository/],
       ['/usr/bin/flutter test', /not an absolute path/],
       ['C:/tools/flutter test', /not allowed|absolute path/],

@@ -4,8 +4,9 @@ import type { Issue } from '@incubator/spec';
 
 /**
  * Check commands the owner approved for a coding agent working on a repository the Incubator did not
- * build (ADR-025). The Incubator never runs them: they become `Bash(<command>:*)` entries in the
- * agent's allowed-tool list, so the agent can run them and nothing else.
+ * build (ADR-025). They become `Bash(<command>:*)` entries in the agent's allowed-tool list, so the
+ * agent can run them and nothing else; the Incubator runs the same commands itself (`runChecks`, plan 041)
+ * to verify the work when the agent stops.
  */
 
 export const MAX_CHECKS = 8;
@@ -18,7 +19,18 @@ const TOKEN = /^[A-Za-z0-9_@%+=./-]+$/;
 const DENIED_PROGRAMS = new Set([
   'git',
   'sh',
-  'bash',
+  // plan 040: shells and wrappers that run whatever they are given (the Incubator now runs approved commands itself)
+  'dash',
+  'ash',
+  'busybox',
+  'wsl',
+  'nohup',
+  'timeout',
+  'nice',
+  'time',
+  'setsid',
+  'stdbuf',
+  'command',
   'zsh',
   'fish',
   'cmd',
@@ -115,6 +127,12 @@ export function validateChecks(commands: readonly string[]): Issue[] {
       .replace(/\.(exe|cmd|bat|ps1|sh)$/, '');
     if (DENIED_PROGRAMS.has(name))
       return add(i, `"${program}" is not a check command: it can run anything`);
+    // ADR-025 amendment (plan 040): bash runs one script in the repository, never inline code.
+    if (name === 'bash' && !/^[A-Za-z0-9_][A-Za-z0-9_./-]*\.sh$/.test(tokens[1] ?? ''))
+      return add(
+        i,
+        '"bash" only runs a script in the repository, for example "bash scripts/test.sh"',
+      );
     if (NEEDS_SUBCOMMAND.has(name)) {
       if (tokens.length < 2 || tokens[1]!.startsWith('-'))
         return add(

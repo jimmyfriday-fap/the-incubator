@@ -296,6 +296,45 @@ describe('check command proposals (ADR-025)', () => {
     expect(propose({ 'README.md': '# x\n' })).toEqual([]);
   });
 
+  it('offers a test script a GitHub workflow runs with bash, and only when the file exists (plan 040)', () => {
+    const workflow = [
+      'jobs:',
+      '  sql:',
+      '    steps:',
+      '      - uses: actions/checkout@v4',
+      '      - name: Migrations and SQL tests',
+      '        run: bash supabase/tests/run.sh',
+      '      - run: bash scripts/missing.sh',
+      '      - run: bash ../outside.sh',
+      '      - run: bash scripts/deploy.sh',
+      '      - run: bash supabase/tests/live.sh --linked',
+      '      # - run: bash supabase/tests/old.sh',
+      '      - run: bash ./supabase/tests/run.sh',
+      '      - run: supabase db push --yes',
+      '      - run: bash supabase/tests/run.sh',
+    ].join('\n');
+    const view = viewFromFiles({
+      'pubspec.yaml': 'name: x\n',
+      '.github/workflows/test.yml': workflow,
+      'supabase/tests/run.sh': '#!/usr/bin/env bash\n',
+      'supabase/tests/live.sh': '#!/usr/bin/env bash\n',
+      'supabase/tests/old.sh': '#!/usr/bin/env bash\n',
+      'scripts/deploy.sh': '#!/usr/bin/env bash\n',
+    });
+    expect(proposeChecks(view, analyze(view))).toEqual([
+      {
+        command: 'dart analyze',
+        what: 'Scans the Dart code for errors and style problems. It changes nothing.',
+        why: 'pubspec.yaml: static analysis',
+      },
+      {
+        command: 'bash supabase/tests/run.sh',
+        what: 'Runs a test script from the repository.',
+        why: '.github/workflows/test.yml: CI runs it',
+      },
+    ]);
+  });
+
   it('offers only allowlisted Node script names, with the package manager the lockfile shows', () => {
     const pkg = JSON.stringify({
       scripts: { test: 'vitest', lint: 'eslint .', deploy: 'rm -rf /', 'test; rm -rf .': 'x' },

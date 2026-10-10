@@ -66,3 +66,16 @@ chosen for a repository whose content is untrusted (threat T6).
   those three files gets today's behaviour for Incubator-built repositories: no regression.
 - Update runs that are not folder runs (`incubator handoff` from a workspace clone) get the external
   prompt and edit-only tools; approving commands for them is not offered yet.
+
+## Amendment (plan 040): a repository's own test scripts
+
+- `bash <relative path>.sh [arguments]` is an approvable check: the path stays inside the repository, starts with a
+  letter, digit or `_`, and ends in `.sh`. `bash` on its own, with a flag, or with an absolute path stays refused, and
+  `sh` stays denied. The script is repository code, like the test files `flutter test` already runs; the owner still
+  approves it. The agent can edit that script like any file, so approving it trusts what the agent writes there, as
+  `flutter test` trusts the tests it writes.
+- The Incubator proposes `bash <path>.sh` when a GitHub workflow runs exactly that, the file exists and its path names a
+  test (a `test` or `tests` folder or file name); deploy and release scripts are not proposed. Only the path comes from
+  the repository (threat T6); this is the one exception to decision 2. Commands that change live systems, such as `supabase db push`, are never
+  proposed; they stay the owner's to run.
+- Plan 041 lets the Incubator itself run the approved commands after the agent stops, to verify the work.

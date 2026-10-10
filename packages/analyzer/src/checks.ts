@@ -30,6 +30,7 @@ const WHAT: readonly (readonly [RegExp, string])[] = [
   [/^composer test$/, "Runs the project's automated tests."],
   [/^mix test$/, "Runs the project's automated tests."],
   [/^swift test$/, "Runs the project's automated tests."],
+  [/^bash \S+\.sh$/, 'Runs a test script from the repository.'],
 ];
 
 /** The plain-words description of a built-in check command (also fills in older journal entries). */
@@ -53,11 +54,11 @@ function json(view: RepoView, file: string): Record<string, unknown> | null {
 
 /**
  * The repository's own check commands, for a repository the Incubator did not build (ADR-025). They
- * are proposals for the owner to approve, never run by the Incubator itself.
+ * are proposals for the owner to approve; once approved, the Incubator runs them itself to verify the work (plan 041).
  *
  * Every command is a built-in constant chosen by which files exist (threat T6): the repository's text
  * selects among them (a manifest is present, a known script name is a key) and never becomes part of
- * a command. A hostile `package.json` can at most make `npm run test` appear, and the owner still has
+ * a command, except (plan 040) the path of a test script that a workflow runs with `bash`. A hostile `package.json` can at most make `npm run test` appear, and the owner still has
  * to approve it.
  */
 export function proposeChecks(view: RepoView, a: Analysis): CheckProposal[] {
@@ -120,6 +121,21 @@ export function proposeChecks(view: RepoView, a: Analysis): CheckProposal[] {
       break;
     default:
       break;
+  }
+  // A test script a GitHub workflow runs with `bash <path>.sh` (plan 040): only the path comes from the
+  // repository, only when that file exists and its path names a test, and it must have the shape ADR-025
+  // allows; the owner approves it.
+  const SCRIPT_STEP =
+    /^\s*(?:-\s+)?run:\s*bash\s+(?:\.\/)?([A-Za-z0-9_][A-Za-z0-9_./-]*\.sh)\s*$/gm;
+  // why: a workflow also runs deploy and release scripts; only a path that says it is a test is proposed.
+  const TEST_SCRIPT = /(^|[/_.-])tests?([/_.-]|$)/i;
+  for (const wf of view.glob('.github/workflows/*.{yml,yaml}')) {
+    for (const m of (view.read(wf) ?? '').matchAll(SCRIPT_STEP)) {
+      const script = m[1]!;
+      if (!TEST_SCRIPT.test(script) || script.length > 100 || !view.has(script)) continue;
+      const command = `bash ${script}`;
+      if (!out.some((c) => c.command === command)) add(command, `${wf}: CI runs it`);
+    }
   }
   return out;
 }
