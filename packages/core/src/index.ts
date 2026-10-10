@@ -13,6 +13,7 @@ export * from './scaffold.js';
 export * from './publish.js';
 export * from './verify.js';
 export * from './handoff.js';
+export * from './check-run.js';
 export * from './adopt.js';
 export * from './folders.js';
 export * from './preview.js';
