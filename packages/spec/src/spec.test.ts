@@ -18,6 +18,8 @@ import {
   validateSemantics,
   identifierClash,
   validateSpec,
+  withReachableTracker,
+  LEANTIME_FALLBACK,
   type IncubatorSpec,
 } from './index.js';
 
@@ -426,5 +428,63 @@ describe('stack "other": a repository with no pack (ADR-024)', () => {
     const platform = structuredClone(enhancement) as IncubatorSpec;
     platform.platform = 'other';
     expect(codes(platform)).toContain('platform_pack');
+  });
+});
+
+describe('a Leantime tracker without its address (plan 045)', () => {
+  const base = (): IncubatorSpec =>
+    completeSpec({ stack: { pack: 'node-web' }, project: { name: 'Shop' } }).spec;
+
+  it('falls back to local tickets, replaces the tracker decision and leaves the spec valid', () => {
+    const s = base();
+    s.tracker = { type: 'leantime' };
+    s.decisions = [
+      ...s.decisions.filter((d) => d.key !== 'tracker' && !d.key.startsWith('tracker.')),
+      { key: 'tracker.type', question: 'Which tracker?', answer: 'leantime', source: 'user' },
+      { key: 'tracker', question: 'Tracker', answer: 'leantime', source: 'inferred' },
+      { key: 'tracker.leantime', question: 'Where?', answer: 'ask the owner', source: 'inferred' },
+    ];
+    expect(validateSemantics(s).map((i) => i.code)).toContain('leantime_config');
+    const { spec, fellBack } = withReachableTracker(s);
+    expect(fellBack).toBe(true);
+    expect(spec.tracker).toEqual({ type: 'local' });
+    expect(
+      spec.decisions.filter((d) => d.key === 'tracker' || d.key.startsWith('tracker.')),
+    ).toEqual([
+      {
+        key: 'tracker.type',
+        question: 'Which work tracker?',
+        answer: LEANTIME_FALLBACK,
+        source: 'default',
+      },
+    ]);
+    expect(validateSpec(spec).issues).toEqual([]);
+    expect(validateSemantics(spec)).toEqual([]);
+    // The input is not changed.
+    expect(s.tracker).toEqual({ type: 'leantime' });
+  });
+
+  it('keeps a configured Leantime tracker and a local one as they are', () => {
+    const configured = base();
+    configured.tracker = {
+      type: 'leantime',
+      leantime: { baseUrl: 'https://leantime.example.invalid', projectId: 3 },
+    };
+    expect(withReachableTracker(configured)).toEqual({ spec: configured, fellBack: false });
+    const local = base();
+    expect(withReachableTracker(local)).toEqual({ spec: local, fellBack: false });
+  });
+
+  it('falls back when the Leantime block is there but empty, since HANDOFF could not reach it', () => {
+    const half = base();
+    half.tracker = { type: 'leantime', leantime: { baseUrl: '', projectId: null } };
+    expect(validateSemantics(half)).toEqual([]);
+    expect(withReachableTracker(half).fellBack).toBe(true);
+    const noProject = base();
+    noProject.tracker = {
+      type: 'leantime',
+      leantime: { baseUrl: 'https://leantime.example.invalid', projectId: null },
+    };
+    expect(withReachableTracker(noProject).spec.tracker).toEqual({ type: 'local' });
   });
 });

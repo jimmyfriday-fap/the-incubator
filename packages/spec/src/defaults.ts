@@ -126,3 +126,39 @@ export function completeSpec(draft: DraftSpec): { spec: IncubatorSpec; added: De
   spec.decisions = [...(spec.decisions ?? []), ...added];
   return { spec, added };
 }
+
+/** The tracker decision recorded when a Leantime tracker has no address (plan 045). */
+export const LEANTIME_FALLBACK =
+  'local: Leantime was chosen, but it needs its address (tracker.leantime.baseUrl) and project ID (tracker.leantime.projectId), which the questions cannot ask; add both at review to use Leantime';
+
+/**
+ * A Leantime tracker needs its address and project, which only the owner can give (plan 045). Without them
+ * the spec can never validate, so the run would park on every resume: it falls back to local tickets, and the
+ * tracker decision says why. A configured Leantime tracker, and a local one, are kept as they are.
+ */
+export function withReachableTracker(spec: IncubatorSpec): {
+  spec: IncubatorSpec;
+  fellBack: boolean;
+} {
+  // The same test as the live tracker (packages/core/src/live.ts): without both values HANDOFF has no tracker.
+  const lt = spec.tracker.leantime;
+  if (spec.tracker.type !== 'leantime' || (lt?.baseUrl && typeof lt.projectId === 'number'))
+    return { spec, fellBack: false };
+  const decision: Decision = {
+    key: 'tracker.type',
+    question: 'Which work tracker?',
+    answer: LEANTIME_FALLBACK,
+    source: 'default',
+  };
+  return {
+    spec: {
+      ...spec,
+      tracker: { type: 'local' },
+      decisions: [
+        ...spec.decisions.filter((d) => d.key !== 'tracker' && !d.key.startsWith('tracker.')),
+        decision,
+      ],
+    },
+    fellBack: true,
+  };
+}

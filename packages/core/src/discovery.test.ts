@@ -102,6 +102,58 @@ describe.each(NARRATIVES)('narrative %s', (name) => {
   });
 });
 
+describe('a Leantime tracker without its address (plan 045)', () => {
+  it('uses local tickets and finishes, instead of parking on every resume', async () => {
+    const { state, spec, h, runId } = await run('leantime-tracker');
+    expect(state.state).toBe('DONE');
+    expect(spec.tracker).toEqual({ type: 'local' });
+    expect(validateSemantics(spec)).toEqual([]);
+    expect(spec.decisions.find((d) => d.key === 'tracker.type')).toMatchObject({
+      source: 'default',
+      answer: expect.stringContaining('add both at review to use Leantime') as string,
+    });
+    expect(
+      h.engine.entries(runId).some((e) => e.type === 'step.warn' && e['step'] === 'spec.tracker'),
+    ).toBe(true);
+    expect(h.engine.entries(runId).some((e) => e.type === 'park')).toBe(false);
+    // The publish result's warnings read data.reason (packages/core/src/publish.ts).
+    expect(
+      h.engine.entries(runId).find((e) => e.type === 'step.warn' && e['step'] === 'spec.tracker')?.[
+        'data'
+      ],
+    ).toEqual({ reason: expect.stringContaining('add both at review to use Leantime') as string });
+  });
+
+  it('keeps Leantime when the owner adds its address and project at review', async () => {
+    const h = fakeEngine({ dir: discoveryFixtureDir('leantime-tracker') });
+    const runId = h.engine.start({
+      kind: 'new',
+      narrative: narrative('leantime-tracker'),
+      specOnly: true,
+      surface: 'test',
+    });
+    const parked = await h.engine.advance(
+      runId,
+      new ScriptedPrompter({}, { approve: false, reason: 'use Leantime' }),
+    );
+    expect(parked.parked).toMatchObject({ state: 'REVIEW', reason: 'review_rejected' });
+    const spec = h.engine.draft(runId) as unknown as IncubatorSpec;
+    const edited: IncubatorSpec = {
+      ...spec,
+      tracker: {
+        type: 'leantime',
+        leantime: { baseUrl: 'https://leantime.example.invalid', projectId: 3 },
+      },
+    };
+    const done = await h.engine.resume(
+      runId,
+      new ScriptedPrompter({}, { approve: true, spec: edited }),
+    );
+    expect(done.state).toBe('DONE');
+    expect((h.engine.draft(runId) as unknown as IncubatorSpec).tracker).toEqual(edited.tracker);
+  });
+});
+
 describe('clarification rules', () => {
   it('keeps at most five questions per round, ranked by impact', async () => {
     const { prompter, h, runId, spec } = await run('python-webhook');

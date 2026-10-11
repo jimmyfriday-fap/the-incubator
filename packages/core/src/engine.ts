@@ -16,6 +16,7 @@ import type { GitOps, RepoRef } from '@incubator/git';
 import {
   DEFAULT_RUN_CEILINGS,
   ENHANCEMENT_SPEC_VERSION,
+  LEANTIME_FALLBACK,
   OTHER,
   completeSpec,
   discoveryTurnWireSchema,
@@ -23,6 +24,7 @@ import {
   stackById,
   validateSemantics,
   validateSpec,
+  withReachableTracker,
   type DiscoveryTurn,
   type IncubatorSpec,
   type StackEntry,
@@ -2666,6 +2668,16 @@ export class Engine {
     const completed = completeSpec(this.draft(runId));
     const { added } = completed;
     let spec = completed.spec;
+    // A Leantime tracker without its address and project can never validate, so every resume would park
+    // again: use local tickets and say why; the owner can add tracker.leantime at review (plan 045).
+    const tracker = withReachableTracker(spec);
+    if (tracker.fellBack) {
+      spec = tracker.spec;
+      this.record(runId, 'step.warn', {
+        step: 'spec.tracker',
+        data: { reason: LEANTIME_FALLBACK },
+      });
+    }
     if (this.state(runId).input.kind === 'enhance') {
       // Targets come from the scan, never from the model; the owner can edit them at REVIEW.
       const scan = this.readScan(runId);
