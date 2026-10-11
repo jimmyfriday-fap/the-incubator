@@ -17,8 +17,10 @@ it fails; log the failure through the tracker". Claude Code's Stop hook can bloc
   with the frozen lockfile, run `check:quick`, and print a summary. It always exits 0, so it never
   blocks a session. Failures are reported in the summary.
 - **`Stop`** runs `node scripts/agent/on-stop.mjs`, which runs `check:quick`:
-  - **pass:** transition the active ticket (`.incubator/state/active-ticket`) to `READY_FOR_TEST` via
-    the tracker client, then exit 0;
+  - **pass:** move the active ticket (`.incubator/state/active-ticket`) to `READY_FOR_TEST` via
+    the tracker client, then exit 0. A local ticket goes forward one legal edge at a time from where
+    it is (`TAGGED_TO_RELEASE` → `ENRICHMENT_IN_PROGRESS` → `DEV_IN_PROGRESS` → `READY_FOR_TEST`,
+    plan 047); a parked or finished ticket is left as it is;
   - **fail:** file a remediation item with the failing command and a log excerpt, increment
     `.incubator/state/stop-vetoes.json`, print the failure to stderr and **exit 2** (the veto);
   - **More than 3 consecutive vetoes:** exit 0, but transition the ticket to parked with evidence.

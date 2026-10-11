@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { EXIT, isMain } from '../guard/lib/common.mjs';
 import { run } from '../guard/lib/proc.mjs';
-import { activeTicket, addRemediation, transition } from './tracker.mjs';
+import { activeTicket, addRemediation, advanceToReady, transition } from './tracker.mjs';
 
 export const MAX_VETOES = 3;
 
@@ -53,8 +53,9 @@ async function main() {
   writeFileSync(counterFile, `${JSON.stringify({ count: d.vetoes, hookActive })}\n`);
   const ticket = activeTicket(root);
   if (d.action === 'ready') {
+    // why: the Incubator tags tickets TAGGED_TO_RELEASE, which has no direct edge to READY_FOR_TEST (plan 047).
     if (ticket)
-      await transition(root, ticket, 'READY_FOR_TEST').catch((e) =>
+      await advanceToReady(root, ticket).catch((e) =>
         process.stderr.write(`tracker: ${e.message}\n`),
       );
     return EXIT.OK;

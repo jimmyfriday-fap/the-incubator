@@ -22,6 +22,24 @@ export function canTransition(from, to) {
   return (EDGES[from] ?? []).includes(to);
 }
 
+/** Plan 047: the states after `from`, in order, that reach `to` by legal edges ([] when already there); null when none do. */
+export function pathTo(from, to) {
+  if (from === to) return [];
+  const seen = new Set([from]);
+  const queue = [[from, []]];
+  while (queue.length) {
+    const [state, route] = queue.shift();
+    for (const next of EDGES[state] ?? []) {
+      if (seen.has(next)) continue;
+      const longer = [...route, next];
+      if (next === to) return longer;
+      seen.add(next);
+      queue.push([next, longer]);
+    }
+  }
+  return null;
+}
+
 function stateDir(root) {
   const d = path.join(root, '.incubator', 'state');
   mkdirSync(d, { recursive: true });
@@ -71,6 +89,21 @@ export async function transition(root, id, to) {
   ticket.state = to;
   writeFileSync(file, `${JSON.stringify(ticket, null, 2)}\n`);
   return to;
+}
+
+/**
+ * The Stop hook's move (plan 047): a local ticket goes forward along legal edges to READY_FOR_TEST, from
+ * wherever the Incubator left it (TAGGED_TO_RELEASE). Leantime takes the mapped status directly.
+ */
+export async function advanceToReady(root, id) {
+  const cfg = readJson(root, '.incubator/tracker.json');
+  if (cfg.type === 'leantime') return transition(root, id, 'READY_FOR_TEST');
+  const file = ticketFile(root, cfg, id);
+  const ticket = JSON.parse(readFileSync(file, 'utf8'));
+  const route = pathTo(ticket.state, 'READY_FOR_TEST');
+  if (route === null) throw new Error(`illegal ticket transition ${ticket.state} → READY_FOR_TEST`);
+  for (const state of route) await transition(root, id, state);
+  return 'READY_FOR_TEST';
 }
 
 export async function addRemediation(root, id, item) {
