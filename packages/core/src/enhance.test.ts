@@ -10,7 +10,9 @@ import { FakeLlmAdapter, type Capabilities } from '@incubator/llm';
 import { DefaultsPrompter, NonInteractivePrompter, ScriptedPrompter } from './prompter.js';
 import { loadPrompt } from './prompts.js';
 import {
+  DESIGN_HEADINGS,
   EXTERNAL_LANE_WORDING,
+  designFile,
   featureIssues,
   nextPlanNumber,
   resolveTargets,
@@ -90,6 +92,10 @@ describe('enhance', () => {
     const plan = readFileSync(path.join(ws, 'docs/plans/001-enhance-20260501.md'), 'utf8');
     expect(plan).toContain('**Step 1:** Export the day');
     expect(plan).toContain('- Target: src/server.js');
+    expect(plan).toContain(
+      '- Design (write it first): .incubator/enhance/20260501/design-export-orders.md',
+    );
+    expect(plan).toContain("1. Write the step's design into its design file first");
     for (const h2 of [
       '## Executor preamble',
       '## Touched files and markers',
@@ -104,6 +110,15 @@ describe('enhance', () => {
     );
     expect(brief).toContain('`E-export-orders`');
     expect(brief).not.toMatch(/\{\{[A-Z_]+\}\}/);
+    expect(brief.startsWith('> **Design brief for `E-export-orders`: not a design yet.**')).toBe(
+      true,
+    );
+    expect(brief).toContain('## Open questions\n\n_Not written yet._\n');
+    const laneDesign = readFileSync(
+      path.join(ws, '.incubator/lanes/enhancement/existing/design.md'),
+      'utf8',
+    );
+    for (const heading of DESIGN_HEADINGS) expect(laneDesign).toContain(`\`## ${heading}\``);
     expect(
       JSON.parse(readFileSync(path.join(ws, '.incubator/tickets/E-export-orders.json'), 'utf8')),
     ).toMatchObject({
@@ -916,6 +931,69 @@ describe('enhance helpers', () => {
     expect(resolveTargets(scan, { id: 'zzz', summary: 'unrelated' })).toEqual([]);
   });
 
+  it('keeps "support" when the feature id names it, and drops it as filler in the summary (plan 048)', () => {
+    const scan = {
+      routes: [],
+      commands: [],
+      dataModel: [],
+      entryPoints: [],
+      modules: [
+        { dir: 'lib/features/support', files: 3, languages: ['Dart'] },
+        { dir: 'lib/features/schedule', files: 5, languages: ['Dart'] },
+      ],
+    } as unknown as RepoScan;
+    expect(
+      resolveTargets(scan, {
+        id: 'support-tickets',
+        summary: 'Let members send a question to the team',
+      }),
+    ).toEqual(['lib/features/support/']);
+    expect(
+      resolveTargets(scan, { id: 'csv-export', summary: 'Add support for exporting the schedule' }),
+    ).toEqual(['lib/features/schedule/']);
+  });
+
+  it('does not keep "page" from the feature id, so every page file is not a target (plan 048)', () => {
+    const scan = {
+      routes: [
+        { method: 'GET', path: '/pricing', file: 'app/pricing/page.tsx', framework: 'next' },
+        { method: 'GET', path: '/about', file: 'app/about/page.tsx', framework: 'next' },
+      ],
+      commands: [],
+      dataModel: [],
+      entryPoints: [],
+      modules: [],
+    } as unknown as RepoScan;
+    expect(
+      resolveTargets(scan, { id: 'pricing-page', summary: 'Show the plans and their prices' }),
+    ).toEqual(['app/pricing/page.tsx']);
+  });
+
+  it('ranks the file that matches more of the request above a file with many routes (plan 048)', () => {
+    const routes = Array.from({ length: 10 }, (_, i) => ({
+      method: 'GET',
+      path: `/calendar/day/${i}`,
+      file: 'src/routes.js',
+      framework: 'node',
+    }));
+    routes.push({
+      method: 'GET',
+      path: '/billing/invoice-export',
+      file: 'src/billing.js',
+      framework: 'node',
+    });
+    const scan = {
+      routes,
+      commands: [],
+      dataModel: [],
+      entryPoints: [],
+      modules: [],
+    } as unknown as RepoScan;
+    expect(
+      resolveTargets(scan, { id: 'invoice-export', summary: 'Export invoices from the calendar' }),
+    ).toEqual(['src/billing.js', 'src/routes.js']);
+  });
+
   it('points a Flutter request at the feature module, its screens and its providers', () => {
     const scan = deepScan(viewFromDir(path.join(fixtures, 'flutter-supabase')));
     const targets = resolveTargets(scan, {
@@ -931,6 +1009,20 @@ describe('enhance helpers', () => {
       ]),
     );
     expect(targets.some((t) => t.startsWith('test/'))).toBe(false);
+  });
+
+  it("writes a design file as a brief with the design's headings at its end (plan 048)", () => {
+    const text = designFile('E-x', '# Design: `enhancement/new` lane\n\nBrief text.\n');
+    expect(text.startsWith('> **Design brief for `E-x`: not a design yet.**')).toBe(true);
+    expect(text).toContain('Brief text.\n\n---\n');
+    expect(text.match(/^## .+$/gm)).toEqual([
+      '## Approach',
+      '## Files to change',
+      '## New files',
+      '## Risks',
+      '## Open questions',
+    ]);
+    expect(text.endsWith('_Not written yet._\n')).toBe(true);
   });
 });
 

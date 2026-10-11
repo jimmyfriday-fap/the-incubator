@@ -112,7 +112,6 @@ const STOP = new Set([
   'make',
   'new',
   'use',
-  'support',
   'allow',
   'when',
   'should',
@@ -125,10 +124,13 @@ const STOP = new Set([
   'all',
 ]);
 
-function tokens(text: string): string[] {
+/** Plan 048: filler in a summary ("add support for"), but the subject when the feature id holds it. */
+const NAMING = new Set(['support']);
+
+function tokens(text: string, keepNaming = false): string[] {
   const out = new Set<string>();
   for (const t of text.toLowerCase().split(/[^a-z0-9]+/)) {
-    if (t.length < 3 || STOP.has(t)) continue;
+    if (t.length < 3 || STOP.has(t) || (!keepNaming && NAMING.has(t))) continue;
     out.add(t);
     if (t.length > 4 && t.endsWith('s')) out.add(t.slice(0, -1));
   }
@@ -145,20 +147,28 @@ export function resolveTargets(
   feature: Pick<Feature, 'id' | 'summary'>,
   max = 5,
 ): string[] {
-  const toks = tokens(`${feature.id.replace(/-/g, ' ')} ${feature.summary}`);
+  const toks = [
+    ...new Set([...tokens(feature.id.replace(/-/g, ' '), true), ...tokens(feature.summary)]),
+  ].sort(cmp);
   if (!toks.length) return [];
-  const score = new Map<string, number>();
+  // Plan 048: a target scores the different words it matches, so a file with many routes sharing one word does not win.
+  const hits = new Map<string, { words: Set<string>; weight: number }>();
   const bump = (target: string, text: string, weight: number): void => {
     const l = text.toLowerCase();
-    const n = toks.filter((t) => l.includes(t)).length;
-    if (n) score.set(target, (score.get(target) ?? 0) + n * weight);
+    const found = toks.filter((t) => l.includes(t));
+    if (!found.length) return;
+    const h = hits.get(target) ?? { words: new Set<string>(), weight: 0 };
+    for (const t of found) h.words.add(t);
+    h.weight = Math.max(h.weight, weight);
+    hits.set(target, h);
   };
   for (const r of scan.routes) bump(r.file, `${r.file} ${r.path}`, 2);
   for (const c of scan.commands) bump(c.file, `${c.file} ${c.name}`, 2);
   for (const m of scan.dataModel) bump(m.file, `${m.file} ${m.name}`, 2);
   for (const e of scan.entryPoints) if (e.kind !== 'script') bump(e.file, e.file, 1);
   for (const m of scan.modules) if (m.dir !== '.') bump(`${m.dir}/`, m.dir, 3);
-  return [...score.entries()]
+  return [...hits.entries()]
+    .map(([target, h]): [string, number] => [target, h.words.size * h.weight])
     .sort((a, b) => b[1] - a[1] || cmp(a[0], b[0]))
     .slice(0, max)
     .map(([target]) => target);
@@ -228,6 +238,36 @@ export function ticketId(f: Pick<Feature, 'id'>): string {
   return `E-${f.id}`;
 }
 
+/**
+ * Plan 048: the headings of the design stage's output contract (`.incubator/lanes/<lane>/design.md`). The
+ * other copies are in `scripts/guard/lane-contract.mjs` and its template-pack copy.
+ */
+export const DESIGN_HEADINGS: readonly string[] = [
+  'Approach',
+  'Files to change',
+  'New files',
+  'Risks',
+  'Open questions',
+];
+
+/**
+ * Plan 048: a delivered design file is the design stage's brief, marked as one, with the headings the
+ * design is written under at its end, so it never reads as a finished design.
+ */
+export function designFile(ticket: string, brief: string): string {
+  return [
+    `> **Design brief for \`${ticket}\`: not a design yet.** The instructions below are for the design stage. Write the design at the end of this file, under the headings there, before you enrich and code this ticket.`,
+    '',
+    brief.trimEnd(),
+    '',
+    '---',
+    '',
+    '<!-- The design for this ticket, written at the design stage: replace each "Not written yet." -->',
+    '',
+    ...DESIGN_HEADINGS.flatMap((h) => [`## ${h}`, '', '_Not written yet._', '']),
+  ].join('\n');
+}
+
 function renderPlan(d: DeliveryInput): string {
   const dir = `.incubator/enhance/${d.date}`;
   const t = (f: Feature): string[] => d.targets[f.id] ?? [];
@@ -239,7 +279,7 @@ function renderPlan(d: DeliveryInput): string {
       ...(targets.length
         ? targets.map((x) => `- Target: ${x}`)
         : ['- Target: (none resolved from the scan; the design stage decides)']),
-      `- Design: ${dir}/design-${f.id}.md`,
+      `- Design (write it first): ${dir}/design-${f.id}.md`,
       `- Ticket: ${ticketId(f)}`,
       '',
     ].join('\n');
@@ -256,9 +296,10 @@ function renderPlan(d: DeliveryInput): string {
     "You are extending an existing repository. The Incubator scanned it and recorded the owner's change",
     `request in \`${dir}/request.md\`; the scan is in \`${dir}/scan-report.md\`. For each step below:`,
     '',
-    "1. Run the design stage (`.incubator/lanes/<lane>/design.md`) on the ticket, then the lane's enrich",
-    '   and codegen stages, in that order.',
-    '2. Touch only the listed targets unless the design says otherwise and gives the reason.',
+    "1. Write the step's design into its design file first: the file starts with the brief for the design",
+    '   stage (`.incubator/lanes/<lane>/design.md`) and ends with the headings to fill in. Then run the',
+    "   lane's enrich and codegen stages, in that order.",
+    "2. Touch only the listed targets and the step's design file unless the design says otherwise and gives the reason.",
     "3. Keep the repository's own checks green after every step; follow its existing conventions.",
     '4. Stop at `READY_FOR_TEST`, or park with a reason. Record anything you had to improvise as a',
     '   remediation item in the ticket.',
@@ -338,13 +379,16 @@ export function buildDelivery(d: DeliveryInput): Map<string, RenderedFile> {
     put(
       file(
         `${dir}/design-${f.id}.md`,
-        fill(brief.bytes.toString('utf8'), {
-          TICKET_ID: ticketId(f),
-          TICKET_TITLE: clean(f.summary, 240),
-          TICKET_BODY: `${clean(f.summary, 240)}\n\nOwner's request: ${clean(d.request, 600)}`,
-          TARGETS: targets.join(', ') || '(none resolved from the scan)',
-          REPO_MAP: `${d.spec.stack.pack === OTHER ? `${unsupportedStackLabel(d.scan.analysis)} (no stack pack)` : d.scan.analysis.stack ? `${d.scan.analysis.stack.pack} / ${d.scan.analysis.stack.framework}` : 'stack not detected'}; see ${dir}/scan-report.md`,
-        }),
+        designFile(
+          ticketId(f),
+          fill(brief.bytes.toString('utf8'), {
+            TICKET_ID: ticketId(f),
+            TICKET_TITLE: clean(f.summary, 240),
+            TICKET_BODY: `${clean(f.summary, 240)}\n\nOwner's request: ${clean(d.request, 600)}`,
+            TARGETS: targets.join(', ') || '(none resolved from the scan)',
+            REPO_MAP: `${d.spec.stack.pack === OTHER ? `${unsupportedStackLabel(d.scan.analysis)} (no stack pack)` : d.scan.analysis.stack ? `${d.scan.analysis.stack.pack} / ${d.scan.analysis.stack.framework}` : 'stack not detected'}; see ${dir}/scan-report.md`,
+          }),
+        ),
       ),
     );
     put(
