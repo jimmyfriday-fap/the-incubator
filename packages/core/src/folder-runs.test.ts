@@ -1262,6 +1262,28 @@ describe('an update run keeps going until every request is done (plan 043)', () 
     expect(ticket(dir, FILTER)).toBe('READY_FOR_TEST');
   });
 
+  it('tells the next part which request is left after a part stopped at a run limit (plan 046)', async () => {
+    const { h, dir, runId } = await seeded();
+    vi.stubEnv('FAKE_AGENT_MARKS', '1');
+    vi.stubEnv('FAKE_AGENT_TRIP', '1');
+    const s = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(s.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(of(h, runId, 'handoff.launch')).toHaveLength(2);
+    expect(of(h, runId, 'code.part').map((e) => [e['part'], typeof e['tripped']])).toEqual([
+      [1, 'string'],
+    ]);
+    // Part 1 stopped at a limit with a request left, so the Incubator did not check it.
+    expect(of(h, runId, 'code.verify').map((e) => e['part'])).toEqual([2]);
+    expect(prompt(dir, 2)).toContain('## Continuing: part 2 of up to 5');
+    expect(prompt(dir, 2)).toContain(
+      `These requests are not done yet: their tickets are not marked READY_FOR_TEST.\n\n- ${FILTER}: ${FILTER_SUMMARY}`,
+    );
+    expect(prompt(dir, 2)).not.toContain(`- ${ORDERS}:`);
+    expect(prompt(dir, 2)).not.toContain('these failed');
+    expect(done(h, runId)).toMatchObject({ verdict: 'ready', parts: 2, verify: { done: true } });
+    expect(ticket(dir, FILTER)).toBe('READY_FOR_TEST');
+  });
+
   it("sends a failing check's output to the next part, and ends ready once it passes", async () => {
     const { h, dir, runId } = await seeded();
     vi.stubEnv('FAKE_AGENT_MARKS', '99');

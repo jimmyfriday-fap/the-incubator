@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { InterruptedError, nodeExec, type Exec } from '@incubator/runtime';
-import { checkProgram, runChecks } from './check-run.js';
+import { checkBudgetMs, checkProgram, runChecks } from './check-run.js';
 
 const repo = () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'check run '));
@@ -87,5 +87,29 @@ describe('running the approved checks (plan 041)', () => {
     await expect(
       runChecks(['node scripts/slow.mjs'], dir, tools, { signal: stop.signal }),
     ).rejects.toBeInstanceOf(InterruptedError);
+  }, 20_000);
+
+  it("a round of checks shares the run's minutes limit (plan 046)", async () => {
+    expect(checkBudgetMs(10)).toBe(600_000);
+    expect(checkBudgetMs(0)).toBe(45 * 60_000);
+    const dir = repo();
+    writeFileSync(path.join(dir, 'scripts', 'slow.mjs'), 'setTimeout(() => {}, 20000);\n');
+    const started = Date.now();
+    const runs = await runChecks(['node scripts/slow.mjs', 'node scripts/ok.mjs'], dir, tools, {
+      budgetMs: 1500,
+    });
+    expect(Date.now() - started).toBeLessThan(15_000);
+    expect(runs.map((r) => [r.command, r.result])).toEqual([
+      ['node scripts/slow.mjs', 'failed'],
+      ['node scripts/ok.mjs', 'failed'],
+    ]);
+    expect(runs[0]!.tail.startsWith('timed out')).toBe(true);
+    expect(runs[1]!.exitCode).toBeNull();
+    expect(runs[1]!.tail).toBe(
+      "timed out\nnot run: the approved commands used up the run's minutes limit",
+    );
+    // Without a budget, nothing changes.
+    const free = await runChecks(['node scripts/ok.mjs'], dir, tools);
+    expect(free.map((r) => r.result)).toEqual(['passed']);
   }, 20_000);
 });

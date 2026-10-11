@@ -157,7 +157,7 @@ import {
   type HandoffPlan,
   type CodePart,
 } from './handoff.js';
-import { runChecks, type CheckRun } from './check-run.js';
+import { CHECK_NOT_RUN, checkBudgetMs, runChecks, type CheckRun } from './check-run.js';
 
 /**
  * The identity of what the owner asked for. `existingRepo` (the base commit and the scan) is left
@@ -1779,13 +1779,18 @@ export class Engine {
         external && checks.mode === 'approved'
           ? await this.checkBaseline(runId, dir, checks.commands)
           : [];
-      const alreadyFailing = baseline.filter((r) => r.result === 'failed').map((r) => r.command);
+      // why: a check the baseline never ran (its round's time was used up) is not known to fail, so it is not excused.
+      const alreadyFailing = baseline
+        .filter((r) => r.result === 'failed' && !r.tail.endsWith(CHECK_NOT_RUN))
+        .map((r) => r.command);
       let verify: {
         done: boolean;
         remaining: string[];
         runs: CheckRun[];
         alreadyFailing: string[];
       } | null = null;
+      // Plan 046: the requests a part left unmarked when it stopped at a run limit (no checks run then).
+      let unmarked: string[] = [];
       let out: HandoffOutcome;
       for (;;) {
         let last = 0;
@@ -1817,7 +1822,9 @@ export class Engine {
                           )
                           .map((r) => ({ command: r.command, tail: r.tail })),
                       }
-                    : {}),
+                    : unmarked.length
+                      ? { remaining: tickets.filter((t) => unmarked.includes(t.id)) }
+                      : {}),
                 },
               }
             : {}),
@@ -1825,6 +1832,7 @@ export class Engine {
         // why: the checks write files too; whether the agent changed anything is read before they run.
         const changed = (await git.status(dir)).length > 0;
         verify = null;
+        unmarked = [];
         if (external && !out.stopped) {
           const remaining = remainingTickets(
             dir,
@@ -1846,6 +1854,9 @@ export class Engine {
             };
             this.record(runId, 'code.verify', { part, ...verify });
             if (verify.done) break;
+          } else if (out.tripped) {
+            // why: a part that stopped at a limit with requests left is not checked, but the next part is still told which.
+            unmarked = remaining;
           }
         }
         const more = out.tripped !== null || (verify !== null && !verify.done);
@@ -1930,6 +1941,8 @@ export class Engine {
     const env = await toolPathEnv(commands, tools);
     const runs = await runChecks(commands, dir, tools, {
       ...(env ? { env } : {}),
+      // Plan 046: a round of checks gets its own time, equal to the run's minutes limit, as each part of the agent's work does.
+      budgetMs: checkBudgetMs(this.approvedSpec(runId).agents.runCeilings.minutes),
       ...this.sig(runId),
     });
     // why: a Stop pressed during the last command ends it early; that result says nothing about the code.
@@ -2265,7 +2278,7 @@ export class Engine {
     const ceilings = {
       turns: c.turns > 0 ? c.turns : DEFAULT_RUN_CEILINGS.turns,
       toolCalls: c.toolCalls > 0 ? c.toolCalls : 400,
-      minutes: c.minutes > 0 ? c.minutes : 45,
+      minutes: c.minutes > 0 ? c.minutes : DEFAULT_RUN_CEILINGS.minutes,
       usd: c.usd > 0 ? c.usd : 10,
     };
     const planPath = delivered

@@ -101,8 +101,17 @@ if (mode === 'slow') {
     left--;
     writeFileSync(file, `${JSON.stringify({ ...t, state: 'READY_FOR_TEST' }, null, 2)}\n`);
   }
-  assistant(1);
-  emit({ type: 'result', subtype: 'success', total_cost_usd: 0.42, result: `Finished step ${n}.` });
+  // FAKE_AGENT_TRIP=N (plan 046): the first N launches keep calling tools until a run limit stops them.
+  if (n <= Number(process.env.FAKE_AGENT_TRIP ?? 0)) {
+    const tick = () => {
+      assistant(5);
+      setTimeout(tick, 5);
+    };
+    tick();
+  } else {
+    assistant(1);
+    emit({ type: 'result', subtype: 'success', total_cost_usd: 0.42, result: `Finished step ${n}.` });
+  }
 } else if (mode === 'runaway') {
   const tick = () => {
     assistant(5);

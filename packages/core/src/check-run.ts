@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { InterruptedError, PolicyError } from '@incubator/runtime';
-import { STACK_CATALOG } from '@incubator/spec';
+import { DEFAULT_RUN_CEILINGS, STACK_CATALOG } from '@incubator/spec';
 import { validateChecks } from './checks.js';
 import { cleanAgentText } from './handoff.js';
 import { locateTool, type ToolsDeps } from './stacks.js';
@@ -18,6 +18,14 @@ export interface CheckRun {
 
 /** How long one check may run: a full Flutter test run or a Docker-backed SQL suite takes minutes. */
 export const CHECK_TIMEOUT_MS = 20 * 60_000;
+
+/** Plan 046: one round of checks may take no longer than the run's minutes limit (unset or 0 means the default). */
+export function checkBudgetMs(minutes: number): number {
+  return (minutes > 0 ? minutes : DEFAULT_RUN_CEILINGS.minutes) * 60_000;
+}
+
+/** Plan 046: the tail of a check that was not run because its round's time was used up. */
+export const CHECK_NOT_RUN = "not run: the approved commands used up the run's minutes limit";
 
 /**
  * Where a check's program runs from: a catalog tool found off PATH (for example `flutter` under the
@@ -60,12 +68,19 @@ export async function runChecks(
   commands: readonly string[],
   cwd: string,
   tools: ToolsDeps,
-  opts: { env?: Record<string, string>; signal?: AbortSignal; timeoutMs?: number } = {},
+  opts: {
+    env?: Record<string, string>;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    /** Plan 046: the whole round's time, shared by its commands; unset means no shared limit. */
+    budgetMs?: number;
+  } = {},
 ): Promise<CheckRun[]> {
   // why: these commands run on the owner's computer, so the approval rules are checked again here.
   if (validateChecks(commands).length > 0)
     throw new PolicyError('check commands refused', { code: 'check_command' });
   const runs: CheckRun[] = [];
+  const deadline = opts.budgetMs === undefined ? null : Date.now() + opts.budgetMs;
   for (const command of commands) {
     const [program, ...args] = command.split(' ');
     // why: `./gradlew test` names a file in the repository, so it is looked up from the folder it runs in.
@@ -82,10 +97,20 @@ export async function runChecks(
       });
       continue;
     }
+    const left = deadline === null ? Infinity : deadline - Date.now();
+    if (left <= 0) {
+      runs.push({
+        command,
+        result: 'failed',
+        exitCode: null,
+        tail: tailOf(CHECK_NOT_RUN, true),
+      });
+      continue;
+    }
     try {
       const r = await tools.exec.run(prog.bin, args, {
         cwd,
-        timeoutMs: opts.timeoutMs ?? CHECK_TIMEOUT_MS,
+        timeoutMs: Math.min(opts.timeoutMs ?? CHECK_TIMEOUT_MS, left),
         allowBatch: prog.batch,
         ...(opts.env ? { env: opts.env } : {}),
         ...(opts.signal ? { signal: opts.signal } : {}),
