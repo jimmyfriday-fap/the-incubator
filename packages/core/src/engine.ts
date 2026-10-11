@@ -134,6 +134,8 @@ import {
   enhanceDate,
   featureIssues,
   nextPlanNumber,
+  numberedAhead,
+  numberedMax,
   outsideIntentIssues,
   partStep,
   renderPrBody,
@@ -141,6 +143,7 @@ import {
   sanitizeRequest,
   ticketId,
   type EnhancePlanRecord,
+  type FolderUpstream,
 } from './enhance.js';
 import {
   AGENT_ADAPTERS,
@@ -837,8 +840,16 @@ export class Engine {
     const sameDay = repoFiles.find((f) =>
       new RegExp(`^docs/plans/\\d{3}-enhance-${date}\\.md$`).test(f),
     );
+    // Plan 049: a folder run also numbers past the plans its default branch already has.
+    const upstream =
+      (
+        this.state(runId).steps['folder.base']?.data as
+          { upstream?: FolderUpstream | null } | undefined
+      )?.upstream ?? null;
     const planPath =
-      prior?.planPath ?? sameDay ?? `docs/plans/${nextPlanNumber(repoFiles)}-enhance-${date}.md`;
+      prior?.planPath ??
+      sameDay ??
+      `docs/plans/${nextPlanNumber([...repoFiles, ...(upstream?.plans ?? [])])}-enhance-${date}.md`;
     const targets = Object.fromEntries(
       features.map((f) => [f.id, f.targets ?? resolveTargets(scan, f)]),
     );
@@ -856,6 +867,7 @@ export class Engine {
       features,
       targets,
       base,
+      numbered: upstream ? { ref: upstream.ref, ahead: upstream.ahead } : null,
       // No Incubator gate in the repository, and none arriving with this delivery.
       external:
         !isCanonicalRepo(dir) &&
@@ -1690,9 +1702,20 @@ export class Engine {
         v.problems.join(' '),
         { path: v.path, changed: v.git?.changed ?? [] },
       );
+    // Plan 049: what the folder's default branch holds as of its last fetch (nothing is fetched), so the
+    // plan and the agent's new numbered files are numbered past it.
+    const up = await git.upstreamFiles(this.runDir(s));
+    const upstream: FolderUpstream | null = up
+      ? {
+          ref: up.ref,
+          // why: both lists come from git; the scan's file view skips vendor/ and build/ and stops at 5,000 files.
+          ahead: numberedAhead(numberedMax(up.head), numberedMax(up.files)),
+          plans: up.files.filter((f) => /^docs\/plans\/\d{3}-/.test(f)),
+        }
+      : null;
     this.record(runId, 'step.ok', {
       step: 'folder.base',
-      data: { head: v.git!.head, branch: v.git!.branch, origin: v.git!.origin },
+      data: { head: v.git!.head, branch: v.git!.branch, origin: v.git!.origin, upstream },
     });
   }
 

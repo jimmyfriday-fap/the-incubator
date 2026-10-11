@@ -154,6 +154,34 @@ describe('GitOps', () => {
     expect(await git.countBetween(dir, 'f'.repeat(40), c)).toBeNull();
   });
 
+  it("lists the default branch's files as of the last fetch, and fetches nothing itself (plan 049)", async () => {
+    const src = tmp('gitops-upstream-src-');
+    await git.init(src, 'trunk');
+    writeFileSync(path.join(src, 'a.txt'), 'one\n');
+    await git.addAll(src);
+    await git.commit(src, 'chore: one', ident);
+    const dest = path.join(tmp('gitops-upstream-'), 'dest');
+    await git.clone(src, dest);
+    mkdirSync(path.join(src, 'db'));
+    writeFileSync(path.join(src, 'db', '002_more.sql'), '-- more\n');
+    await git.addAll(src);
+    await git.commit(src, 'chore: two', ident);
+    // Nothing was fetched, so the clone still sees the first commit.
+    expect(await git.upstreamFiles(dest)).toEqual({
+      ref: 'origin/trunk',
+      files: ['a.txt'],
+      head: ['a.txt'],
+    });
+    await git.fetch(dest, 'origin', '+refs/heads/trunk:refs/remotes/origin/trunk');
+    expect(await git.upstreamFiles(dest)).toEqual({
+      ref: 'origin/trunk',
+      files: ['a.txt', 'db/002_more.sql'],
+      head: ['a.txt'],
+    });
+    // A repository with no remote has no default branch to read.
+    expect(await git.upstreamFiles(src)).toBeNull();
+  });
+
   it('reports the checked-out branch, and null when HEAD is unborn or detached', async () => {
     const dir = tmp('gitops-branch-');
     await git.init(dir, 'trunk');

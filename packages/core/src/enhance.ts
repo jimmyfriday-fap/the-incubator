@@ -195,6 +195,8 @@ export interface DeliveryInput {
    * commands instead of `pnpm check:quick`, which does not exist there.
    */
   external?: boolean;
+  /** Plan 049: numbered folders where the folder's default branch is past this branch; null when unknown. */
+  numbered?: { ref: string; ahead: NumberedAhead[] } | null;
 }
 
 /**
@@ -307,6 +309,7 @@ function renderPlan(d: DeliveryInput): string {
     `Test runners detected: ${runners}.`,
     '',
     ...steps,
+    ...numberedSection(d.numbered ?? null),
     '## Touched files and markers',
     '',
     '| Request | Targets | Design and ticket |',
@@ -406,6 +409,68 @@ export function buildDelivery(d: DeliveryInput): Map<string, RenderedFile> {
     );
   }
   return files;
+}
+
+/** Plan 049: the folder's default branch as of its last fetch: the numbered folders it is past HEAD in, and its plan files. */
+export interface FolderUpstream {
+  ref: string;
+  ahead: NumberedAhead[];
+  plans: string[];
+}
+
+/** Plan 049: a folder where the default branch already uses higher numbers than this branch. */
+export interface NumberedAhead {
+  dir: string;
+  local: string | null;
+  upstream: string;
+}
+
+/**
+ * Plan 049: the highest number in each folder of numbered files (`docs/plans/012-x.md`,
+ * `supabase/migrations/053_y.sql`), as written. Files at the repository root are left out.
+ */
+export function numberedMax(files: readonly string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of files) {
+    const m = /^((?:[^/]+\/)+)(\d+)[-_][^/]*$/.exec(f);
+    if (!m) continue;
+    const dir = m[1]!;
+    const num = m[2]!;
+    const was = out[dir];
+    if (was === undefined || Number(num) > Number(was)) out[dir] = num;
+  }
+  return out;
+}
+
+/** Plan 049: the folders where `upstream` goes past `local` (or `local` has none), sorted by folder. */
+export function numberedAhead(
+  local: Record<string, string>,
+  upstream: Record<string, string>,
+): NumberedAhead[] {
+  return Object.keys(upstream)
+    .sort(cmp)
+    .filter((dir) => local[dir] === undefined || Number(upstream[dir]) > Number(local[dir]))
+    .map((dir) => ({ dir, local: local[dir] ?? null, upstream: upstream[dir]! }));
+}
+
+/** Plan 049: the plan's note on numbered folders where the default branch is past this branch. */
+function numberedSection(n: { ref: string; ahead: NumberedAhead[] } | null): string[] {
+  // why: the plan's own number already accounts for docs/plans/.
+  const ahead = (n?.ahead ?? []).filter((a) => a.dir !== 'docs/plans/');
+  if (!n || !ahead.length) return [];
+  const shown = ahead.slice(0, 30);
+  return [
+    '## Numbered files',
+    '',
+    `\`${n.ref}\` (as of the last fetch before this run started) already has numbered files past this branch's. A new file in one of these folders takes the next number after the higher of the two, so it does not clash when the branches meet:`,
+    '',
+    ...shown.map(
+      (a) =>
+        `- \`${a.dir}\`: this branch goes up to ${a.local === null ? 'none' : `\`${a.local}\``}, \`${n.ref}\` to \`${a.upstream}\`.`,
+    ),
+    ...(ahead.length > shown.length ? [`- and ${ahead.length - shown.length} more folders.`] : []),
+    '',
+  ];
 }
 
 /** The next free `docs/plans/NNN-` number in the repository (001 when there are none). */

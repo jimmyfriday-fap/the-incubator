@@ -15,6 +15,8 @@ import {
   designFile,
   featureIssues,
   nextPlanNumber,
+  numberedAhead,
+  numberedMax,
   resolveTargets,
   sanitizeRequest,
   ticketId,
@@ -898,6 +900,31 @@ describe('enhance helpers', () => {
       },
     };
     expect(featureIssues(withTargets, []).map((i) => i.code)).toEqual(['feature.targets']);
+  });
+
+  it('finds numbered folders where the default branch is past this branch (plan 049)', () => {
+    const local = numberedMax([
+      'docs/plans/007-a.md',
+      'supabase/migrations/051_x.sql',
+      'supabase/migrations/049_y.sql',
+      '01-root.md',
+      'src/app.ts',
+    ]);
+    expect(local).toEqual({ 'docs/plans/': '007', 'supabase/migrations/': '051' });
+    const upstream = numberedMax([
+      'docs/plans/007-a.md',
+      'supabase/migrations/053_z.sql',
+      'db/seeds/002_s.sql',
+    ]);
+    expect(numberedAhead(local, upstream)).toEqual([
+      { dir: 'db/seeds/', local: null, upstream: '002' },
+      { dir: 'supabase/migrations/', local: '051', upstream: '053' },
+    ]);
+    expect(numberedMax(['db/9_a.sql', 'db/10_b.sql'])).toEqual({ 'db/': '10' });
+    expect(numberedAhead({ 'db/': '9' }, { 'db/': '10' })).toEqual([
+      { dir: 'db/', local: '9', upstream: '10' },
+    ]);
+    expect(numberedAhead(upstream, upstream)).toEqual([]);
   });
 
   it('numbers plans after the highest existing one', () => {

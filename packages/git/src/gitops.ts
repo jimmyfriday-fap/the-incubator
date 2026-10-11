@@ -58,6 +58,12 @@ export interface GitOps {
   checkout(dir: string, branch: string): Promise<void>;
   /** How many commits `to` has that `from` does not (`rev-list --count from..to`); null when git cannot tell. */
   countBetween(dir: string, from: string, to: string): Promise<number | null>;
+  /**
+   * Plan 049: the files of the remote-tracking default branch (`origin/HEAD`, else `origin/main`, else
+   * `origin/master`) as of the last fetch, and the files at HEAD, both from `git ls-tree`; null when there
+   * is none. Nothing is fetched.
+   */
+  upstreamFiles(dir: string): Promise<{ ref: string; files: string[]; head: string[] } | null>;
   /** Adds a remote; a no-op when it already points at `url`, an error when it points elsewhere. */
   remoteAdd(dir: string, name: string, url: string): Promise<void>;
   /** The configured `user.name` and `user.email`, or null when either is unset. */
@@ -204,6 +210,37 @@ export function createGitOps(exec: Exec): GitOps {
       const r = await git(['rev-list', '--count', `${from}..${to}`], { cwd: dir, allowFail: true });
       const n = Number.parseInt(r.stdout.trim(), 10);
       return r.code === 0 && Number.isFinite(n) ? n : null;
+    },
+    async upstreamFiles(dir) {
+      const head = await git(['rev-parse', '--abbrev-ref', 'refs/remotes/origin/HEAD'], {
+        cwd: dir,
+        allowFail: true,
+      });
+      const named = head.stdout.trim();
+      // why: only a plain origin/<branch> name reaches git below, so nothing can be read as an option.
+      const refs = [
+        ...(head.code === 0 && /^origin\/[A-Za-z0-9._/-]+$/.test(named) ? [named] : []),
+        'origin/main',
+        'origin/master',
+      ];
+      for (const ref of refs) {
+        const r = await git(['ls-tree', '-r', '--name-only', '-z', `refs/remotes/${ref}`, '--'], {
+          cwd: dir,
+          allowFail: true,
+        });
+        if (r.code === 0) {
+          const h = await git(['ls-tree', '-r', '--name-only', '-z', 'HEAD', '--'], {
+            cwd: dir,
+            allowFail: true,
+          });
+          return {
+            ref,
+            files: r.stdout.split('\0').filter(Boolean),
+            head: h.code === 0 ? h.stdout.split('\0').filter(Boolean) : [],
+          };
+        }
+      }
+      return null;
     },
     async remoteAdd(dir, name, url) {
       const have = await git(['remote', 'get-url', name], { cwd: dir, allowFail: true });

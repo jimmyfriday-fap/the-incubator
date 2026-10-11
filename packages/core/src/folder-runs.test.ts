@@ -1242,6 +1242,56 @@ describe('an update run keeps going until every request is done (plan 043)', () 
     expect(ticket(dir, FILTER)).toBe('READY_FOR_TEST');
   });
 
+  it('numbers the plan past origin/main and lists its numbered folders, when the folder is behind (plan 049)', async () => {
+    const { h, dir, runId } = await seeded();
+    vi.stubEnv('FAKE_AGENT_MARKS', '99');
+    // A numbered file in a folder the scan skips (vendor/), the same on both sides: never listed.
+    mkdirSync(path.join(dir, 'vendor', 'lib'), { recursive: true });
+    writeFileSync(path.join(dir, 'vendor', 'lib', '01_same.sql'), '-- same\n');
+    expect((await git(['add', '-A'], dir)).code).toBe(0);
+    expect((await git(['commit', '-q', '-m', 'vendor'], dir)).code).toBe(0);
+    expect((await git(['push', '-q', 'origin', 'HEAD:refs/heads/main'], dir)).code).toBe(0);
+    // Someone else pushed to origin/main; the folder fetched it, but its own main is behind.
+    const other = path.join(mkdtempSync(path.join(os.tmpdir(), 'other-clone-')), 'repo');
+    const url = await out(['remote', 'get-url', 'origin'], dir);
+    expect((await git(['clone', '-q', url, other], os.tmpdir())).code).toBe(0);
+    mkdirSync(path.join(other, 'db', 'migrations'), { recursive: true });
+    writeFileSync(path.join(other, 'db', 'migrations', '005_new.sql'), '-- new\n');
+    mkdirSync(path.join(other, 'docs', 'plans'), { recursive: true });
+    writeFileSync(path.join(other, 'docs', 'plans', '009-other.md'), '# other\n');
+    expect((await git(['add', '-A'], other)).code).toBe(0);
+    expect(
+      (
+        await git(
+          [
+            '-c',
+            'user.name=t',
+            '-c',
+            'user.email=t@example.invalid',
+            'commit',
+            '-q',
+            '-m',
+            'other',
+          ],
+          other,
+        )
+      ).code,
+    ).toBe(0);
+    expect((await git(['push', '-q', 'origin', 'HEAD:refs/heads/main'], other)).code).toBe(0);
+    expect((await git(['fetch', '-q', 'origin'], dir)).code).toBe(0);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    const planPath = h.engine.enhanceSummary(runId).plan!.planPath;
+    expect(planPath).toBe('docs/plans/010-enhance-20260501.md');
+    const plan = readFileSync(path.join(dir, planPath), 'utf8');
+    expect(plan).toContain('## Numbered files');
+    expect(plan).toContain(
+      '- `db/migrations/`: this branch goes up to none, `origin/main` to `005`.',
+    );
+    // The plan's own number already accounts for docs/plans/, and vendor/ is the same on both sides.
+    expect(plan).not.toContain('- `docs/plans/`');
+    expect(plan).not.toContain('vendor/');
+  });
+
   it('tells the next part which request is left, and finishes when it is done', async () => {
     const { h, dir, runId } = await seeded();
     vi.stubEnv('FAKE_AGENT_MARKS', '1');

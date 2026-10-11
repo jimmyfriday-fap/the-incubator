@@ -231,6 +231,7 @@ export function faultyGit(inner: GitOps) {
         'remoteAdd',
         'identity',
         'countBetween',
+        'upstreamFiles',
       ] as const
     ).map((m) => [m, wrap(m)]),
   ) as unknown as GitOps;
