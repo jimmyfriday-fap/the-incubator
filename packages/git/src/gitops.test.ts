@@ -1,4 +1,13 @@
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -50,6 +59,18 @@ describe('GitOps', () => {
     expect(got.get('renamed.txt')).toBe('R ');
     expect(got.has('old name.txt')).toBe(false);
     expect(got.has('secret.env')).toBe(false);
+  });
+
+  it('reads the status without rewriting the index, so it never blocks a commit running beside it', async () => {
+    const dir = await repo({ 'a.txt': 'one\n' });
+    // Only the file's timestamp changes, so a plain `git status` would refresh the index and write it back.
+    const when = new Date('2026-02-02T00:00:00Z');
+    utimesSync(path.join(dir, 'a.txt'), when, when);
+    const index = path.join(dir, '.git', 'index');
+    const before = statSync(index).mtimeMs;
+    expect(await git.status(dir)).toEqual([]);
+    expect(statSync(index).mtimeMs).toBe(before);
+    expect(existsSync(path.join(dir, '.git', 'index.lock'))).toBe(false);
   });
 
   it('fetches a branch from another local repository, checks it out, and leaves the current branch alone', async () => {

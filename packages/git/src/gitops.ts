@@ -179,9 +179,13 @@ export function createGitOps(exec: Exec): GitOps {
         });
     },
     async status(dir) {
-      const r = await git(['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
-        cwd: dir,
-      });
+      // why: a plain `git status` refreshes the index and takes index.lock while it does; the run view polls
+      // this while a commit's `git add` runs, and the add then fails ("remove the file manually"). Reading must
+      // never take that lock.
+      const r = await git(
+        ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
+        { cwd: dir },
+      );
       const out: StatusEntry[] = [];
       const parts = r.stdout.split('\0');
       for (let i = 0; i < parts.length; i++) {
