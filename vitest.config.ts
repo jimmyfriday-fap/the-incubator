@@ -8,6 +8,10 @@ export default defineConfig({
   resolve: { conditions },
   ssr: { resolve: { conditions, externalConditions: conditions } },
   test: {
+    // why: the git-heavy tests spawn dozens of processes each; with one worker per core (15 on a 16-core
+    // Windows machine) they fight over the disk and the slowest passes in 17 s alone but times out at 120 s
+    // in a full run. Six workers pass. VITEST_MAX_WORKERS (or --maxWorkers) still overrides this.
+    ...(process.platform === 'win32' ? { maxWorkers: 6 } : {}),
     reporters: ['default', 'json'],
     outputFile: { json: '.reports/unit.json' },
     coverage: {
