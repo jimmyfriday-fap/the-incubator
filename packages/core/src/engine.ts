@@ -2619,7 +2619,10 @@ export class Engine {
         ],
       },
     );
-    const turn = gate.value;
+    // Plan 050: targets come from the scan; ones the model set are dropped here, before the merge.
+    const turn = enhance
+      ? { ...gate.value, draftSpec: withoutTargets(gate.value.draftSpec) }
+      : gate.value;
     this.record(runId, 'llm.turn', {
       round: s.round,
       adapter: adapter.id,

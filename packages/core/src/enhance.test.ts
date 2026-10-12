@@ -440,6 +440,17 @@ describe('enhance', () => {
     expect(h.engine.finalSpec(runId)!.intent.personas).toEqual(['kitchen staff']);
   });
 
+  it('drops the targets a model sets and resolves them from the scan, with no retry (plan 050)', async () => {
+    const h = engineFor('model-targets');
+    const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
+    const runId = start(h, dir, ref, { noPublish: true });
+    const s = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(s.state).toBe('DONE');
+    const turns = (h.llm as FakeLlmAdapter).calls.filter((c) => c.schemaName === 'DiscoveryTurn');
+    expect(turns).toHaveLength(1);
+    expect(h.engine.finalSpec(runId)!.intent.coreFeatures[0]!.targets).toEqual(['src/server.js']);
+  });
+
   it('revises an update plan from corrections at review and resolves the targets again (plan 021)', async () => {
     const h = engineFor('review-changes');
     const { ref, dir } = await seed(h, 'bare-node', path.join(fixtures, 'bare-node'));
@@ -866,7 +877,7 @@ describe('enhance helpers', () => {
   it('ships the enhance prompt versioned and byte-pinned', () => {
     const p = loadPrompt('enhance');
     expect(p.name).toBe('enhance');
-    expect(p.version).toBe('1.3.0');
+    expect(p.version).toBe('1.4.0');
     expect(p.body).toMatchSnapshot();
   });
 
@@ -893,13 +904,13 @@ describe('enhance helpers', () => {
     expect(featureIssues(turn('enhancement/new', 'old'), ['old']).map((i) => i.code)).toEqual([
       'feature.duplicate',
     ]);
-    // Targets come from the scan; a model that sets them is rejected.
+    // Plan 050: targets come from the scan; the engine drops ones the model sets, so they are not an issue.
     const withTargets = {
       intent: {
         coreFeatures: [{ id: 'x', summary: 's', lane: 'enhancement/new', targets: ['a'] }],
       },
     };
-    expect(featureIssues(withTargets, []).map((i) => i.code)).toEqual(['feature.targets']);
+    expect(featureIssues(withTargets, [])).toEqual([]);
   });
 
   it('finds numbered folders where the default branch is past this branch (plan 049)', () => {
@@ -1019,6 +1030,37 @@ describe('enhance helpers', () => {
     expect(
       resolveTargets(scan, { id: 'invoice-export', summary: 'Export invoices from the calendar' }),
     ).toEqual(['src/billing.js', 'src/routes.js']);
+  });
+
+  it('leaves out test fixtures and the path words src and test (plan 050)', () => {
+    const scan = {
+      routes: [
+        {
+          method: 'GET',
+          path: '/admin/status',
+          file: 'test/fixtures/lint-no-bow/tricky.mjs',
+          framework: 'node',
+        },
+      ],
+      commands: [],
+      dataModel: [],
+      entryPoints: [],
+      modules: [
+        { dir: 'src/admin', files: 4, languages: ['JavaScript'] },
+        { dir: 'src/config', files: 1, languages: ['JavaScript'] },
+        { dir: 'src/state', files: 2, languages: ['JavaScript'] },
+        { dir: 'test/admin', files: 3, languages: ['JavaScript'] },
+        { dir: 'test/fixtures', files: 9, languages: ['JavaScript'] },
+      ],
+    } as unknown as RepoScan;
+    // "state" is a word of the request, so src/state/ stays; the fixture route and src/config/ do not.
+    expect(
+      resolveTargets(scan, {
+        id: 'admin-status-queue-waiting',
+        summary:
+          "Add a 'waiting' field to the queue part of GET /admin/status (src/admin): the count of live rows in the queued state. Update the test in test/admin.",
+      }),
+    ).toEqual(['src/admin/', 'src/state/', 'test/admin/']);
   });
 
   it('points a Flutter request at the feature module, its screens and its providers', () => {

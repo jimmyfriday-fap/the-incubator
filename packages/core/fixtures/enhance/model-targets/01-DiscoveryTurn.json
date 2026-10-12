@@ -1,0 +1,28 @@
+{
+  "schemaName": "DiscoveryTurn",
+  "note": "plan 050: the model sets targets; the engine drops them and resolves its own from the scan, with no retry",
+  "response": {
+    "draftSpec": {
+      "intent": {
+        "coreFeatures": [
+          {
+            "id": "export-orders",
+            "summary": "Export the day's orders as CSV from the existing /orders route",
+            "lane": "enhancement/existing",
+            "targets": ["lib/elsewhere.js"]
+          }
+        ]
+      },
+      "decisions": [
+        {
+          "key": "intent.coreFeatures",
+          "question": "Which existing behaviour changes",
+          "answer": "GET /orders gains a CSV export",
+          "source": "inferred"
+        }
+      ]
+    },
+    "questions": [],
+    "done": true
+  }
+}

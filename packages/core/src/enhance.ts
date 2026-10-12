@@ -41,10 +41,8 @@ export function featureIssues(
   existing: readonly string[],
 ): Issue[] {
   const features =
-    (
-      draftSpec['intent'] as
-        { coreFeatures?: { id?: unknown; lane?: unknown; targets?: unknown }[] } | undefined
-    )?.coreFeatures ?? [];
+    (draftSpec['intent'] as { coreFeatures?: { id?: unknown; lane?: unknown }[] } | undefined)
+      ?.coreFeatures ?? [];
   const issues: Issue[] = [];
   features.forEach((f, i) => {
     if (!ENHANCEMENT_LANES.includes(String(f.lane)))
@@ -53,12 +51,7 @@ export function featureIssues(
         path: `/draftSpec/intent/coreFeatures/${i}/lane`,
         message: `an enhancement request must use lane enhancement/existing or enhancement/new, not ${String(f.lane)}`,
       });
-    if (f.targets !== undefined)
-      issues.push({
-        code: 'feature.targets',
-        path: `/draftSpec/intent/coreFeatures/${i}/targets`,
-        message: 'targets are resolved from the scan; do not set them',
-      });
+    // Plan 050: targets a model sets are dropped by the engine (withoutTargets), not a reason to reject the reply.
     if (existing.includes(String(f.id)))
       issues.push({
         code: 'feature.duplicate',
@@ -127,10 +120,17 @@ const STOP = new Set([
 /** Plan 048: filler in a summary ("add support for"), but the subject when the feature id holds it. */
 const NAMING = new Set(['support']);
 
+/** Plan 050: words in nearly every path ("src/admin", "test/admin"); they match every module, not the request. */
+const PATH_WORDS = new Set(['src', 'lib', 'test', 'tests']);
+
+/** Plan 050: a test fixture holds sample code (its routes are not the app's), never the place to make a change. */
+const FIXTURE_PATH = /(^|\/)(__)?fixtures(__)?\//;
+
 function tokens(text: string, keepNaming = false): string[] {
   const out = new Set<string>();
   for (const t of text.toLowerCase().split(/[^a-z0-9]+/)) {
-    if (t.length < 3 || STOP.has(t) || (!keepNaming && NAMING.has(t))) continue;
+    if (t.length < 3 || STOP.has(t) || PATH_WORDS.has(t) || (!keepNaming && NAMING.has(t)))
+      continue;
     out.add(t);
     if (t.length > 4 && t.endsWith('s')) out.add(t.slice(0, -1));
   }
@@ -154,6 +154,7 @@ export function resolveTargets(
   // Plan 048: a target scores the different words it matches, so a file with many routes sharing one word does not win.
   const hits = new Map<string, { words: Set<string>; weight: number }>();
   const bump = (target: string, text: string, weight: number): void => {
+    if (FIXTURE_PATH.test(target)) return;
     const l = text.toLowerCase();
     const found = toks.filter((t) => l.includes(t));
     if (!found.length) return;
