@@ -8,7 +8,7 @@ import {
   type Draft,
 } from './merge.js';
 import { buildUserPrompt } from './prompt-builder.js';
-import { questionIssues, questionTarget } from './questions.js';
+import { questionIssues, questionTarget, selectQuestions } from './questions.js';
 
 const q = (key: string, values: string[]): Question => ({
   key,
@@ -277,6 +277,49 @@ describe('the owner corrections in the user prompt (plan 021)', () => {
     );
     expect(buildUserPrompt({ ...ctx, corrections: [] })).toBe(buildUserPrompt(ctx));
     expect(buildUserPrompt(ctx)).not.toContain('corrections');
+  });
+});
+
+describe('the tracker question never offers Leantime (plan 051)', () => {
+  const tracker = (values: string[], recommended: string): Question => {
+    const t = q('tracker.type', values);
+    t.options.forEach((o) => (o.recommended = o.value === recommended));
+    return t;
+  };
+
+  it('drops the question when taking Leantime out leaves fewer than two options', () => {
+    const { asked, dropped } = selectQuestions([tracker(['leantime', 'local'], 'local')], []);
+    expect(asked).toEqual([]);
+    expect(dropped).toEqual([
+      {
+        key: 'tracker.type',
+        why: 'Leantime is not offered, and fewer than two other options remain',
+      },
+    ]);
+  });
+
+  it('removes only the Leantime option, and keeps one option recommended', () => {
+    const { asked, dropped } = selectQuestions(
+      [tracker(['leantime', 'local', 'github'], 'leantime')],
+      [],
+    );
+    expect(dropped).toEqual([]);
+    expect(asked[0]!.options.map((o) => o.value)).toEqual(['local', 'github']);
+    expect(asked[0]!.options.map((o) => o.recommended)).toEqual([true, false]);
+  });
+
+  it('leaves every other question, and Leantime as an option of it, alone', () => {
+    const other = [q('request.tracker', ['leantime', 'local']), q('deploy.target', ['a', 'b'])];
+    const { asked, dropped } = selectQuestions(other, []);
+    expect(dropped).toEqual([]);
+    expect(asked.map((a) => a.options.map((o) => o.value)).sort()).toEqual([
+      ['a', 'b'],
+      ['leantime', 'local'],
+    ]);
+  });
+
+  it('does not send a reply back through the gate for offering Leantime', () => {
+    expect(questionIssues([tracker(['leantime', 'local'], 'local')])).toEqual([]);
   });
 });
 

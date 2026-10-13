@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LogEntry, RepoStatus, RunDetail } from '../../api-types.js';
 import { get, post } from '../api.js';
+import { isAsking } from '../asking.js';
 import { recheckOnFocus } from '../recheck.js';
 import { ChangeRequest } from './ChangeRequest.js';
 import { Coding } from './Coding.js';
@@ -119,7 +120,8 @@ export function RunView({ runId }: { runId: string }) {
 
   if (!run) return <p className={error ? 'error' : 'muted'}>{error ?? 'Loading…'}</p>;
   const reviewing = run.state === 'PARKED' && run.parked?.state === 'REVIEW' && !run.busy;
-  const asking = run.state === 'PARKED' && run.parked?.reason === 'needs_input' && !run.busy;
+  // why: a run parked for answers with no question to show falls through to the Resume card (plan 051).
+  const asking = isAsking(run);
   const requesting = run.state === 'PARKED' && run.parked?.reason === 'needs_request' && !run.busy;
   const committing = run.state === 'PARKED' && run.parked?.reason === 'needs_commit' && !run.busy;
   const pushing = run.state === 'PARKED' && run.parked?.reason === 'needs_push' && !run.busy;

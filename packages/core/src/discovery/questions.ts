@@ -155,6 +155,22 @@ export function questionIssues(
   return issues;
 }
 
+/** Why a tracker question is dropped once Leantime is taken out of it (plan 051). */
+const LEANTIME_DROPPED = 'Leantime is not offered, and fewer than two other options remain';
+
+/**
+ * The questions cannot ask for a Leantime address and project, so the tracker question never offers
+ * Leantime (plan 051). The option is taken out after the model replies; the prompt and the schema's
+ * allowed values are unchanged, and an owner can still set Leantime in incubator.json at review.
+ */
+function withoutLeantime(q: Question): Question {
+  if (q.key !== 'tracker.type' || !q.options.some((o) => o.value === 'leantime')) return q;
+  const options = q.options.filter((o) => o.value !== 'leantime');
+  if (options.length > 0 && !options.some((o) => o.recommended))
+    options[0] = { ...options[0]!, recommended: true };
+  return { ...q, options: options as Question['options'] };
+}
+
 /**
  * The engine, not the model, enforces the clarification rules (TDD §5.2): drop questions the packs
  * fix or that are already decided, rank by impact (ties by key), keep at most five.
@@ -167,8 +183,10 @@ export function selectQuestions(
   const decided = decisions.filter((d) => d.source !== 'inferred').map((d) => d.key);
   const seen = new Set<string>();
   const kept: AskedQuestion[] = [];
-  for (const q of questions) {
-    if (FIXED_BY_PACKS.some((k) => covers(k, q.key)))
+  for (const offered of questions) {
+    const q = withoutLeantime(offered);
+    if (q !== offered && q.options.length < 2) dropped.push({ key: q.key, why: LEANTIME_DROPPED });
+    else if (FIXED_BY_PACKS.some((k) => covers(k, q.key)))
       dropped.push({ key: q.key, why: 'fixed by the template packs' });
     else if (decided.some((k) => covers(k, q.key)))
       dropped.push({ key: q.key, why: 'already decided' });

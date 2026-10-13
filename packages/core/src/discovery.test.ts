@@ -158,12 +158,21 @@ describe('clarification rules', () => {
   it('keeps at most five questions per round, ranked by impact', async () => {
     const { prompter, h, runId, spec } = await run('python-webhook');
     expect(prompter.asked.map((r) => r.map((q) => q.key))).toEqual([
-      ['deploy.target', 'stack.database', 'testing.home', 'tracker.type', 'agents.primary'],
+      [
+        'deploy.target',
+        'stack.database',
+        'testing.home',
+        'agents.primary',
+        'testing.coverageThreshold',
+      ],
       ['security.policyGate', 'testing.e2e'],
     ]);
     const dropped = h.engine.entries(runId).find((e) => e.type === 'questions.dropped');
     expect(dropped?.['dropped']).toEqual([
-      { key: 'testing.coverageThreshold', why: 'over the per-round limit' },
+      {
+        key: 'tracker.type',
+        why: 'Leantime is not offered, and fewer than two other options remain',
+      },
     ]);
     expect(spec.testing.coverageThreshold).toBe(80);
     expect(h.engine.entries(runId).filter((e) => e.type === 'llm.turn')).toHaveLength(2);

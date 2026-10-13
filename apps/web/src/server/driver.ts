@@ -29,6 +29,8 @@ export class WebPrompter implements Prompter {
   }
 
   ask(questions: readonly AskedQuestion[]): Promise<Answer[]> {
+    // why: with nothing to ask there is nothing to wait for; parking would show an empty card and no way on (plan 051).
+    if (questions.length === 0) return Promise.resolve([]);
     const answers = this.#answers;
     this.#answers = null;
     if (answers) return Promise.resolve([...answers]);
