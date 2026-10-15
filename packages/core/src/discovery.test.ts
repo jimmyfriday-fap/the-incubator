@@ -15,7 +15,7 @@ import { DefaultsPrompter, NonInteractivePrompter, ScriptedPrompter } from './pr
 import { loadPrompt, parsePrompt } from './prompts.js';
 import { discoveryFixtureDir, fakeEngine } from './testing.js';
 import { Journal } from './journal.js';
-import { otherIssues } from './discovery/merge.js';
+import { deployClassIssues, otherIssues } from './discovery/merge.js';
 import { allowedValues, buildUserPrompt } from './discovery/prompt-builder.js';
 
 const NARRATIVES = [
@@ -72,6 +72,70 @@ describe('discovery prompt', () => {
     expect(prompt({})).not.toMatch(/\bother\b/);
     expect(prompt({ stack: { pack: 'other' } })).toContain('- deploy.target: ');
     expect(prompt({ stack: { pack: 'other' } })).toMatch(/- platform: .* \| other\n/);
+  });
+
+  it('sends a library-only deploy target on another stack back to the model (plan 055)', () => {
+    const turn = (draftSpec: Record<string, unknown>) =>
+      ({ draftSpec, questions: [], done: true }) as never;
+    const before = (stack: unknown, deploy?: unknown) =>
+      ({ stack, ...(deploy ? { deploy } : {}), decisions: [] }) as never;
+    const wanted = ['deploy_class /draftSpec/deploy/target'];
+    const found = (b: never, t: never) => deployClassIssues(b, t).map((i) => `${i.code} ${i.path}`);
+    expect(
+      found(before({ pack: 'wordpress' }), turn({ deploy: { target: 'package-release' } })),
+    ).toEqual(wanted);
+    expect(
+      found(before({ pack: 'node-lib' }), turn({ deploy: { target: 'vps-tailscale' } })),
+    ).toEqual(wanted);
+    expect(
+      deployClassIssues(
+        before({ pack: 'wordpress' }),
+        turn({ deploy: { target: 'package-release' } }),
+      )[0]!.message,
+    ).toContain('only for libraries and CLIs');
+    expect(
+      found(before({ pack: 'node-lib' }), turn({ deploy: { target: 'package-release' } })),
+    ).toEqual([]);
+    expect(
+      found(before({ pack: 'node-web' }), turn({ deploy: { target: 'vps-tailscale' } })),
+    ).toEqual([]);
+    // Nothing to compare while the pack or the target is not known yet.
+    expect(found(before(undefined), turn({ deploy: { target: 'package-release' } }))).toEqual([]);
+    expect(found(before({ pack: 'wordpress' }), turn({}))).toEqual([]);
+    // The draft already holds the bad pair and the turn does not touch it: still sent back.
+    expect(
+      found(before({ pack: 'wordpress' }, { target: 'package-release' }), turn({ intent: {} })),
+    ).toEqual(wanted);
+  });
+
+  it('sends a library-only deploy target back to the model, and the run then finishes without parking (plan 055)', async () => {
+    const dir = discoveryFixtureDir('saas-web');
+    const [first, second] = ['01', '02'].map(
+      (n) =>
+        JSON.parse(readFileSync(path.join(dir, `${n}-DiscoveryTurn.json`), 'utf8')) as {
+          response: { draftSpec: Record<string, unknown> };
+        },
+    );
+    const bad = structuredClone(second!);
+    bad.response.draftSpec['deploy'] = {
+      staging: { tailnetOnly: false },
+      target: 'package-release',
+    };
+    const h = fakeEngine(new FakeLlmAdapter([first, bad, second] as never));
+    const runId = h.engine.start({
+      kind: 'new',
+      narrative: narrative('saas-web'),
+      specOnly: true,
+      surface: 'test',
+    });
+    const s = await h.engine.advance(runId, new ScriptedPrompter());
+    expect(s.state).toBe('DONE');
+    expect(h.engine.entries(runId).some((e) => e.type === 'park')).toBe(false);
+    const calls = (h.adapter as FakeLlmAdapter).calls;
+    expect(calls).toHaveLength(3);
+    expect(calls[2]!.user).toContain('only for libraries and CLIs');
+    const spec = h.engine.draft(runId) as unknown as IncubatorSpec;
+    expect(spec.deploy.target).not.toBe('package-release');
   });
 
   it('sends a turn that picks "other" back to the model', () => {

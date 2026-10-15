@@ -91,6 +91,29 @@ export function otherIssues(turn: DiscoveryTurn): Issue[] {
   }));
 }
 
+/**
+ * Plan 055: a library or CLI (stack.pack node-lib) deploys as package-release, and nothing else does (the spec's
+ * deploy_class rule). Checked on the draft as it would be after the turn, so a turn that breaks the rule, or leaves
+ * it broken, is sent back to the model with this issue instead of parking the run at validation.
+ */
+export function deployClassIssues(before: Draft, turn: DiscoveryTurn): Issue[] {
+  const after = deepMerge(withoutMeta(before), withoutMeta(withoutPackFixed(turn.draftSpec)));
+  const pack = getAt(after, 'stack.pack');
+  const target = getAt(after, 'deploy.target');
+  if (typeof pack !== 'string' || typeof target !== 'string') return [];
+  if ((pack === 'node-lib') === (target === 'package-release')) return [];
+  return [
+    {
+      code: 'deploy_class',
+      path: '/draftSpec/deploy/target',
+      message:
+        pack === 'node-lib'
+          ? 'a library or CLI (stack.pack node-lib) deploys as package-release: set deploy.target to package-release'
+          : `deploy.target package-release is only for libraries and CLIs (stack.pack node-lib): a ${pack} project uses vps-tailscale or docker-host`,
+    },
+  ];
+}
+
 function upsert(list: Decision[], d: Decision): Decision[] {
   return [...list.filter((x) => x.key !== d.key), d];
 }

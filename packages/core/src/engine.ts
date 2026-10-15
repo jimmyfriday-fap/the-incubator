@@ -31,6 +31,7 @@ import {
 } from '@incubator/spec';
 import {
   attributionIssues,
+  deployClassIssues,
   mergeTurn,
   otherIssues,
   supersededAnswers,
@@ -2649,7 +2650,7 @@ export class Engine {
           ...attributionIssues(before, turn, { nameKey: enhance }),
           ...(enhance
             ? [...featureIssues(turn.draftSpec, baseline), ...outsideIntentIssues(before, turn)]
-            : otherIssues(turn)),
+            : [...otherIssues(turn), ...deployClassIssues(before, turn)]),
         ],
       },
     );
