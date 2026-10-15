@@ -14,6 +14,13 @@ export function installCommand(root) {
   if (existsSync(path.join(root, 'composer.lock')))
     return ['composer', ['install', '--no-interaction']];
   if (existsSync(path.join(root, 'uv.lock'))) return ['uv', ['sync', '--frozen']];
+  // why: a repository built from a template has no composer.lock or uv.lock until its first install, and the
+  // agent may not run an installer itself: without these the gates fail on missing tools, and the session
+  // ends with nothing it could fix. A manifest with no lockfile installs from the manifest.
+  if (existsSync(path.join(root, 'composer.json')))
+    return ['composer', ['install', '--no-interaction', '--no-progress']];
+  if (existsSync(path.join(root, 'pyproject.toml'))) return ['uv', ['sync']];
+  if (existsSync(path.join(root, 'package.json'))) return ['pnpm', ['install']];
   return null;
 }
 
