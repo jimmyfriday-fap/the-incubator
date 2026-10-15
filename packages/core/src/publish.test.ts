@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { nodeExec, ToolError } from '@incubator/runtime';
 import { completeSpec, type IncubatorSpec } from '@incubator/spec';
 import type { GitHubMethod } from '@incubator/git';
-import { FAKE_GITHUB_TOKEN, fakePublishEngine } from './testing.js';
+import { DefaultsPrompter } from './prompter.js';
+import { FAKE_GITHUB_TOKEN, discoveryFixtureDir, fakePublishEngine } from './testing.js';
 
 const combos = path.resolve(import.meta.dirname, '../../templates/fixtures/combos');
 function spec(combo: string, over: Record<string, unknown> = {}): IncubatorSpec {
@@ -60,6 +61,7 @@ describe('publish', () => {
     expect(h.github.calls.map((c) => c.method)).toMatchInlineSnapshot(`
       [
         "tokenInfo",
+        "ownerKind",
         "getRepo",
         "getRepo",
         "createRepo",
@@ -228,6 +230,64 @@ describe('publish', () => {
     expect(v.github.calls.some((c) => c.method === 'createRepo')).toBe(false);
     ok = true;
     expect((await v.engine.resume(run2, undefined as never)).state).toBe('DONE');
+  });
+
+  it('parks before rendering anything when the GitHub owner does not exist, and says which account to use (plan 053)', async () => {
+    const h = fakePublishEngine({ github: { missingOwners: ['backshack'] } });
+    const base = spec('node-lib.in-repo.package-release');
+    const runId = h.engine.startFromSpec(
+      { ...base, project: { ...base.project, owner: { type: 'org', login: 'backshack' } } },
+      { kind: 'scaffold', surface: 'test' },
+    );
+    const s = await h.engine.advance(runId, undefined as never);
+    expect(s.state).toBe('PARKED');
+    expect(s.parked).toMatchObject({ state: 'SCAFFOLD', reason: 'owner_not_found' });
+    const park = h.engine.entries(runId).findLast((e) => e.type === 'park');
+    expect(park?.['message']).toContain('"backshack" was not found');
+    expect(park?.['message']).toContain('"octo"');
+    expect(h.github.calls.some((c) => c.method === 'createRepo')).toBe(false);
+    expect(h.engine.state(runId).steps['render']).toBeUndefined();
+  });
+
+  it('owns a new project by the account of the token, as a default decision, and keeps it private (plan 054)', async () => {
+    const h = fakePublishEngine({
+      github: { login: 'jimmy' },
+      llm: { dir: discoveryFixtureDir('ts-library') },
+    });
+    const runId = h.engine.start({
+      kind: 'new',
+      narrative: 'A small TypeScript library.',
+      specOnly: true,
+      surface: 'test',
+    });
+    expect((await h.engine.advance(runId, new DefaultsPrompter())).state).toBe('DONE');
+    const draft = h.engine.draft(runId) as unknown as {
+      project: { owner: unknown; visibility: string };
+      decisions: { key: string; answer: string; source: string }[];
+    };
+    expect(draft.project.owner).toEqual({ type: 'user', login: 'jimmy' });
+    expect(draft.project.visibility).toBe('private');
+    expect(draft.decisions.filter((d) => d.key.startsWith('project.owner'))).toEqual([
+      expect.objectContaining({ key: 'project.owner.type', answer: 'user', source: 'default' }),
+      expect.objectContaining({ key: 'project.owner.login', answer: 'jimmy', source: 'default' }),
+    ]);
+    expect(h.github.calls.filter((c) => c.method === 'tokenInfo')).toHaveLength(1);
+  });
+
+  it('leaves the owner empty for a new project when no account can be read (plan 054)', async () => {
+    const h = fakePublishEngine({
+      github: { failAtTokenInfo: true },
+      llm: { dir: discoveryFixtureDir('ts-library') },
+    });
+    const runId = h.engine.start({
+      kind: 'new',
+      narrative: 'A small TypeScript library.',
+      specOnly: true,
+      surface: 'test',
+    });
+    await h.engine.advance(runId, new DefaultsPrompter());
+    const draft = h.engine.draft(runId) as unknown as { project: { owner: { login: string } } };
+    expect(draft.project.owner.login).toBe('');
   });
 
   it('warns instead of failing when branch protection is unavailable', async () => {

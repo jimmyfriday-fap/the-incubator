@@ -101,6 +101,12 @@ export class OctokitGitHub implements GitHubAdapter {
     }
   }
 
+  async ownerKind(login: string): Promise<'user' | 'org' | null> {
+    const res = await orNull('get owner', this.kit.rest.users.getByUsername({ username: login }));
+    if (!res) return null;
+    return res.data.type === 'Organization' ? 'org' : 'user';
+  }
+
   async getRepo(ref: RepoRef): Promise<RepoInfo | null> {
     const res = await orNull(
       'get repository',

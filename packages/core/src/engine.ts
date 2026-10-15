@@ -2577,7 +2577,41 @@ export class Engine {
     return s.input.kind === 'enhance' ? this.requestText(runId) : (s.input.narrative ?? '');
   }
 
+  /**
+   * Plan 054: a new project is owned by the GitHub account of the token, so the model is never asked who owns it.
+   * Skipped when publishing is not configured, when no account can be read, or when an owner is already set or decided.
+   */
+  private async defaultOwner(runId: string, s: RunState): Promise<void> {
+    if (s.input.kind !== 'new' || !this.deps.publish) return;
+    const draft = this.draft(runId);
+    const decisions = draft.decisions ?? [];
+    const project = (draft['project'] ?? {}) as { owner?: { login?: string } };
+    if (project.owner?.login || decisions.some((d) => d.key.startsWith('project.owner'))) return;
+    const login = await this.publisher().accountLogin();
+    if (!login) return;
+    this.writeRevision(runId, {
+      ...draft,
+      project: { ...project, owner: { type: 'user', login } },
+      decisions: [
+        ...decisions,
+        {
+          key: 'project.owner.type',
+          question: 'Who owns the GitHub repository?',
+          answer: 'user',
+          source: 'default',
+        },
+        {
+          key: 'project.owner.login',
+          question: 'Which GitHub account owns the repository?',
+          answer: login,
+          source: 'default',
+        },
+      ],
+    });
+  }
+
   private async draftStep(runId: string, s: RunState): Promise<void> {
+    await this.defaultOwner(runId, s);
     const adapter = await this.deps.llm.select(
       'discovery',
       s.input.adapter as LlmAdapterId | undefined,

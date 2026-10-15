@@ -50,6 +50,17 @@ const make = (routes: Record<string, Route | Reply>, token = 'ghp_classic_token_
 };
 
 describe('OctokitGitHub', () => {
+  it('tells a user, an organization and a missing owner apart (plan 053)', async () => {
+    const { gh } = make({
+      'GET /users/octo': { status: 200, body: { login: 'octo', type: 'User' } },
+      'GET /users/acme': { status: 200, body: { login: 'acme', type: 'Organization' } },
+      'GET /users/ghost': { status: 404, body: { message: 'Not Found' } },
+    });
+    expect(await gh.ownerKind('octo')).toBe('user');
+    expect(await gh.ownerKind('acme')).toBe('org');
+    expect(await gh.ownerKind('ghost')).toBeNull();
+  });
+
   it('reads token kind and scopes', async () => {
     const { gh, seen } = make({
       'GET /user': {

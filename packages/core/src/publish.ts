@@ -200,6 +200,16 @@ export class Publisher {
     return { gh: this.#gh, token };
   }
 
+  /** Plan 054: the GitHub account the token belongs to; null when there is no token or GitHub cannot be reached. */
+  async accountLogin(): Promise<string | null> {
+    try {
+      const { gh } = await this.github();
+      return (await gh.tokenInfo()).login || null;
+    } catch {
+      return null;
+    }
+  }
+
   private ref(spec: IncubatorSpec, name = spec.project.slug): RepoRef {
     return { owner: spec.project.owner.login, name };
   }
@@ -224,6 +234,12 @@ export class Publisher {
       throw new PolicyError(
         'project.owner.login is empty; set the GitHub owner in incubator.json',
         { code: 'no_owner' },
+      );
+    // Plan 053: a missing organization makes the name check below read "free" (a 404), and the run then fails at PUBLISH.
+    if (!(await gh.ownerKind(ctx.spec.project.owner.login)))
+      throw new PolicyError(
+        `the GitHub owner "${ctx.spec.project.owner.login}" was not found, or the token cannot see it. The token belongs to "${info.login}": to publish under that account, set project.owner to { "type": "user", "login": "${info.login}" } in incubator.json and resume.`,
+        { code: 'owner_not_found' },
       );
     for (const name of this.repoNames(ctx.spec)) {
       const existing = await gh.getRepo(this.ref(ctx.spec, name));

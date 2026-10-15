@@ -42,6 +42,8 @@ export interface BranchProtection {
 export interface GitHubAdapter {
   tokenInfo(): Promise<TokenInfo>;
   getRepo(ref: RepoRef): Promise<RepoInfo | null>;
+  /** Plan 053: whether `login` is a GitHub user or an organization (`GET /users/{login}`); null when there is no such account. */
+  ownerKind(login: string): Promise<'user' | 'org' | null>;
   createRepo(
     ref: RepoRef & {
       ownerType: 'user' | 'org';
@@ -98,6 +100,10 @@ export class FakeGitHub implements GitHubAdapter {
       scopes?: string[];
       root?: string;
       protectionUnsupported?: boolean;
+      /** Plan 053: owners that do not exist on this fake GitHub; every other owner is found (the token's login as a user, the rest as organizations). */
+      missingOwners?: string[];
+      /** Plan 054: `tokenInfo` throws, as when GitHub cannot be reached. */
+      failAtTokenInfo?: boolean;
     } = {},
   ) {
     this.root = opts.root ?? mkdtempSync(path.join(os.tmpdir(), 'fake-github-'));
@@ -141,11 +147,23 @@ export class FakeGitHub implements GitHubAdapter {
   }
 
   tokenInfo(): Promise<TokenInfo> {
-    return this.call('tokenInfo', [], () => ({
-      login: this.opts.login ?? 'octo',
-      kind: this.opts.kind ?? 'classic',
-      scopes: this.opts.scopes ?? ['repo', 'workflow'],
-    }));
+    return this.call('tokenInfo', [], () => {
+      if (this.opts.failAtTokenInfo)
+        throw new ToolError('fake: GitHub cannot be reached', { code: 'injected' });
+      return {
+        login: this.opts.login ?? 'octo',
+        kind: this.opts.kind ?? 'classic',
+        scopes: this.opts.scopes ?? ['repo', 'workflow'],
+      };
+    });
+  }
+
+  ownerKind(login: string): Promise<'user' | 'org' | null> {
+    return this.call('ownerKind', [login], () => {
+      const wanted = login.toLowerCase();
+      if (this.opts.missingOwners?.some((m) => m.toLowerCase() === wanted)) return null;
+      return wanted === (this.opts.login ?? 'octo').toLowerCase() ? 'user' : 'org';
+    });
   }
 
   getRepo(ref: RepoRef): Promise<RepoInfo | null> {
