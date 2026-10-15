@@ -351,7 +351,8 @@ describe('handoff on a repository the Incubator did not build (ADR-025)', () => 
   it('tells a continuing part what the earlier parts committed (plan 036)', () => {
     const p = loadPrompt('handoff-continue');
     expect(p.name).toBe('handoff-continue');
-    expect(p.version).toBe('1.1.0');
+    expect(p.version).toBe('1.2.0');
+    expect(p.body).toContain('do not stop with the tickets unmarked');
     expect(MAX_CODE_PARTS).toBe(5);
     const text = continuationText({
       part: 3,
@@ -430,7 +431,8 @@ describe('handoff on a repository the Incubator did not build (ADR-025)', () => 
   it('ships the external prompt versioned and byte-pinned', () => {
     const p = loadPrompt('handoff-external');
     expect(p.name).toBe('handoff-external');
-    expect(p.version).toBe('1.1.0');
+    expect(p.version).toBe('1.2.0');
+    expect(p.body).toContain('Whatever state the file shows now');
     expect(p.body).toMatchSnapshot();
   });
 
