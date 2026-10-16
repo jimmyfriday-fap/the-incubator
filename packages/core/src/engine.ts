@@ -112,6 +112,7 @@ import {
   whatNowMarkdown,
   type WhatNow,
 } from './what-now.js';
+import { standUp, type StandUp } from './standup.js';
 import { scaffoldSpec } from './scaffold.js';
 import { Adopter, adoptReport, isEmptyDelta, writeReport, type AdoptContext } from './adopt.js';
 import { PreviewCache, type Preview, type PreviewStatus } from './preview.js';
@@ -2144,6 +2145,36 @@ export class Engine {
       ...(d.commit !== undefined ? { commit: d.commit } : {}),
       pr: d.pr ?? null,
     });
+  }
+
+  /**
+   * Plan 058: the stand-up guide for a finished run that has a project folder: what was built and the literal steps
+   * to stand it up, as an executor plan. Written under the run's own directory, never into the project folder (an
+   * untracked file there would make "continue coding" refuse with dirty_tree).
+   */
+  async standUpGuide(runId: string): Promise<StandUp> {
+    const s = this.state(runId);
+    if (!s.input.dir)
+      throw new PolicyError(`run ${runId} has no project folder`, { code: 'no_folder' });
+    if (!s.done || s.cancelled)
+      throw new PolicyError(`run ${runId} is not finished`, { code: 'not_finished' });
+    const guide = (await this.finishDetail(runId))?.whatNow;
+    if (!guide)
+      throw new PolicyError(`run ${runId} has no coding stage to describe`, { code: 'no_guide' });
+    const spec = this.approvedSpec(runId);
+    const out = standUp({
+      runId,
+      name: spec.project.name,
+      slug: spec.project.slug,
+      pack: spec.stack.pack,
+      platform: spec.platform,
+      guide,
+    });
+    const dir = path.join(this.deps.store.runDir(runId), 'guide');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, out.fileName), out.markdown);
+    this.record(runId, 'guide.written', { file: out.fileName });
+    return out;
   }
 
   /** The subject of the drafted commit: the one request, the count of requests, or the new project. */

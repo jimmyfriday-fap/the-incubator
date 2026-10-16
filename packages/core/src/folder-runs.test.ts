@@ -159,6 +159,29 @@ describe('new solution in a chosen folder', () => {
     expect((await none.engine.finishDetail(third.runId))!.setup).toBeNull();
   });
 
+  it('writes the stand-up guide for a finished run outside the project folder, and refuses an unfinished one (plan 058)', async () => {
+    const h = harness();
+    const dir = freshFolder();
+    const { runId } = await newSolution(h, dir);
+    await expect(h.engine.standUpGuide(runId)).rejects.toMatchObject({ code: 'not_finished' });
+    await setOwner(dir);
+    h.engine.submitCommit(runId, { action: 'commit' });
+    await h.engine.resume(runId, new DefaultsPrompter());
+    h.engine.submitPush(runId, 'push');
+    expect((await h.engine.resume(runId, new DefaultsPrompter())).done).toBe(true);
+    const g = await h.engine.standUpGuide(runId);
+    expect(g.fileName).toBe('STAND-UP-tallyho.md');
+    expect(g.markdown).toContain('# Stand-up guide: Tallyho');
+    expect(g.markdown).toContain('pnpm build');
+    expect(readFileSync(path.join(h.store.runDir(runId), 'guide', g.fileName), 'utf8')).toBe(
+      g.markdown,
+    );
+    // The project folder is untouched: continue coding still works.
+    expect(await out(['status', '--porcelain'], dir)).toBe('');
+    expect(existsSync(path.join(dir, g.fileName))).toBe(false);
+    expect(h.engine.entries(runId).some((e) => e.type === 'guide.written')).toBe(true);
+  });
+
   it('commits WHAT-NOW.md with the work and shows the same guide once the run is done (plan 057)', async () => {
     const h = harness();
     const dir = freshFolder();
