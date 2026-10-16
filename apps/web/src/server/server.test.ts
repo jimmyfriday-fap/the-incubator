@@ -413,6 +413,10 @@ describe('enhance over the API', () => {
     expect(r.status).toBe(422);
     expect(r.body.error).toContain('is not finished');
     expect((await api.post('/api/runs/20200101-000000-aaaaaa/continue')).status).toBe(404);
+    // The stand-up guide (plan 059) is for a finished run only.
+    const early = await api.post<{ error: string }>(`/api/runs/${runId}/stand-up-guide`);
+    expect(early.status).toBe(422);
+    expect(early.body.error).toContain('is not finished');
   });
 
   it("says when an update run's repository moved on, and a refresh reads it again and asks to confirm the request (plan 027)", async () => {
@@ -706,6 +710,14 @@ describe('folders, coding, and the commit and push requests over the API', () =>
     expect(d.state).toBe('DONE');
     expect(d.finish?.pr?.url).toBe('https://github.com/octo/stockroom/pull/1');
     expect(h.github.repos.get('octo/stockroom')!.prs).toHaveLength(1);
+    // The finished run writes its stand-up guide (plan 059), and the project folder stays untouched.
+    const guide = await api.post<{ fileName: string; markdown: string }>(
+      `/api/runs/${runId}/stand-up-guide`,
+    );
+    expect(guide.status).toBe(200);
+    expect(guide.body.fileName).toBe('STAND-UP-stockroom.md');
+    expect(guide.body.markdown).toContain('# Stand-up guide: Stockroom');
+    expect(existsSync(path.join(dir, guide.body.fileName))).toBe(false);
     expect(existsSync(path.join(dir, '.git'))).toBe(true);
   });
 

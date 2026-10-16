@@ -681,6 +681,13 @@ export function createApp(opts: ServerOptions): WebApp {
     }),
   );
 
+  // Writes the stand-up guide of a finished folder run and returns it (plan 058, plan 059): the run page shows it and
+  // lets the owner copy or download it. A run that is not finished answers 422.
+  app.post(
+    '/api/runs/:id/stand-up-guide',
+    withRun((runId) => engine.standUpGuide(runId)),
+  );
+
   // Reads an update run's repository again (plan 025): the owner then confirms what they asked for.
   app.post(
     '/api/runs/:id/refresh',

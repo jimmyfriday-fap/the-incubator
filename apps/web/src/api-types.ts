@@ -95,6 +95,12 @@ export interface WhatNow {
   next: string[];
 }
 
+/** Plan 059: the stand-up guide of a finished run (plan 058): the file name to save it as, and its markdown. */
+export interface StandUpGuide {
+  fileName: string;
+  markdown: string;
+}
+
 export interface Question {
   key: string;
   question: string;

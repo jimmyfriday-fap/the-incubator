@@ -653,6 +653,23 @@ p.warn {
   padding: var(--s2) var(--s3);
 }
 
+/* --- stand-up guide (plan 059) --- */
+
+.stand-up {
+  border-top: 1px solid var(--line);
+  margin-top: var(--s4);
+  padding-top: var(--s3);
+}
+
+.stand-up-text {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: var(--tint);
+  border-radius: var(--r-sm);
+  padding: var(--s3);
+}
+
 /* --- badges --- */
 
 .badge {
