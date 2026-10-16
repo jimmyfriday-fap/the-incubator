@@ -16,6 +16,48 @@ export function installCommands(dir: string): [string, string[]][] {
   return out;
 }
 
+/** One install command run before the agent codes (plan 056): `ok`, `failed`, or `missing` (the installer is not on PATH). */
+export interface InstallRun {
+  command: string;
+  result: 'ok' | 'failed' | 'missing';
+  /** Empty when ok; otherwise one line saying what went wrong. */
+  note: string;
+}
+
+/**
+ * Plan 056: installs the dependencies a rendered repository needs, from its manifests, so the agent's first gate run
+ * has its tools. Never throws: a problem is the result, because the agent can still work without the install.
+ */
+export async function installDependencies(
+  exec: Exec,
+  dir: string,
+  signal?: AbortSignal,
+): Promise<InstallRun[]> {
+  const out: InstallRun[] = [];
+  for (const [cmd, args] of installCommands(dir)) {
+    const command = `${cmd} ${args[0]}`;
+    if (!(await exec.which(cmd))) {
+      out.push({ command, result: 'missing', note: `${cmd} is not installed` });
+      continue;
+    }
+    try {
+      const r = await exec.run(cmd, args, {
+        cwd: dir,
+        timeoutMs: INSTALL_TIMEOUT,
+        ...(signal ? { signal } : {}),
+      });
+      out.push(
+        r.code === 0
+          ? { command, result: 'ok', note: '' }
+          : { command, result: 'failed', note: `${command} exited ${r.code ?? 'abnormally'}` },
+      );
+    } catch {
+      out.push({ command, result: 'failed', note: `${command} could not run` });
+    }
+  }
+  return out;
+}
+
 /**
  * VERIFY for real: install each repository's toolchain and run its own `check quick` (TDD §7.1).
  * The paired tests repository runs against the application copied to `app/`, as its CI does.

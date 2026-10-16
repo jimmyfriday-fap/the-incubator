@@ -103,6 +103,7 @@ import {
 import type { RunInput, RunStore } from './store.js';
 import { INCUBATOR_VERSION } from './version.js';
 import { Publisher, type PublishDeps, type PublishSummary, type StepContext } from './publish.js';
+import type { InstallRun } from './verify.js';
 import { scaffoldSpec } from './scaffold.js';
 import { Adopter, adoptReport, isEmptyDelta, writeReport, type AdoptContext } from './adopt.js';
 import { PreviewCache, type Preview, type PreviewStatus } from './preview.js';
@@ -191,7 +192,13 @@ export interface EngineDeps {
   /** GitHub, git and verification; required to go past SCAFFOLD into VERIFY/PUBLISH. */
   publish?: PublishDeps;
   /** Handoff: probes an agent CLI and runs processes. */
-  handoff?: { exec: Exec; probe(adapter: LlmAdapterId): Promise<Capabilities> };
+  handoff?: {
+    exec: Exec;
+    probe(adapter: LlmAdapterId): Promise<Capabilities>;
+    /** Plan 056: installs a built repository's dependencies before the agent codes. Absent in tests that need none. */
+    // why: a property, not a method signature, so the engine can read it off the object (unbound-method).
+    install?: (dir: string, signal?: AbortSignal) => Promise<InstallRun[]>;
+  };
   /** Retrieved stacks (ADR-027): finds and runs a stack's own generator. */
   tools?: ToolsDeps;
   /** The portfolio of projects the Incubator has worked on (ADR-028). */
@@ -1785,6 +1792,7 @@ export class Engine {
           message:
             'no check commands were approved for this repository: the agent can edit files but cannot run anything, so its work is untested',
         });
+      await this.installDependencies(runId, dir, checks.mode);
       // The agent works in parts (plan 036): a part stopped at a run limit is committed on the run's branch
       // (local only; the owner still decides the push), and the next part continues from there.
       const start = this.state(runId).steps['code.start']?.data as
@@ -1991,6 +1999,22 @@ export class Engine {
     return runs;
   }
 
+  /**
+   * Plan 056: a repository the Incubator built (checks mode `gate`) gets its dependencies installed before the agent's
+   * first part, once per coding stage. The agent may not run an installer itself, and a gate that fails on missing
+   * tools tells it nothing it can fix. The outcome is journaled; a problem never parks the run.
+   */
+  private async installDependencies(runId: string, dir: string, mode: string): Promise<void> {
+    const install = this.deps.handoff?.install;
+    if (!install || mode !== 'gate') return;
+    const after = this.continuedAt(runId);
+    if (this.entries(runId).some((e) => e.type === 'code.install' && e.seq > after)) return;
+    const runs = await install(dir, this.sig(runId).signal);
+    // why: a Stop pressed during the install ends it early; that result says nothing about the toolchain.
+    this.throwIfStopped(runId);
+    this.record(runId, 'code.install', { runs });
+  }
+
   /** The coding parts already committed since coding last started (plan 036). */
   private codeParts(runId: string): CodePart[] {
     const entries = this.entries(runId);
@@ -2040,6 +2064,10 @@ export class Engine {
     const pr = this.entries(runId).findLast((e) => e.type === 'finish.summary' && e.seq > after)?.[
       'pr'
     ] as { number: number; url: string } | undefined;
+    const installed = this.entries(runId).findLast(
+      (e) => e.type === 'code.install' && e.seq > after,
+    )?.['runs'] as InstallRun[] | undefined;
+    const setup = installed?.find((r) => r.result !== 'ok')?.note ?? null;
     return {
       stage,
       dir,
@@ -2054,6 +2082,7 @@ export class Engine {
       commit: committed ?? null,
       target,
       pr: pr ?? null,
+      setup,
       checkpoints: this.codeParts(runId).map(({ part, sha }) => ({ part, sha })),
       progress:
         stage === 'coding' && progress

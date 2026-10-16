@@ -27,7 +27,7 @@ import { Settings, type CredentialSource } from './settings.js';
 import { Engine } from './engine.js';
 import type { PublishDeps } from './publish.js';
 import { RunStore } from './store.js';
-import { createCommandVerifier } from './verify.js';
+import { createCommandVerifier, installDependencies } from './verify.js';
 
 export interface LiveEngine {
   home: string;
@@ -104,6 +104,7 @@ export function createLiveEngine(opts: {
     publish,
     handoff: {
       exec,
+      install: (dir, signal) => installDependencies(exec, dir, signal),
       probe: async (id) =>
         (await llm.probeAll())[id] ?? {
           installed: false,

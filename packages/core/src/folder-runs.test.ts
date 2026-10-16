@@ -17,6 +17,7 @@ import { ToolError, nodeExec } from '@incubator/runtime';
 import { completeSpec, type IncubatorSpec } from '@incubator/spec';
 import { DefaultsPrompter, NonInteractivePrompter, ScriptedPrompter } from './prompter.js';
 import { enhanceFixtureDir, fakePublishEngine, hashTree, seedExistingRepo } from './testing.js';
+import type { InstallRun } from './verify.js';
 
 const fakeAgent = path.resolve(import.meta.dirname, '../fixtures/handoff/fake-agent.mjs');
 const combos = path.resolve(import.meta.dirname, '../../templates/fixtures/combos');
@@ -118,6 +119,44 @@ describe('new solution in a chosen folder', () => {
     expect(d.message).toContain('Added src/agent-work.txt');
     // The workspace is never used for the owner's files and nothing was cleaned up.
     expect(hashTree(dir)['README.md']).toBeTruthy();
+  });
+
+  it('installs the dependencies before the agent starts, and names a setup problem in the finished-run detail (plan 056)', async () => {
+    const calls: string[] = [];
+    const make = (runs: InstallRun[]) =>
+      fakePublishEngine({
+        handoff: {
+          exec: nodeExec,
+          probe: () => Promise.resolve(agentCaps),
+          install: (d: string) => {
+            calls.push(d);
+            return Promise.resolve(runs);
+          },
+        },
+      });
+    const installs = (h: Harness, runId: string) =>
+      h.engine.entries(runId).filter((e) => e.type === 'code.install');
+
+    const bad = make([
+      { command: 'composer install', result: 'missing', note: 'composer is not installed' },
+    ]);
+    const dir = freshFolder();
+    const first = await newSolution(bad, dir);
+    // Best effort: the run still reaches the commit request.
+    expect(first.s.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(calls).toEqual([path.resolve(dir)]);
+    expect(installs(bad, first.runId)).toHaveLength(1);
+    expect((await bad.engine.finishDetail(first.runId))!.setup).toBe('composer is not installed');
+
+    const good = make([{ command: 'pnpm install', result: 'ok', note: '' }]);
+    const second = await newSolution(good, freshFolder());
+    expect((await good.engine.finishDetail(second.runId))!.setup).toBeNull();
+
+    // An engine with no installer (every other test) records nothing and shows nothing.
+    const none = harness();
+    const third = await newSolution(none, freshFolder());
+    expect(installs(none, third.runId)).toHaveLength(0);
+    expect((await none.engine.finishDetail(third.runId))!.setup).toBeNull();
   });
 
   it('asks before every commit and push: git must know the owner, then commit, then push opens one PR', async () => {

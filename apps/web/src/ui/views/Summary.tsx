@@ -98,6 +98,12 @@ export function Summary({ run, onContinue }: { run: RunDetail; onContinue?: () =
           )}
           {run.canContinue && (
             <div data-testid="continue-box">
+              {run.finish.setup && (
+                <p className="warn" data-testid="setup-problem">
+                  Setting up the project failed: {run.finish.setup}. That is probably why the agent
+                  could not finish: fix it in <code>{run.finish.dir}</code> first, then continue.
+                </p>
+              )}
               <p className="warn">
                 The agent stopped before finishing the plan
                 {run.finish.agent?.tripped ? ` (${run.finish.agent.tripped})` : ''}. Continue coding

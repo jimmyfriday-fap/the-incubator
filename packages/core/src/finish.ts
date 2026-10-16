@@ -124,6 +124,8 @@ export interface FinishDetail {
   /** Where Push would send the branch, or why it cannot. */
   target: { repo: RepoRef | null; reason: string | null };
   pr: { number: number; url: string } | null;
+  /** Plan 056: the first problem installing the dependencies before the agent coded (one line), or null. */
+  setup: string | null;
   /** The parts committed as checkpoints since coding last started (plan 036). */
   checkpoints: { part: number; sha: string }[];
   /** Live counters while the agent works. */

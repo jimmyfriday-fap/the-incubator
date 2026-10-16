@@ -69,6 +69,8 @@ export interface FinishInfo {
   commit: { sha: string | null; branch: string | null; none?: boolean; left?: boolean } | null;
   target: { repo: { owner: string; name: string } | null; reason: string | null };
   pr: { number: number; url: string } | null;
+  /** Plan 056: the first problem installing the dependencies before the agent coded, or null. */
+  setup: string | null;
   /** The parts committed as checkpoints since coding last started (plan 036). */
   checkpoints: { part: number; sha: string }[];
   progress: {
