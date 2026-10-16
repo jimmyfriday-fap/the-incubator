@@ -71,6 +71,8 @@ export interface FinishInfo {
   pr: { number: number; url: string } | null;
   /** Plan 056: the first problem installing the dependencies before the agent coded, or null. */
   setup: string | null;
+  /** Plan 057: the operator's guide, once the run is done; null before. */
+  whatNow: WhatNow | null;
   /** The parts committed as checkpoints since coding last started (plan 036). */
   checkpoints: { part: number; sha: string }[];
   progress: {
@@ -79,6 +81,18 @@ export interface FinishInfo {
     costUsd: number | null;
     snippet: string | null;
   } | null;
+}
+
+/** Plan 057: the operator's guide at the end of a run (the same content as WHAT-NOW.md). */
+export interface WhatNow {
+  title: string;
+  runId: string;
+  about: string[];
+  run: string[];
+  install: string[];
+  built: { id: string; title: string; state: string; ready: boolean }[];
+  status: string[];
+  next: string[];
 }
 
 export interface Question {

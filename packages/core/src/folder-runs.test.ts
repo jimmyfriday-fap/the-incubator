@@ -159,6 +159,34 @@ describe('new solution in a chosen folder', () => {
     expect((await none.engine.finishDetail(third.runId))!.setup).toBeNull();
   });
 
+  it('commits WHAT-NOW.md with the work and shows the same guide once the run is done (plan 057)', async () => {
+    const h = harness();
+    const dir = freshFolder();
+    const { runId } = await newSolution(h, dir);
+    expect((await h.engine.finishDetail(runId))!.whatNow).toBeNull();
+    await setOwner(dir);
+    h.engine.submitCommit(runId, { action: 'commit' });
+    let r = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(r.parked).toMatchObject({ state: 'PUSH', reason: 'needs_push' });
+    const file = readFileSync(path.join(dir, 'WHAT-NOW.md'), 'utf8');
+    expect(file.startsWith('# What now: Tallyho\n')).toBe(true);
+    expect(file).toContain(`run \`${runId}\``);
+    expect(file).toContain('## What to do next');
+    // The run steps come from the rendered README's Getting started block, not the fallback line.
+    expect(file).toContain('## How to run it\n\n1. ');
+    expect(file).not.toContain('Follow "Getting started" in README.md.');
+    // Committed with the work: nothing is left over in the folder.
+    expect(await out(['status', '--porcelain'], dir)).toBe('');
+    expect(await out(['show', '--name-only', '--format=', 'HEAD'], dir)).toContain('WHAT-NOW.md');
+    h.engine.submitPush(runId, 'push');
+    r = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(r.done).toBe(true);
+    const w = (await h.engine.finishDetail(runId))!.whatNow!;
+    expect(w.title).toBe('What now: Tallyho');
+    expect(w.status.some((l) => l.startsWith('Pull request #1: '))).toBe(true);
+    expect(w.next[0]).toBe('Run it on your machine: the steps are under "How to run it" above.');
+  });
+
   it('asks before every commit and push: git must know the owner, then commit, then push opens one PR', async () => {
     const h = harness();
     const dir = freshFolder();

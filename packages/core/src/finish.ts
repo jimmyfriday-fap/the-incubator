@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { GitIdentity, RepoRef, StatusEntry } from '@incubator/git';
 import { cleanAgentText, type HandoffOutcome } from './handoff.js';
 import type { CheckRun } from './check-run.js';
+import type { WhatNow } from './what-now.js';
 
 /** What the agent's run amounts to, in the words the owner sees at the commit request. */
 export type AgentVerdict = 'ready' | 'parked' | 'ceiling' | 'failed' | 'stopped';
@@ -126,6 +127,8 @@ export interface FinishDetail {
   pr: { number: number; url: string } | null;
   /** Plan 056: the first problem installing the dependencies before the agent coded (one line), or null. */
   setup: string | null;
+  /** Plan 057: the operator's guide, once the run is done; null before. */
+  whatNow: WhatNow | null;
   /** The parts committed as checkpoints since coding last started (plan 036). */
   checkpoints: { part: number; sha: string }[];
   /** Live counters while the agent works. */

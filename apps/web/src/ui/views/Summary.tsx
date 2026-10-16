@@ -1,4 +1,5 @@
 import type { RunDetail } from '../../api-types.js';
+import { WhatNowPanel } from './WhatNow.js';
 
 /** The outcome of a finished run: the published repository, or the adopt pull request. */
 export function Summary({ run, onContinue }: { run: RunDetail; onContinue?: () => void }) {
@@ -115,6 +116,7 @@ export function Summary({ run, onContinue }: { run: RunDetail; onContinue?: () =
               </button>
             </div>
           )}
+          {run.finish.whatNow && <WhatNowPanel w={run.finish.whatNow} />}
         </>
       )}
       {run.enhance && (

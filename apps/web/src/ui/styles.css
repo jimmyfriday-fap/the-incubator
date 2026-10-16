@@ -931,6 +931,30 @@ blockquote {
   border-radius: var(--r-sm);
 }
 
+/* --- what now (plan 057) --- */
+
+.what-now {
+  border-top: 1px solid var(--line);
+  margin-top: var(--s4);
+  padding-top: var(--s3);
+}
+
+.what-now li {
+  margin-bottom: var(--s2);
+}
+
+.what-now .badge {
+  margin-left: 0;
+}
+
+.what-now .badge.ready {
+  color: var(--ok);
+}
+
+.what-now .badge.waiting {
+  color: var(--warn);
+}
+
 /* --- projects --- */
 
 .projects {

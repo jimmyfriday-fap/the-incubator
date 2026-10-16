@@ -104,6 +104,14 @@ import type { RunInput, RunStore } from './store.js';
 import { INCUBATOR_VERSION } from './version.js';
 import { Publisher, type PublishDeps, type PublishSummary, type StepContext } from './publish.js';
 import type { InstallRun } from './verify.js';
+import {
+  readGettingStarted,
+  readTickets,
+  WHAT_NOW_FILE,
+  whatNow,
+  whatNowMarkdown,
+  type WhatNow,
+} from './what-now.js';
 import { scaffoldSpec } from './scaffold.js';
 import { Adopter, adoptReport, isEmptyDelta, writeReport, type AdoptContext } from './adopt.js';
 import { PreviewCache, type Preview, type PreviewStatus } from './preview.js';
@@ -2064,11 +2072,8 @@ export class Engine {
     const pr = this.entries(runId).findLast((e) => e.type === 'finish.summary' && e.seq > after)?.[
       'pr'
     ] as { number: number; url: string } | undefined;
-    const installed = this.entries(runId).findLast(
-      (e) => e.type === 'code.install' && e.seq > after,
-    )?.['runs'] as InstallRun[] | undefined;
-    const setup = installed?.find((r) => r.result !== 'ok')?.note ?? null;
-    return {
+    const setup = this.setupProblem(runId);
+    const detail: Omit<FinishDetail, 'whatNow'> = {
       stage,
       dir,
       branch: committed?.branch ?? start?.branch ?? null,
@@ -2094,6 +2099,51 @@ export class Engine {
             }
           : null,
     };
+    return { ...detail, whatNow: stage === 'done' ? this.whatNowFor(runId, s, detail) : null };
+  }
+
+  /** Plan 056: the first problem installing the dependencies before the agent coded, or null. */
+  private setupProblem(runId: string): string | null {
+    const after = this.continuedAt(runId);
+    const installed = this.entries(runId).findLast(
+      (e) => e.type === 'code.install' && e.seq > after,
+    )?.['runs'] as InstallRun[] | undefined;
+    return installed?.find((r) => r.result !== 'ok')?.note ?? null;
+  }
+
+  /** Plan 057: the operator's guide for this run, from the approved spec, the folder's tickets and the journal. */
+  private whatNowFor(
+    runId: string,
+    s: RunState,
+    d: Pick<FinishDetail, 'agent' | 'setup' | 'branch'> &
+      Partial<Pick<FinishDetail, 'commit' | 'pr'>>,
+  ): WhatNow {
+    const spec = this.approvedSpec(runId);
+    const warnings = this.entries(runId)
+      .filter((e) => e.type === 'step.warn')
+      .map((e) => {
+        const data = e['data'] as { reason?: unknown } | undefined;
+        const text = typeof e['message'] === 'string' ? e['message'] : data?.reason;
+        return typeof text === 'string' ? text : '';
+      })
+      .filter((t) => t.length > 0);
+    return whatNow({
+      runId,
+      name: spec.project.name,
+      description: spec.project.description,
+      platform: spec.platform,
+      slug: spec.project.slug,
+      pack: spec.stack.pack,
+      gettingStarted: readGettingStarted(this.runDir(s)),
+      deployTarget: spec.deploy.target,
+      branch: d.branch,
+      verdict: d.agent?.verdict ?? null,
+      setup: d.setup,
+      tickets: readTickets(this.runDir(s)),
+      warnings: [...new Set(warnings)],
+      ...(d.commit !== undefined ? { commit: d.commit } : {}),
+      pr: d.pr ?? null,
+    });
   }
 
   /** The subject of the drafted commit: the one request, the count of requests, or the new project. */
@@ -2181,6 +2231,17 @@ export class Engine {
         title: this.finishTitle(runId, s),
         summary: (s.steps['code.done']?.data as AgentReport | undefined)?.summary ?? null,
       });
+      // Plan 057: the operator's guide to what was built and what to do next, committed with the work.
+      writeFileSync(
+        path.join(dir, WHAT_NOW_FILE),
+        whatNowMarkdown(
+          this.whatNowFor(runId, s, {
+            agent: (s.steps['code.done']?.data as AgentReport | undefined) ?? null,
+            setup: this.setupProblem(runId),
+            branch: start.branch,
+          }),
+        ),
+      );
       await git.addAll(dir);
       const sha = await git.commit(
         dir,
