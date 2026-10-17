@@ -57,6 +57,15 @@ describe('the stand-up guide (plan 058)', () => {
     ]);
   });
 
+  it('points at its own work items and tells the executor to wait for the image build (plan 060)', () => {
+    const md = standUp(facts()).markdown;
+    expect(md).toContain('2. Run it on your machine: the steps are the work items above.');
+    expect(md).not.toContain('How to run it');
+    expect(md).toContain(
+      'The first run builds the WordPress image and can take several minutes: wait for the command to finish, do not stop it.',
+    );
+  });
+
   it('activates a theme as a theme', () => {
     const steps = standUpSteps(facts({ platform: 'wordpress-theme' }));
     expect(

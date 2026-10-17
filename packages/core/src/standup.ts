@@ -82,7 +82,7 @@ export function standUpSteps(f: StandUpFacts): StandUpStep[] {
         title: 'Start WordPress and the database',
         command: 'docker compose up -d --wait',
         expect:
-          'The command exits 0 (`$LASTEXITCODE` is 0) and the last lines say the `db` and `wordpress` containers are `Healthy` or `Started`.',
+          'The command exits 0 (`$LASTEXITCODE` is 0) and the last lines say the `db` and `wordpress` containers are `Healthy` or `Started`. The first run builds the WordPress image and can take several minutes: wait for the command to finish, do not stop it.',
         source: 'docker compose up -d --wait',
       },
       {
@@ -368,7 +368,11 @@ export function standUpMarkdown(f: StandUpFacts, steps: StandUpStep[]): string {
     '',
     '## What to do after it runs',
     '',
-    ...g.next.map((l, i) => `${i + 1}. ${esc(l)}`),
+    // why: plan 057's line points at its "How to run it" section; this document has none, its work items are the steps.
+    ...g.next.map(
+      (l, i) =>
+        `${i + 1}. ${esc(l.replace('the steps are under "How to run it" above', 'the steps are the work items above'))}`,
+    ),
     '',
   ].join('\n');
 }
