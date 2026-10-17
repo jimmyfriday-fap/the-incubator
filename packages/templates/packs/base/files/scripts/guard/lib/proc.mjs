@@ -14,6 +14,19 @@ export function parseCmdShim(content, shimPath) {
     : path.win32.normalize(path.win32.join(path.win32.dirname(shimPath), last));
 }
 
+/**
+ * Plan 061: what runs the target of a Windows command shim. A native program runs itself, a PHP archive (Composer's
+ * `composer.phar`) runs through php, and anything else is a script for node. Null when php is needed and is not on PATH.
+ */
+export function shimCommand(target, env = process.env) {
+  if (/\.(exe|com)$/i.test(target)) return [target, []];
+  if (/\.phar$/i.test(target)) {
+    const php = which('php', env);
+    return php === null ? null : [php[0], [...php[1], target]];
+  }
+  return [process.execPath, [target]];
+}
+
 /** PATH lookup; returns [command, prefixArgs] runnable with shell:false, or null. */
 export function which(name, env = process.env) {
   const windows = process.platform === 'win32';
@@ -30,7 +43,9 @@ export function which(name, env = process.env) {
       if (windows && /\.(cmd|bat)$/i.test(candidate)) {
         const target = parseCmdShim(readFileSync(candidate, 'utf8'), candidate);
         if (target === null) continue;
-        return /\.(exe|com)$/i.test(target) ? [target, []] : [process.execPath, [target]];
+        const command = shimCommand(target, env);
+        if (command === null) continue;
+        return command;
       }
       return [candidate, []];
     }

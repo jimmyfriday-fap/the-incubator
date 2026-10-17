@@ -1,5 +1,6 @@
 // Unit tests for the guard toolkit. Each guard is exercised against a throwaway repo tree.
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -29,7 +30,7 @@ import {
   pinnedNodeMajor,
   runUnderPinnedNode,
 } from './lib/node-runtime.mjs';
-import { childEnv, parseCmdShim, run, which } from './lib/proc.mjs';
+import { childEnv, parseCmdShim, run, shimCommand, which } from './lib/proc.mjs';
 import { evaluateAssertion, getPath, validateScenario } from './lib/scenario.mjs';
 import { lintPlan, lintPlans } from './plan-lint.mjs';
 import { gate, validateRegister } from './policy-gate.mjs';
@@ -68,6 +69,20 @@ describe('common helpers', () => {
       'C:\\r\\node_modules\\x\\bin\\x.js',
     );
     expect(parseCmdShim('echo', 'C:\\x.cmd')).toBeNull();
+  });
+  it('runs a shim that wraps a PHP archive with php, not with node (plan 061)', () => {
+    const bin = mkdtempSync(path.join(tmpdir(), 'shim php '));
+    const phpName = process.platform === 'win32' ? 'php.exe' : 'php';
+    const php = path.join(bin, phpName);
+    writeFileSync(php, '');
+    chmodSync(php, 0o755);
+    const env = { PATH: bin };
+    expect(shimCommand('bin\\composer.phar', env)).toEqual([php, ['bin\\composer.phar']]);
+    // A native program and a script keep their own runners.
+    expect(shimCommand('bin\\x.exe', env)).toEqual(['bin\\x.exe', []]);
+    expect(shimCommand('r\\x\\bin\\x.js', env)).toEqual([process.execPath, ['r\\x\\bin\\x.js']]);
+    // No php on PATH: nothing to run the archive with.
+    expect(shimCommand('bin\\composer.phar', { PATH: path.join(bin, 'empty') })).toBeNull();
   });
 });
 
