@@ -2,6 +2,28 @@ import { useState } from 'react';
 import type { StandUpGuide } from '../../api-types.js';
 import { ApiError, post } from '../api.js';
 
+/**
+ * Plan 062: copies text without the async clipboard API, which a locked-down webview or an insecure page refuses:
+ * select a hidden text box and ask the document to copy. False when that is refused too.
+ */
+function copyWithSelection(text: string): boolean {
+  const box = document.createElement('textarea');
+  box.value = text;
+  box.setAttribute('readonly', '');
+  box.style.position = 'absolute';
+  box.style.left = '-9999px';
+  document.body.appendChild(box);
+  box.select();
+  let ok: boolean;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  }
+  document.body.removeChild(box);
+  return ok;
+}
+
 /** Plan 059: writes the stand-up guide of a finished run (plan 058), then shows it with Copy and Download. */
 export function StandUpGuidePanel({ runId }: { runId: string }) {
   const [busy, setBusy] = useState(false);
@@ -33,9 +55,19 @@ export function StandUpGuidePanel({ runId }: { runId: string }) {
 
   const copy = () => {
     if (!guide) return;
-    void navigator.clipboard
-      .writeText(guide.markdown)
-      .then(() => setCopied(true))
+    const text = guide.markdown;
+    const viaApi =
+      'clipboard' in navigator
+        ? navigator.clipboard.writeText(text)
+        : Promise.reject(new Error('no clipboard api'));
+    void viaApi
+      .catch(() => {
+        if (!copyWithSelection(text)) throw new Error('copy refused');
+      })
+      .then(() => {
+        setError(null);
+        setCopied(true);
+      })
       .catch(() => setError('The guide could not be copied: use Download instead.'));
   };
 

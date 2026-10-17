@@ -2143,8 +2143,17 @@ export class Engine {
       tickets: readTickets(this.runDir(s)),
       warnings: [...new Set(warnings)],
       ...(d.commit !== undefined ? { commit: d.commit } : {}),
-      pr: d.pr ?? null,
+      pr: d.pr ?? this.latestPr(runId),
     });
+  }
+
+  /**
+   * Plan 062: the pull request of the latest push, from any stage. A continued stage that changed nothing opens none of
+   * its own, and the guide must not say the work is unpushed when an earlier stage pushed it.
+   */
+  private latestPr(runId: string): { number: number; url: string } | null {
+    const e = this.entries(runId).findLast((x) => x.type === 'finish.summary');
+    return (e?.['pr'] as { number: number; url: string } | undefined) ?? null;
   }
 
   /**

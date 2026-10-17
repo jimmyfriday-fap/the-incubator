@@ -182,6 +182,24 @@ describe('new solution in a chosen folder', () => {
     expect(h.engine.entries(runId).some((e) => e.type === 'guide.written')).toBe(true);
   });
 
+  it('names the earlier pull request in the guide after a continued stage that changed nothing (plan 062)', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'parts');
+    const h = harness();
+    const dir = freshFolder();
+    const { runId } = await newSolution(h, dir);
+    await setOwner(dir);
+    h.engine.submitCommit(runId, { action: 'commit' });
+    await h.engine.resume(runId, new DefaultsPrompter());
+    h.engine.submitPush(runId, 'push');
+    expect((await h.engine.resume(runId, new DefaultsPrompter())).done).toBe(true);
+    vi.stubEnv('FAKE_AGENT_MODE', 'idle');
+    await h.engine.continueCoding(runId);
+    expect((await h.engine.resume(runId, new DefaultsPrompter())).done).toBe(true);
+    const w = (await h.engine.finishDetail(runId))!.whatNow!;
+    expect(w.status.some((l) => l.startsWith('Pull request #1: '))).toBe(true);
+    expect(w.status).not.toContain('Not pushed to GitHub yet.');
+  });
+
   it('commits WHAT-NOW.md with the work and shows the same guide once the run is done (plan 057)', async () => {
     const h = harness();
     const dir = freshFolder();
