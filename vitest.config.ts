@@ -43,6 +43,8 @@ export default defineConfig({
           ],
           exclude: ['**/*.live.test.ts', '**/node_modules/**', '**/dist/**', 'apps/web/e2e/**'],
           setupFiles: ['tests/setup/no-network.ts'],
+          // why: plan 063: the tests leave about a hundred temp folders per run; one per-run root is removed at the end.
+          globalSetup: ['tests/setup/temp-root.ts'],
           // why: git-heavy integration tests spawn dozens of processes; Windows runners spawn them
           // several times slower (8-18 s per test observed), so 30 s left no headroom there.
           testTimeout: process.platform === 'win32' ? 120_000 : 30_000,
