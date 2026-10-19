@@ -135,3 +135,10 @@ separately as shown in section 5.
   drafted commit message, and the git identity from the owner's own configuration.
 - **Live GitHub**: the up-front repository creation, the push of the working branch and the pull request.
 - **A Windows run** of the folder paths with spaces and non-ASCII characters.
+
+### Update 2026-10-19: pending items met
+
+The pending items above (the real folder dialog, a real coding agent, live GitHub, and a Windows run
+with real paths) were exercised end to end on Windows by the cert-guage COI Tracker run: a real agent
+in a real folder, the repository and pull request created on GitHub, and the app started afterwards
+with "Start the app". Items #10 and #11 of the phase checklist are considered met by that run.
