@@ -1,5 +1,6 @@
 import type { RunDetail } from '../../api-types.js';
 import { StandUpGuidePanel } from './StandUpGuide.js';
+import { StartAppPanel } from './StartApp.js';
 import { WhatNowPanel } from './WhatNow.js';
 
 /** The outcome of a finished run: the published repository, or the adopt pull request. */
@@ -118,6 +119,7 @@ export function Summary({ run, onContinue }: { run: RunDetail; onContinue?: () =
             </div>
           )}
           {run.finish.whatNow && <WhatNowPanel w={run.finish.whatNow} />}
+          {run.finish.whatNow && <StartAppPanel runId={run.runId} />}
           {run.finish.whatNow && <StandUpGuidePanel runId={run.runId} />}
         </>
       )}

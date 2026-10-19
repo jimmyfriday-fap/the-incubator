@@ -219,6 +219,14 @@ describe('new solution in a chosen folder', () => {
     // Committed with the work: nothing is left over in the folder.
     expect(await out(['status', '--porcelain'], dir)).toBe('');
     expect(await out(['show', '--name-only', '--format=', 'HEAD'], dir)).toContain('WHAT-NOW.md');
+    // Plan 065: the design and the stand-up steps are in the same commit.
+    const committed = await out(['show', '--name-only', '--format=', 'HEAD'], dir);
+    expect(committed).toContain('docs/DESIGN.md');
+    expect(committed).toContain('docs/STAND-UP.md');
+    expect(readFileSync(path.join(dir, 'docs', 'DESIGN.md'), 'utf8')).toContain(
+      '## The idea, as written',
+    );
+    expect(readFileSync(path.join(dir, 'docs', 'STAND-UP.md'), 'utf8')).toContain('Tallyho');
     h.engine.submitPush(runId, 'push');
     r = await h.engine.resume(runId, new DefaultsPrompter());
     expect(r.done).toBe(true);
@@ -1066,6 +1074,15 @@ describe('continue coding (plan 037)', () => {
     expect(r.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
     expect(of(h, runId, 'code.part')).toHaveLength(0);
     expect((await h.engine.finishDetail(runId))!.message).toMatch(/^feat: /);
+  });
+
+  it('refuses to start or stop a project whose run is not finished (plan 064)', async () => {
+    const h = harness();
+    const dir = freshFolder();
+    const { runId } = await newSolution(h, dir);
+    await expect(h.engine.startApp(runId)).rejects.toMatchObject({ code: 'not_finished' });
+    await expect(h.engine.stopApp(runId)).rejects.toMatchObject({ code: 'not_finished' });
+    expect(() => h.engine.appStatus(runId)).toThrow('not finished');
   });
 
   it('parks instead of coding when the folder left the run branch after continuing', async () => {

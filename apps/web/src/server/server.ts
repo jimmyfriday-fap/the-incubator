@@ -688,6 +688,20 @@ export function createApp(opts: ServerOptions): WebApp {
     withRun((runId) => engine.standUpGuide(runId)),
   );
 
+  // Plan 064: starts a finished project on this machine, stops it, and reports where it stands.
+  app.post(
+    '/api/runs/:id/app/start',
+    withRun((runId) => engine.startApp(runId)),
+  );
+  app.post(
+    '/api/runs/:id/app/stop',
+    withRun((runId) => engine.stopApp(runId)),
+  );
+  app.get(
+    '/api/runs/:id/app',
+    withRun((runId) => engine.appStatus(runId)),
+  );
+
   // Reads an update run's repository again (plan 025): the owner then confirms what they asked for.
   app.post(
     '/api/runs/:id/refresh',

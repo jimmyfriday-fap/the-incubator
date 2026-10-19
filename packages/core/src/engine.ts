@@ -112,7 +112,9 @@ import {
   whatNowMarkdown,
   type WhatNow,
 } from './what-now.js';
-import { standUp, type StandUp } from './standup.js';
+import { standUp, type StandUp, type StandUpFacts } from './standup.js';
+import { DESIGN_FILE, STAND_UP_FILE, designMarkdown } from './design-doc.js';
+import { appRunSteps, appUrl, runAppSteps, waitForUrl } from './app-run.js';
 import { scaffoldSpec } from './scaffold.js';
 import { Adopter, adoptReport, isEmptyDelta, writeReport, type AdoptContext } from './adopt.js';
 import { PreviewCache, type Preview, type PreviewStatus } from './preview.js';
@@ -207,6 +209,8 @@ export interface EngineDeps {
     /** Plan 056: installs a built repository's dependencies before the agent codes. Absent in tests that need none. */
     // why: a property, not a method signature, so the engine can read it off the object (unbound-method).
     install?: (dir: string, signal?: AbortSignal) => Promise<InstallRun[]>;
+    /** Plan 064: true when a started project answers at an address. Absent: the address is never asked. */
+    ping?: (url: string) => Promise<boolean>;
   };
   /** Retrieved stacks (ADR-027): finds and runs a stack's own generator. */
   tools?: ToolsDeps;
@@ -277,6 +281,16 @@ export interface DetectedStack {
   evidence: string[];
   /** The Incubator has a stack pack for it. */
   packed: boolean;
+}
+
+/** Plan 064: where a finished project's local start stands. */
+export interface AppStatus {
+  state: 'down' | 'starting' | 'up' | 'failed';
+  /** The address to open, only while it is up. */
+  url: string | null;
+  /** False for a stack with nothing to start (a library). */
+  available: boolean;
+  steps: { title: string; ok: boolean; tail: string }[];
 }
 
 export class Engine {
@@ -2186,6 +2200,102 @@ export class Engine {
     return out;
   }
 
+  /** Plan 064: what the stand-up steps need to know about a finished run's project. */
+  private appFacts(runId: string): StandUpFacts {
+    const s = this.state(runId);
+    if (!s.input.dir)
+      throw new PolicyError(`run ${runId} has no project folder`, { code: 'no_folder' });
+    if (!s.done || s.cancelled)
+      throw new PolicyError(`run ${runId} is not finished`, { code: 'not_finished' });
+    const spec = this.approvedSpec(runId);
+    // why: the app steps never read the guide, so an empty one is enough to satisfy the facts' type.
+    return {
+      runId,
+      name: spec.project.name,
+      slug: spec.project.slug,
+      pack: spec.stack.pack,
+      platform: spec.platform,
+      guide: {} as StandUpFacts['guide'],
+    };
+  }
+
+  /**
+   * Plan 064: brings a finished project up on this machine by running its stand-up steps in order, and journals each.
+   * It stops at the first step that fails. When the project has an address, waits for it to answer.
+   */
+  async startApp(runId: string): Promise<AppStatus> {
+    const facts = this.appFacts(runId);
+    const exec = this.deps.handoff?.exec;
+    const dir = this.state(runId).input.dir!;
+    const steps = appRunSteps(facts);
+    if (!exec || steps.length === 0)
+      throw new PolicyError(`${facts.pack} has nothing to start`, { code: 'nothing_to_start' });
+    this.record(runId, 'app.begin', { steps: steps.map((x) => x.title) });
+    const ok = await runAppSteps(exec, dir, steps, this.sig(runId).signal, (r) =>
+      this.record(runId, 'app.step', { ...r }),
+    );
+    const url = appUrl(facts);
+    if (!ok) this.record(runId, 'app.failed', {});
+    else {
+      const ping = this.deps.handoff?.ping;
+      const up = url && ping ? await waitForUrl(url, ping, 120_000) : true;
+      this.record(runId, up ? 'app.started' : 'app.failed', { url });
+    }
+    return this.appStatus(runId);
+  }
+
+  /** Plan 064: takes the project's containers down (the data stays). */
+  async stopApp(runId: string): Promise<AppStatus> {
+    const facts = this.appFacts(runId);
+    const exec = this.deps.handoff?.exec;
+    const dir = this.state(runId).input.dir!;
+    if (!exec || appRunSteps(facts).length === 0)
+      throw new PolicyError(`${facts.pack} has nothing to stop`, { code: 'nothing_to_start' });
+    this.record(runId, 'app.stopping', {});
+    await runAppSteps(
+      exec,
+      dir,
+      [{ title: 'Stop the app', command: 'docker compose down', expect: '', source: '' }],
+      this.sig(runId).signal,
+      (r) => this.record(runId, 'app.step', { ...r }),
+    );
+    this.record(runId, 'app.stopped', {});
+    return this.appStatus(runId);
+  }
+
+  /** Plan 064: where the last start attempt stands, read from the journal. */
+  appStatus(runId: string): AppStatus {
+    const facts = this.appFacts(runId);
+    const entries = this.entries(runId);
+    const begin = entries.findLast((e) => e.type === 'app.begin');
+    const last = entries.findLast((e) =>
+      ['app.begin', 'app.started', 'app.failed', 'app.stopping', 'app.stopped'].includes(e.type),
+    );
+    const steps = begin
+      ? entries
+          .filter((e) => e.type === 'app.step' && e.seq > begin.seq)
+          .map((e) => ({
+            title: String(e['title']),
+            ok: e['ok'] === true,
+            tail: typeof e['tail'] === 'string' ? e['tail'] : '',
+          }))
+      : [];
+    const state: AppStatus['state'] =
+      last?.type === 'app.started'
+        ? 'up'
+        : last?.type === 'app.failed'
+          ? 'failed'
+          : last?.type === 'app.begin'
+            ? 'starting'
+            : 'down';
+    return {
+      state,
+      url: state === 'up' ? appUrl(facts) : null,
+      available: appRunSteps(facts).length > 0,
+      steps,
+    };
+  }
+
   /** The subject of the drafted commit: the one request, the count of requests, or the new project. */
   private finishTitle(runId: string, s: RunState): string {
     if (s.input.kind === 'enhance') {
@@ -2272,15 +2382,26 @@ export class Engine {
         summary: (s.steps['code.done']?.data as AgentReport | undefined)?.summary ?? null,
       });
       // Plan 057: the operator's guide to what was built and what to do next, committed with the work.
+      const guide = this.whatNowFor(runId, s, {
+        agent: (s.steps['code.done']?.data as AgentReport | undefined) ?? null,
+        setup: this.setupProblem(runId),
+        branch: start.branch,
+      });
+      writeFileSync(path.join(dir, WHAT_NOW_FILE), whatNowMarkdown(guide));
+      // Plan 065: the design and the stand-up steps travel with the code, not only in the run folder.
+      const spec = this.approvedSpec(runId);
+      mkdirSync(path.join(dir, 'docs'), { recursive: true });
+      writeFileSync(path.join(dir, DESIGN_FILE), designMarkdown(spec));
       writeFileSync(
-        path.join(dir, WHAT_NOW_FILE),
-        whatNowMarkdown(
-          this.whatNowFor(runId, s, {
-            agent: (s.steps['code.done']?.data as AgentReport | undefined) ?? null,
-            setup: this.setupProblem(runId),
-            branch: start.branch,
-          }),
-        ),
+        path.join(dir, STAND_UP_FILE),
+        standUp({
+          runId,
+          name: spec.project.name,
+          slug: spec.project.slug,
+          pack: spec.stack.pack,
+          platform: spec.platform,
+          guide,
+        }).markdown,
       );
       await git.addAll(dir);
       const sha = await git.commit(

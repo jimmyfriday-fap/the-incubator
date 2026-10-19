@@ -105,6 +105,13 @@ export function createLiveEngine(opts: {
     handoff: {
       exec,
       install: (dir, signal) => installDependencies(exec, dir, signal),
+      ping: async (url) => {
+        try {
+          return (await fetch(url, { signal: AbortSignal.timeout(3000) })).status < 500;
+        } catch {
+          return false;
+        }
+      },
       probe: async (id) =>
         (await llm.probeAll())[id] ?? {
           installed: false,

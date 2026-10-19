@@ -95,6 +95,14 @@ export interface WhatNow {
   next: string[];
 }
 
+/** Plan 064: where a finished project's local start stands. */
+export interface AppStatus {
+  state: 'down' | 'starting' | 'up' | 'failed';
+  url: string | null;
+  available: boolean;
+  steps: { title: string; ok: boolean; tail: string }[];
+}
+
 /** Plan 059: the stand-up guide of a finished run (plan 058): the file name to save it as, and its markdown. */
 export interface StandUpGuide {
   fileName: string;
