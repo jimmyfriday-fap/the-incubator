@@ -114,7 +114,14 @@ import {
 } from './what-now.js';
 import { standUp, type StandUp, type StandUpFacts } from './standup.js';
 import { DESIGN_FILE, STAND_UP_FILE, designMarkdown } from './design-doc.js';
-import { addressInUse, appRunSteps, appUrl, runAppSteps, waitForUrl } from './app-run.js';
+import {
+  addressInUse,
+  appRunSteps,
+  appUrl,
+  projectContainersUp,
+  runAppSteps,
+  waitForUrl,
+} from './app-run.js';
 import { scaffoldSpec } from './scaffold.js';
 import { Adopter, adoptReport, isEmptyDelta, writeReport, type AdoptContext } from './adopt.js';
 import { PreviewCache, type Preview, type PreviewStatus } from './preview.js';
@@ -2246,7 +2253,12 @@ export class Engine {
     if (!ok) this.record(runId, 'app.failed', {});
     else {
       const ping = this.deps.handoff?.ping;
-      const up = url && ping ? await waitForUrl(url, ping, 120_000) : true;
+      const signal = this.sig(runId).signal;
+      // Plan 067: an answer counts only while the project's own containers are not known to be down.
+      const up =
+        url && ping
+          ? await waitForUrl(url, ping, 120_000, 2000, () => projectContainersUp(exec, dir, signal))
+          : true;
       this.record(runId, up ? 'app.started' : 'app.failed', { url });
     }
     return this.appStatus(runId);

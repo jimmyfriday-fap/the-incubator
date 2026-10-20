@@ -98,16 +98,44 @@ export async function addressInUse(
   };
 }
 
-/** True once the project's address answers with anything below 500, within the time given. */
+/**
+ * Plan 067: whether the project's own containers are running; null when that cannot be told (no Docker, or the
+ * command failed), so a machine that cannot answer is never blocked.
+ */
+export async function projectContainersUp(
+  exec: Exec,
+  dir: string,
+  signal?: AbortSignal,
+): Promise<boolean | null> {
+  try {
+    if (!(await exec.which('docker'))) return null;
+    const r = await exec.run('docker', ['compose', 'ps', '--status', 'running', '--quiet'], {
+      cwd: dir,
+      timeoutMs: 30_000,
+      ...(signal ? { signal } : {}),
+    });
+    if (r.code !== 0 || r.timedOut || r.aborted) return null;
+    return r.stdout.trim().length > 0;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True once the project's address answers with anything below 500, within the time given. Plan 067: when `mine` is
+ * given, an answer only counts while it says the project's own containers are running (true) or cannot tell (null),
+ * so a different program that started listening mid-start is not mistaken for the project.
+ */
 export async function waitForUrl(
   url: string,
   ping: (url: string) => Promise<boolean>,
   waitMs: number,
   pauseMs = 2000,
+  mine?: () => Promise<boolean | null>,
 ): Promise<boolean> {
   const until = Date.now() + waitMs;
   for (;;) {
-    if (await ping(url).catch(() => false)) return true;
+    if ((await ping(url).catch(() => false)) && (!mine || (await mine()) !== false)) return true;
     if (Date.now() >= until) return false;
     await new Promise((r) => setTimeout(r, pauseMs));
   }
