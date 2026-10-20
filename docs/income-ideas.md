@@ -40,3 +40,9 @@ Demand is unproven. Each customer run costs model tokens. The Incubator runs onl
 - Quote follow-up is last until it can pair with the estimating tool.
 
 **Naming check:** no existing catalog tool uses Probe, Bevel, Scribe or Torque (checked `src/Tools` and generator config; the only hits are the ordinary word "probe" in tests). Trademarks and domains are still unchecked.
+
+## Probe name and domain check (2026-10-20)
+
+- **Domains (DNS only, not a registrar check):** probe.com, getprobe.app and useprobe.com resolve, so they are taken. probetemps.com, probelogs.com and probekitchen.com returned no record; confirm at a registrar.
+- **Name collisions:** "Probe" is generic in food safety (thermometer probes). A web search found GoCanvas "Temperature Probe Care" templates, IntelliCheck with its IntelliProbe handheld, and SFBB Pro (UK). No trademark search was run; do a USPTO check in class 9/42 before committing to the name, or pick a less generic one.
+- **Still the operator's task:** the five-kitchen validation.
