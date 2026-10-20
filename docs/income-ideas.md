@@ -9,12 +9,12 @@ The Incubator stays internal. Money comes from selling what it builds, not the t
 
 ## Niche app candidates
 
-| Candidate | Pricing unit | Validation |
-|---|---|---|
-| Food safety and temperature logs | per location | show five local kitchens |
-| Daily fleet pre- and post-trip inspections | per vehicle | |
-| Property move-in / move-out inspections | per door | |
-| Quote follow-up for trades | monthly or share of recovered revenue | pairs with the estimating tool |
+| Candidate                                  | Pricing unit                          | Validation                     |
+| ------------------------------------------ | ------------------------------------- | ------------------------------ |
+| Food safety and temperature logs           | per location                          | show five local kitchens       |
+| Daily fleet pre- and post-trip inspections | per vehicle                           |                                |
+| Property move-in / move-out inspections    | per door                              |                                |
+| Quote follow-up for trades                 | monthly or share of recovered revenue | pairs with the estimating tool |
 
 Not a candidate: subcontractor compliance tracker (already live as The Gauge).
 
