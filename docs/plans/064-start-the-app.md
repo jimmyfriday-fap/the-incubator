@@ -6,6 +6,7 @@ Written and applied in one session (not dispatched), with its tests and mutation
 project folder gets "Start the app": the stand-up steps run in order through PowerShell, each is journaled
 (`app.begin`, `app.step`, `app.started`, `app.failed`, `app.stopped`), the run stops at the first failed step,
 and the page shows the address once it answers. Stop runs `docker compose down`. No project check runs.
+Plan 066 adds a check that the address is free before the steps run, and opens the link from the desktop app.
 
 ## Touched files and markers
 

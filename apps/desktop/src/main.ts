@@ -24,6 +24,7 @@ import {
   historyActionForCommand,
   historyActionForKey,
   leantimeHosts,
+  localAppAllowed,
   navigationAllowed,
   secureWebPreferences,
   THEME_COOKIE,
@@ -87,7 +88,7 @@ function lockDown(contents: WebContents, origin: string, hosts: () => string[]):
     if (!navigationAllowed(url, origin)) event.preventDefault();
   });
   contents.setWindowOpenHandler(({ url }) => {
-    if (externalAllowed(url, hosts())) void shell.openExternal(url);
+    if (externalAllowed(url, hosts()) || localAppAllowed(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
 }

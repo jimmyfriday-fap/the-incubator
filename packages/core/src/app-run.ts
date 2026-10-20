@@ -80,6 +80,24 @@ export async function runAppSteps(
   return true;
 }
 
+/**
+ * Plan 066: before a start, a failed step when something already answers on the project's address (another app
+ * or container holds the port, and the readiness check would mistake it for the project); null when it is free.
+ */
+export async function addressInUse(
+  url: string | null,
+  ping: ((url: string) => Promise<boolean>) | undefined,
+): Promise<AppStepResult | null> {
+  if (!url || !ping) return null;
+  if (!(await ping(url).catch(() => false))) return null;
+  return {
+    title: 'Check the address is free',
+    ok: false,
+    code: null,
+    tail: `Something else already answers on ${url}. Stop that app or container, then start again.`,
+  };
+}
+
 /** True once the project's address answers with anything below 500, within the time given. */
 export async function waitForUrl(
   url: string,

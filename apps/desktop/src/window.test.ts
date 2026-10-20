@@ -4,6 +4,7 @@ import {
   historyActionForCommand,
   historyActionForKey,
   leantimeHosts,
+  localAppAllowed,
   navigationAllowed,
   secureWebPreferences,
 } from './window.js';
@@ -38,6 +39,20 @@ describe('navigation lockdown', () => {
     expect(externalAllowed('https://pm.example.org/tickets', ['PM.example.org'])).toBe(true);
     expect(externalAllowed('https://other.example.org/', ['pm.example.org'])).toBe(false);
     expect(externalAllowed('%%%')).toBe(false);
+  });
+
+  it("opens the project's own local address externally (plan 066)", () => {
+    expect(localAppAllowed('http://localhost:8080')).toBe(true);
+    expect(localAppAllowed('http://localhost:3000/health')).toBe(true);
+    expect(localAppAllowed('https://127.0.0.1:8443/')).toBe(true);
+    expect(localAppAllowed('http://[::1]:8000/')).toBe(true);
+    expect(localAppAllowed('http://localhost.evil.example/')).toBe(false);
+    expect(localAppAllowed('http://example.org/')).toBe(false);
+    expect(localAppAllowed('******localhost:8080/')).toBe(false);
+    expect(localAppAllowed('file:///etc/hosts')).toBe(false);
+    expect(localAppAllowed('javascript:alert(1)')).toBe(false);
+    expect(localAppAllowed('%%%')).toBe(false);
+    expect(externalAllowed('http://localhost:8080')).toBe(false);
   });
 
   it('collects https Leantime hosts from specs', () => {

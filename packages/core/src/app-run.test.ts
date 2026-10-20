@@ -1,6 +1,13 @@
 import type { Exec, ExecResult } from '@incubator/runtime';
 import { describe, expect, it } from 'vitest';
-import { appRunSteps, appUrl, runAppSteps, waitForUrl, type AppStepResult } from './app-run.js';
+import {
+  addressInUse,
+  appRunSteps,
+  appUrl,
+  runAppSteps,
+  waitForUrl,
+  type AppStepResult,
+} from './app-run.js';
 import type { StandUpFacts } from './standup.js';
 
 const facts = (pack: string, platform = 'wordpress-plugin'): StandUpFacts =>
@@ -97,5 +104,26 @@ describe('start the app (plan 064)', () => {
     expect(await waitForUrl('http://x', () => Promise.reject(new Error('down')), 30, 5)).toBe(
       false,
     );
+  });
+});
+
+describe('address check (plan 066)', () => {
+  it('fails with one plain step when something already answers on the address', async () => {
+    const r = await addressInUse('http://localhost:8080', () => Promise.resolve(true));
+    expect(r).toEqual({
+      title: 'Check the address is free',
+      ok: false,
+      code: null,
+      tail: 'Something else already answers on http://localhost:8080. Stop that app or container, then start again.',
+    });
+  });
+
+  it('passes when nothing answers, when the ping throws, or when there is nothing to ping', async () => {
+    expect(await addressInUse('http://localhost:8080', () => Promise.resolve(false))).toBeNull();
+    expect(
+      await addressInUse('http://localhost:8080', () => Promise.reject(new Error('refused'))),
+    ).toBeNull();
+    expect(await addressInUse(null, () => Promise.resolve(true))).toBeNull();
+    expect(await addressInUse('http://localhost:8080', undefined)).toBeNull();
   });
 });

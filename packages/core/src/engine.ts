@@ -114,7 +114,7 @@ import {
 } from './what-now.js';
 import { standUp, type StandUp, type StandUpFacts } from './standup.js';
 import { DESIGN_FILE, STAND_UP_FILE, designMarkdown } from './design-doc.js';
-import { appRunSteps, appUrl, runAppSteps, waitForUrl } from './app-run.js';
+import { addressInUse, appRunSteps, appUrl, runAppSteps, waitForUrl } from './app-run.js';
 import { scaffoldSpec } from './scaffold.js';
 import { Adopter, adoptReport, isEmptyDelta, writeReport, type AdoptContext } from './adopt.js';
 import { PreviewCache, type Preview, type PreviewStatus } from './preview.js';
@@ -2230,11 +2230,19 @@ export class Engine {
     const steps = appRunSteps(facts);
     if (!exec || steps.length === 0)
       throw new PolicyError(`${facts.pack} has nothing to start`, { code: 'nothing_to_start' });
+    const url = appUrl(facts);
+    // Plan 066: a project that is already up answers on its own address, so only check a stopped one.
+    const wasUp = this.appStatus(runId).state === 'up';
     this.record(runId, 'app.begin', { steps: steps.map((x) => x.title) });
+    const taken = wasUp ? null : await addressInUse(url, this.deps.handoff?.ping);
+    if (taken) {
+      this.record(runId, 'app.step', { ...taken });
+      this.record(runId, 'app.failed', {});
+      return this.appStatus(runId);
+    }
     const ok = await runAppSteps(exec, dir, steps, this.sig(runId).signal, (r) =>
       this.record(runId, 'app.step', { ...r }),
     );
-    const url = appUrl(facts);
     if (!ok) this.record(runId, 'app.failed', {});
     else {
       const ping = this.deps.handoff?.ping;

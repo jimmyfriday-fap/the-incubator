@@ -36,6 +36,21 @@ export function externalAllowed(url: string, extraHosts: readonly string[] = [])
   return host === 'github.com' || extraHosts.map((h) => h.toLowerCase()).includes(host);
 }
 
+/**
+ * Plan 066: the address a started project answers on (`http://localhost:8080` and the like) opens in the user's
+ * browser too: http or https on a loopback host, any port, no credentials. In-window navigation stays locked.
+ */
+export function localAppAllowed(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if ((u.protocol !== 'http:' && u.protocol !== 'https:') || u.username || u.password) return false;
+  return ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname.toLowerCase());
+}
+
 /** Leantime hosts from the specs of known runs (for `externalAllowed`). */
 export function leantimeHosts(specs: readonly unknown[]): string[] {
   const hosts = new Set<string>();
