@@ -20,6 +20,7 @@ describe('navigation helpers', () => {
     expect(areaOf('/runs/20261006-031254-63n6jg')).toBe('runs');
     expect(areaOf('/projects')).toBe('projects');
     expect(areaOf('/projects/abc')).toBe('projects');
+    expect(areaOf('/requests')).toBe('requests');
     expect(areaOf('/settings')).toBe('settings');
     expect(areaOf('/elsewhere')).toBe('home');
   });
