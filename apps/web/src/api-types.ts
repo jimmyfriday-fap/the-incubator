@@ -405,4 +405,34 @@ export interface StartRunBody {
    * repository to update in place (then `repo` is ignored and taken from `dir`).
    */
   dir?: string;
+  /**
+   * Custom App request (kind "new" only): the spec as edited on the Requests page. The server reads the
+   * ticket again and takes only `intent` (narrative, personas, features) from it. Needs `intake`.
+   */
+  spec?: Record<string, unknown>;
+  /** Custom App request: the Leantime ticket the build is for, and the owner's confirmation of the 50% deposit. */
+  intake?: { leantimeTicketId: number; depositReceived: true };
+}
+
+/** `GET /api/intake/tickets/:id`: a build-request ticket read into a draft. */
+export interface IntakeTicketView {
+  draft: Record<string, unknown> & {
+    project: { name: string; slug: string };
+    intent: {
+      narrative: string;
+      personas: string[];
+      coreFeatures: { id: string; summary: string; lane: string }[];
+    };
+  };
+  gaps: string[];
+  request: {
+    leantimeTicketId: number;
+    headline: string;
+    who: string;
+    problem: string;
+    outcome: string;
+    wpStatus?: string;
+    contact: string;
+    openQuestions?: string;
+  };
 }

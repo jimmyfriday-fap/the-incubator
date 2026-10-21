@@ -9,15 +9,23 @@ import {
 } from '@incubator/runtime';
 import {
   INCUBATOR_VERSION,
+  INTAKE_RUN_CEILINGS,
+  hardenSpec,
   type Engine,
   type FolderPurpose,
+  type IntakeSource,
   type JournalEntry,
   type PortfolioProject,
   type RunStore,
   type Settings,
   type SettingsPatch as CoreSettingsPatch,
 } from '@incubator/core';
-import { STACK_CATALOG, type IncubatorSpec } from '@incubator/spec';
+import {
+  STACK_CATALOG,
+  validateSemantics,
+  validateSpec,
+  type IncubatorSpec,
+} from '@incubator/spec';
 import type {
   ProjectBrief,
   ProjectCard,
@@ -51,6 +59,8 @@ export interface ServerOptions {
   host?: HostCapabilities;
   /** The Settings page; without it the page says settings are unavailable. */
   settings?: Settings;
+  /** Custom App requests (the Requests page); without it the page says requests are not set up. */
+  intake?: IntakeSource;
   /** The built UI; defaults to this package's dist/ui. */
   uiDir?: string;
   /** Fixed launch token (tests); a random 32-byte token otherwise. */
@@ -74,6 +84,16 @@ function statusFor(err: unknown): number {
   if (err instanceof ToolError && err.code === 'bad_run_id') return 400;
   if (err instanceof PolicyError) return 422;
   return 500;
+}
+
+/** Intake errors: a missing ticket is 404, an unreachable Leantime is 502, the rest follow `statusFor`. */
+function sendIntakeError(reply: FastifyReply, err: unknown): FastifyReply {
+  const code = (err as { code?: string } | null)?.code;
+  if (code === 'intake_not_found' || code === 'intake_unconfigured')
+    return reply.code(404).send({ error: formatError(err) });
+  if (code === 'leantime_unreachable' || code === 'leantime_http' || code === 'leantime_rpc')
+    return reply.code(502).send({ error: formatError(err) });
+  return sendError(reply, err);
 }
 
 function sendError(reply: FastifyReply, err: unknown): FastifyReply {
@@ -307,6 +327,28 @@ export function createApp(opts: ServerOptions): WebApp {
     };
   });
 
+  // Custom App requests: read a build-request ticket from the configured Leantime project (numeric id only).
+  app.get<{ Params: { id: string } }>(
+    '/api/intake/tickets/:id',
+    {
+      schema: {
+        params: { type: 'object', properties: { id: { type: 'string', pattern: '^[0-9]{1,9}$' } } },
+      },
+    },
+    async (req, reply) => {
+      if (!opts.intake?.configured())
+        return reply.code(404).send({
+          error:
+            'Custom App requests are not set up: add intake.leantime to ~/.incubator/config.json',
+        });
+      try {
+        return await opts.intake.fetch(Number(req.params.id));
+      } catch (err) {
+        return sendIntakeError(reply, err);
+      }
+    },
+  );
+
   // Settings (ADR-029): what the next run will use, and the choices the owner can change. Accounts are shown
   // as a source only; a secret never travels over this API.
   const nullableString = (max: number) => ({ type: ['string', 'null'], maxLength: max });
@@ -413,12 +455,64 @@ export function createApp(opts: ServerOptions): WebApp {
             repoRef: { type: 'string', maxLength: 200 },
             org: { type: 'boolean' },
             noPublish: { type: 'boolean' },
+            spec: { type: 'object' },
+            intake: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['leantimeTicketId', 'depositReceived'],
+              properties: {
+                leantimeTicketId: { type: 'integer', minimum: 1, maximum: 999999999 },
+                depositReceived: { const: true },
+              },
+            },
           },
         },
       },
     },
     async (req, reply) => {
       const b = req.body;
+      if (b.spec !== undefined || b.intake !== undefined) {
+        // A Custom App build: the spec comes from the ticket, edited by the owner (see below).
+        if (b.kind !== 'new' || b.spec === undefined || b.intake === undefined)
+          return reply
+            .code(400)
+            .send({ error: 'a Custom App build needs kind "new", a spec and the ticket number' });
+        if (!opts.intake?.configured())
+          return reply.code(404).send({ error: 'Custom App requests are not set up here' });
+        try {
+          // why: the ticket is read again here; the page only supplies the owner's edits to the narrative,
+          // personas and features, never the rest of the spec (nothing from the client is trusted).
+          const ticket = await opts.intake.fetch(b.intake.leantimeTicketId);
+          const edited = (b.spec as { intent?: Partial<IncubatorSpec['intent']> }).intent ?? {};
+          const spec = hardenSpec({
+            ...ticket.draft,
+            intent: {
+              ...ticket.draft.intent,
+              ...(typeof edited.narrative === 'string' ? { narrative: edited.narrative } : {}),
+              ...(Array.isArray(edited.personas) ? { personas: edited.personas } : {}),
+              ...(Array.isArray(edited.coreFeatures) ? { coreFeatures: edited.coreFeatures } : {}),
+            },
+          });
+          const v = validateSpec(spec);
+          const issues = [...v.issues, ...(v.ok ? validateSemantics(spec) : [])];
+          if (issues.length)
+            return reply.code(422).send({
+              error: `the spec is invalid (${issues.length} issue(s)): ${issues.map((i) => i.message).join('; ')}`,
+              evidence: issues,
+            });
+          const runId = driver.startFromSpec(spec, {
+            kind: 'new',
+            intake: {
+              leantimeTicketId: b.intake.leantimeTicketId,
+              depositReceived: true,
+              ceilings: { ...INTAKE_RUN_CEILINGS },
+            },
+          });
+          return reply.code(202).send({ runId });
+        } catch (err) {
+          return sendIntakeError(reply, err);
+        }
+      }
       if (b.kind === 'new') {
         if (!b.narrative?.trim())
           return reply.code(400).send({ error: 'describe the project first' });

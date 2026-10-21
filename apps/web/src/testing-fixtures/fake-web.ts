@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { ConfigStore } from '@incubator/core';
+import { ConfigStore, type IntakeSource } from '@incubator/core';
 import {
   discoveryFixtureDir,
   enhanceFixtureDir,
@@ -35,6 +35,8 @@ export async function startFakeServer(
     uiDir?: string;
     heartbeatMs?: number;
     host?: HostCapabilities;
+    /** Custom App requests: a stand-in for the Leantime reader. */
+    intake?: IntakeSource;
   } = {},
 ): Promise<{
   server: RunningServer;
@@ -64,6 +66,7 @@ export async function startFakeServer(
     store: h.store,
     settings: fakeSettings(h.home, configStore),
     ...(opts.host ? { host: opts.host } : {}),
+    ...(opts.intake ? { intake: opts.intake } : {}),
     ...(opts.uiDir ? { uiDir: opts.uiDir } : {}),
     ...(opts.heartbeatMs ? { heartbeatMs: opts.heartbeatMs } : {}),
   });

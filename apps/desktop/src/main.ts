@@ -15,7 +15,13 @@ import {
   type WebContents,
 } from 'electron';
 import { Logger, fileSink, formatError, incubatorHome } from '@incubator/runtime';
-import { createLiveEngine, type Engine, type RunStore, type Settings } from '@incubator/core';
+import {
+  createLiveEngine,
+  type Engine,
+  type IntakeSource,
+  type RunStore,
+  type Settings,
+} from '@incubator/core';
 import { startServer, type HostCapabilities, type RunningServer } from '@incubator/web';
 import { extractArchive, type PacksArchive } from './packs-archive.js';
 import {
@@ -41,6 +47,7 @@ interface Wiring {
   store: RunStore;
   log: Logger;
   settings?: Settings;
+  intake?: IntakeSource;
   /** Test builds only: a folder picker that answers without opening a dialog. */
   pickFolder?: HostCapabilities['pickFolder'];
 }
@@ -53,7 +60,13 @@ async function wiring(): Promise<Wiring> {
   }
   const log = new Logger([fileSink(path.join(incubatorHome(), 'desktop.log'))]);
   const live = createLiveEngine({ log });
-  return { engine: live.engine, store: live.store, log, settings: live.settings };
+  return {
+    engine: live.engine,
+    store: live.store,
+    log,
+    settings: live.settings,
+    intake: live.intake,
+  };
 }
 
 /**
@@ -180,19 +193,24 @@ async function main(): Promise<void> {
       archive,
       path.join(app.getPath('userData'), 'packs'),
     );
-    const { engine, store, log, settings, pickFolder } = await wiring();
+    const { engine, store, log, settings, intake, pickFolder } = await wiring();
     const windows: { main?: BrowserWindow } = {};
     server = await startServer({
       engine,
       store,
       log,
       ...(settings ? { settings } : {}),
+      ...(intake ? { intake } : {}),
       uiDir: path.join(appRoot, 'ui'),
       host: { pickFolder: pickFolder ?? folderDialog(() => windows.main) },
     });
     const hosts = () => {
       try {
-        return leantimeHosts(store.list().map((id) => engine.finalSpec(id)));
+        return [
+          ...leantimeHosts(store.list().map((id) => engine.finalSpec(id))),
+          // The Custom App request Leantime (config intake.leantime): https only, like the rest.
+          ...(intake?.host() ? [intake.host()!] : []),
+        ];
       } catch {
         return [];
       }
