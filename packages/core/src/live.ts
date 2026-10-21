@@ -24,6 +24,7 @@ import {
 } from '@incubator/runtime';
 import { ConfigStore, loadConfig, type IncubatorConfig } from './config.js';
 import { Settings, type CredentialSource } from './settings.js';
+import { createIntakeSource, type IntakeSource } from './intake.js';
 import { Engine } from './engine.js';
 import type { PublishDeps } from './publish.js';
 import { RunStore } from './store.js';
@@ -41,6 +42,8 @@ export interface LiveEngine {
   github: (token: SecretString) => GitHubAdapter;
   /** The Settings page and `incubator config`: read and save the configuration (ADR-029). */
   settings: Settings;
+  /** Custom App requests: reads a build-request ticket from the configured Leantime project. */
+  intake: IntakeSource;
 }
 
 /**
@@ -159,5 +162,6 @@ export function createLiveEngine(opts: {
     ];
   };
   const settings = new Settings({ home, config: configStore, llm, keychain, credentials });
-  return { home, clock, exec, keychain, config, llm, store, engine, github, settings };
+  const intake = createIntakeSource({ config: () => configStore.get(), keychain, env });
+  return { home, clock, exec, keychain, config, llm, store, engine, github, settings, intake };
 }

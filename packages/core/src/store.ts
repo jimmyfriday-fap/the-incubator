@@ -46,6 +46,15 @@ export interface RunInput {
    * agent stops, the run asks for the commit and the push.
    */
   dir?: string;
+  /**
+   * A Custom App request (the intake flow): the Leantime ticket the run was started from, that the owner
+   * confirmed the 50% deposit, and the run ceilings applied (turns, tool calls, minutes, dollars).
+   */
+  intake?: {
+    leantimeTicketId: number;
+    depositReceived: true;
+    ceilings: { turns: number; toolCalls: number; minutes: number; usd: number };
+  };
 }
 
 /** `~/.incubator` layout (TDD §2.5): config.json, runs/<id>/{run.json,journal.jsonl,spec/,workspace/,logs/}, cache/. */

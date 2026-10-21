@@ -107,12 +107,14 @@ export interface LeantimeMethods {
   getAll: string;
   addTicket: string;
   updateTicket: string;
+  getTicket: string;
 }
 
 export const DEFAULT_LEANTIME_METHODS: LeantimeMethods = {
   getAll: 'leantime.rpc.Tickets.Tickets.getAll',
   addTicket: 'leantime.rpc.Tickets.Tickets.addTicket',
   updateTicket: 'leantime.rpc.Tickets.Tickets.patch',
+  getTicket: 'leantime.rpc.Tickets.Tickets.getTicket',
 };
 
 export interface LeantimeOptions {
@@ -123,6 +125,16 @@ export interface LeantimeOptions {
   methods?: Partial<LeantimeMethods>;
   fetch?: typeof fetch;
   timeoutMs?: number;
+}
+
+/** A Leantime ticket as read back by `getTicket` (only the fields the Incubator uses). */
+export interface LeantimeTicket {
+  id: number;
+  projectId: number;
+  headline: string;
+  description: string;
+  status?: number | string;
+  tags?: string | null;
 }
 
 export const incubatorTag = (id: string): string => `incubator:${id}`;
@@ -215,6 +227,29 @@ export class LeantimeTracker implements TrackerAdapter {
       },
     });
     return { ref: String(Array.isArray(id) ? id[0] : id), created: true };
+  }
+
+  /** Reads one ticket by number; null when Leantime has no such ticket. */
+  async getTicket(id: number): Promise<LeantimeTicket | null> {
+    if (!Number.isInteger(id) || id <= 0)
+      throw new PolicyError('a Leantime ticket number is a positive whole number', {
+        code: 'leantime_ticket_id',
+      });
+    const r = await this.rpc<Record<string, unknown> | false | null>(this.methods.getTicket, {
+      id,
+    });
+    if (!r || typeof r !== 'object' || r['id'] === undefined) return null;
+    const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+    return {
+      id: Number(r['id']),
+      projectId: Number(r['projectId']),
+      headline: text(r['headline']),
+      description: text(r['description']),
+      ...(typeof r['status'] === 'number' || typeof r['status'] === 'string'
+        ? { status: r['status'] }
+        : {}),
+      tags: typeof r['tags'] === 'string' ? r['tags'] : null,
+    };
   }
 
   async transition(ref: string, to: TicketState): Promise<void> {

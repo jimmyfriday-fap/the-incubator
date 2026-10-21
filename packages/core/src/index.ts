@@ -22,5 +22,6 @@ export * from './stacks.js';
 export * from './portfolio.js';
 export * from './settings.js';
 export * from './stack-recommendation.js';
+export * from './intake.js';
 export * from './live.js';
 export type { FinishDetail } from './finish.js';

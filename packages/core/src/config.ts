@@ -11,6 +11,8 @@ export interface IncubatorConfig {
   discovery?: { timeoutMs?: number };
   /** Where a tool lives when it is not on PATH, by tool name (for example `flutter`). Absolute paths only. */
   toolPaths?: Record<string, string>;
+  /** Custom App requests: the Leantime project the build requests arrive in (https, or http on localhost). */
+  intake?: { leantime?: { baseUrl: string; projectId: number } };
 }
 
 /**
