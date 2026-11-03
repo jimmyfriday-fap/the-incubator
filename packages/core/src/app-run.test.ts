@@ -4,6 +4,7 @@ import {
   addressInUse,
   appRunSteps,
   appUrl,
+  projectContainersUp,
   runAppSteps,
   waitForUrl,
   type AppStepResult,
@@ -125,5 +126,52 @@ describe('address check (plan 066)', () => {
     ).toBeNull();
     expect(await addressInUse(null, () => Promise.resolve(true))).toBeNull();
     expect(await addressInUse('http://localhost:8080', undefined)).toBeNull();
+  });
+});
+
+describe('readiness check (plan 067)', () => {
+  const dockerExec = (out: { code: number | null; stdout: string } | 'throws' | 'missing') => {
+    const calls: string[][] = [];
+    const exec: Exec = {
+      which: () => Promise.resolve(out === 'missing' ? null : { path: 'docker', kind: 'native' }),
+      run(_bin, args) {
+        calls.push([...args]);
+        if (out === 'throws' || out === 'missing') return Promise.reject(new Error('no docker'));
+        return Promise.resolve({
+          code: out.code,
+          signal: null,
+          stdout: out.stdout,
+          stderr: '',
+          timedOut: false,
+        } satisfies ExecResult);
+      },
+    };
+    return { exec, calls };
+  };
+
+  it('tells whether the project containers run, and null when it cannot tell', async () => {
+    const up = dockerExec({ code: 0, stdout: 'abc123\n' });
+    expect(await projectContainersUp(up.exec, '.')).toBe(true);
+    expect(up.calls[0]).toEqual(['compose', 'ps', '--status', 'running', '--quiet']);
+    expect(await projectContainersUp(dockerExec({ code: 0, stdout: '\n' }).exec, '.')).toBe(false);
+    expect(await projectContainersUp(dockerExec({ code: 1, stdout: '' }).exec, '.')).toBeNull();
+    expect(await projectContainersUp(dockerExec('throws').exec, '.')).toBeNull();
+    expect(await projectContainersUp(dockerExec('missing').exec, '.')).toBeNull();
+  });
+
+  it('does not count an answer while the project containers are not running', async () => {
+    const yes = () => Promise.resolve(true);
+    expect(await waitForUrl('http://x', yes, 30, 5, () => Promise.resolve(false))).toBe(false);
+  });
+
+  it('counts an answer when the containers run or the check cannot tell', async () => {
+    const yes = () => Promise.resolve(true);
+    expect(await waitForUrl('http://x', yes, 30, 5, () => Promise.resolve(true))).toBe(true);
+    expect(await waitForUrl('http://x', yes, 30, 5, () => Promise.resolve(null))).toBe(true);
+  });
+
+  it('keeps the loose address check: any answer still reads as taken', async () => {
+    const r = await addressInUse('http://localhost:3000', () => Promise.resolve(true));
+    expect(r?.ok).toBe(false);
   });
 });

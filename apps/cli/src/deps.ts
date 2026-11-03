@@ -2,6 +2,7 @@ import {
   createLiveEngine,
   type Engine,
   type IncubatorConfig,
+  type IntakeSource,
   type RunStore,
   type Settings,
 } from '@incubator/core';
@@ -28,6 +29,8 @@ export interface CliDeps {
   engine: Engine;
   /** Read and save the configuration (the Settings page, `incubator config`). */
   settings?: Settings;
+  /** Custom App requests: reads a build-request ticket (the Requests page). */
+  intake?: IntakeSource;
   /** GitHub client for a token (doctor's token check; publish uses the same factory). */
   github: (token: SecretString) => GitHubAdapter;
   /** Tests: resolves to stop long-running commands (`ui`) instead of waiting for a signal. */

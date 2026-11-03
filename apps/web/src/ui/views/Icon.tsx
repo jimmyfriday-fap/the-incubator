@@ -1,12 +1,13 @@
 /** Small inline icons, the logo mark and the illustrations (plan 023). Inline SVG: nothing is fetched. */
 
 export type IconName =
-  'home' | 'folder' | 'list' | 'gear' | 'back' | 'forward' | 'sun' | 'moon' | 'monitor';
+  'home' | 'folder' | 'list' | 'inbox' | 'gear' | 'back' | 'forward' | 'sun' | 'moon' | 'monitor';
 
 const PATHS: Record<IconName, string[]> = {
   home: ['M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z'],
   folder: ['M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'],
   list: ['M8 6h13', 'M8 12h13', 'M8 18h13', 'M3.5 6h.01', 'M3.5 12h.01', 'M3.5 18h.01'],
+  inbox: ['M3 13l3-8h12l3 8v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z', 'M3 13h5l1 3h6l1-3h5'],
   gear: [
     'M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z',
     'M12 2v3',

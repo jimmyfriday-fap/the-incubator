@@ -38,8 +38,6 @@ Decide after two pilot builds (see 03). Suggested structure only:
 | Repo audit              | per repository                             | [$]   | gap report plus pull request |
 | Support plan (optional) | monthly                                    | [$]   | fixes and small changes only |
 
-The website shows "From" prices; they are the operator's to set and are entered when the seed script runs (PRICE_APP, PRICE_AUDIT, PRICE_SUPPORT).
-
 ## Cost floor check before quoting
 
 Estimate: model cost of discovery and the coding handoff (agent runs capped at about $10 and 45 minutes per session by default; real totals are unmeasured), plus your hours for the call, stand-up, screenshots, briefs and handover, plus payment fees. Price must clear this with margin. Record actuals after each job to improve the bands.

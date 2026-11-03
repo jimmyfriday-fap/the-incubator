@@ -128,6 +128,13 @@ export class RunDriver {
     return runId;
   }
 
+  /** A run that starts from a complete, already-validated spec (Custom App requests); it then runs on its own. */
+  startFromSpec(spec: IncubatorSpec, input: Omit<RunInput, 'surface'>): string {
+    const runId = this.engine.startFromSpec(spec, { ...input, surface: 'web' });
+    this.spawn(runId, () => this.engine.advance(runId, new WebPrompter()));
+    return runId;
+  }
+
   answer(runId: string, answers: { key: string; value: string }[]): void {
     const s = this.parkedAt(runId, 'CLARIFY', 'needs_input');
     const keys = new Set((s.pendingQuestions ?? []).map((q) => q.key));

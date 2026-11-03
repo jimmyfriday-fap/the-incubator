@@ -7,6 +7,7 @@ import { Icon, Logo, type IconName } from './views/Icon.js';
 import { ProjectView } from './views/ProjectView.js';
 import { ProjectsPage } from './views/Projects.js';
 import { RunView } from './views/RunView.js';
+import { Requests } from './views/Requests.js';
 import { Runs } from './views/Runs.js';
 import { Settings } from './views/Settings.js';
 
@@ -17,6 +18,7 @@ const TABS: { area: Area; label: string; to: string; icon: IconName }[] = [
   { area: 'home', label: 'Home', to: '/', icon: 'home' },
   { area: 'projects', label: 'Projects', to: '/projects', icon: 'folder' },
   { area: 'runs', label: 'Runs', to: '/runs', icon: 'list' },
+  { area: 'requests', label: 'Requests', to: '/requests', icon: 'inbox' },
   { area: 'settings', label: 'Settings', to: '/settings', icon: 'gear' },
 ];
 
@@ -118,6 +120,8 @@ export function App() {
           <ProjectsPage />
         ) : path === '/runs' ? (
           <Runs />
+        ) : path === '/requests' ? (
+          <Requests />
         ) : path === '/settings' ? (
           <Settings />
         ) : (

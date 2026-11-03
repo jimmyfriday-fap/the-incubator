@@ -126,4 +126,43 @@ describe('LeantimeTracker', () => {
         }),
     ).toThrow('https');
   });
+  it('reads one ticket by number with getTicket', async () => {
+    const seen: { method: string; params: Record<string, unknown> }[] = [];
+    const t = new LeantimeTracker({
+      baseUrl: 'https://pm.example.com',
+      projectId: 7,
+      apiKey: new SecretString('test-secret-leantime-key'),
+      fetch: (_u: URL | string | Request, init?: RequestInit) => {
+        const body = JSON.parse(init?.body as string) as {
+          id: number;
+          method: string;
+          params: { id: number };
+        };
+        seen.push({ method: body.method, params: body.params });
+        return Promise.resolve(
+          Response.json({
+            jsonrpc: '2.0',
+            id: body.id,
+            result:
+              body.params.id === 404
+                ? false
+                : { id: String(body.params.id), projectId: '7', headline: 'H', description: 'D' },
+          }),
+        );
+      },
+    });
+    expect(await t.getTicket(12)).toEqual({
+      id: 12,
+      projectId: 7,
+      headline: 'H',
+      description: 'D',
+      tags: null,
+    });
+    expect(seen[0]).toEqual({
+      method: 'leantime.rpc.Tickets.Tickets.getTicket',
+      params: { id: 12 },
+    });
+    expect(await t.getTicket(404)).toBeNull();
+    await expect(t.getTicket(0)).rejects.toThrow(PolicyError);
+  });
 });

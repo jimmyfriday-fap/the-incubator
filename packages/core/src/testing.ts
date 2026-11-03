@@ -232,6 +232,8 @@ export function faultyGit(inner: GitOps) {
         'identity',
         'countBetween',
         'upstreamFiles',
+        'worktreeAdd',
+        'fastForward',
       ] as const
     ).map((m) => [m, wrap(m)]),
   ) as unknown as GitOps;

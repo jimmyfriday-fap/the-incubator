@@ -3,7 +3,10 @@
   "note": "fixed: no repeated alternative",
   "response": {
     "stack": "node-web",
-    "reasons": ["A website with a database."],
+    "reasons": [
+      "A website with a database."
+    ],
     "alternatives": []
-  }
+  },
+  "key": "589ee84a87f161305d55f2d3bbdd83bc142f49cbf6d12e9d6bd86269ce139ce7"
 }

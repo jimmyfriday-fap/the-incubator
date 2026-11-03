@@ -3,7 +3,10 @@
   "note": "attempt 1: a stack the catalog does not hold; the gate sends it back",
   "response": {
     "stack": "react-native",
-    "reasons": ["It runs on phones."],
+    "reasons": [
+      "It runs on phones."
+    ],
     "alternatives": []
-  }
+  },
+  "key": "1c7769eeda8a6dc60100343269cd46b1b0aca24dfe5ac1df153333a828d11c5f"
 }

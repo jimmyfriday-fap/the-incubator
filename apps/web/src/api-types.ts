@@ -322,7 +322,7 @@ export type ReviewSummaryResponse =
 export interface StackInfo {
   id: string;
   label: string;
-  kind: 'built-in' | 'retrieved';
+  kind: 'built-in' | 'retrieved' | 'workspace';
   summary: string;
   platforms: string[];
   /** Retrieved stacks: where the owner gets the tool. */
@@ -335,9 +335,36 @@ export type StackRecommendResponse =
         stack: string;
         reasons: string[];
         alternatives: { stack: string; tradeoff: string }[];
+        backshackFit?: BackshackFit;
       };
     }
   | { status: 'failed'; message: string };
+
+/** ADR-030: the shape of a Backshack tool, as recommended or as the owner named it. */
+export interface BackshackFit {
+  toolName: string;
+  toolSlug: string;
+  prefix: string;
+  rack: string;
+  stages: string[];
+  aiPipes: string[];
+  handoffSchema: string;
+}
+/** GET /api/backshack/probe: is backshack-dev and the build contract configured and present? */
+export type BackshackProbeResponse =
+  | { ok: true; stack: string; devRepo: string; contract: string; worktreeRoot: string }
+  | { ok: false; stack: string; problems: string[] };
+/** POST /api/backshack/start: the owner approved the Backshack target; a worktree is created and the run starts. */
+export interface BackshackStartBody {
+  narrative: string;
+  fit: Partial<BackshackFit> & { toolName: string };
+  rationale?: string[];
+}
+export interface BackshackStartResponse {
+  runId: string;
+  dir: string;
+  branch: string;
+}
 export type StackProbeResponse =
   | { ok: true; stack: string; tool: string; version: string }
   | {
@@ -405,4 +432,34 @@ export interface StartRunBody {
    * repository to update in place (then `repo` is ignored and taken from `dir`).
    */
   dir?: string;
+  /**
+   * Custom App request (kind "new" only): the spec as edited on the Requests page. The server reads the
+   * ticket again and takes only `intent` (narrative, personas, features) from it. Needs `intake`.
+   */
+  spec?: Record<string, unknown>;
+  /** Custom App request: the Leantime ticket the build is for, and the owner's confirmation of the 50% deposit. */
+  intake?: { leantimeTicketId: number; depositReceived: true };
+}
+
+/** `GET /api/intake/tickets/:id`: a build-request ticket read into a draft. */
+export interface IntakeTicketView {
+  draft: Record<string, unknown> & {
+    project: { name: string; slug: string };
+    intent: {
+      narrative: string;
+      personas: string[];
+      coreFeatures: { id: string; summary: string; lane: string }[];
+    };
+  };
+  gaps: string[];
+  request: {
+    leantimeTicketId: number;
+    headline: string;
+    who: string;
+    problem: string;
+    outcome: string;
+    wpStatus?: string;
+    contact: string;
+    openQuestions?: string;
+  };
 }

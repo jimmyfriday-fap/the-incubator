@@ -28,10 +28,23 @@ export interface StackCreate {
   expects: readonly string[];
 }
 
+/**
+ * A *workspace* stack (ADR-030) is built inside a fresh worktree of an existing repository the owner
+ * configures, never in a new repository, and under a build contract read from another configured repository.
+ */
+export interface StackWorkspace {
+  /** The branch the worktree is created on: this prefix, then the tool's slug. */
+  branchPrefix: string;
+  /** The base the worktree starts from, in the configured repository. */
+  base: string;
+  /** The contract, relative to the configured contract repository. Included verbatim in the coding prompt. */
+  contractFile: string;
+}
+
 export interface StackEntry {
   id: string;
   label: string;
-  kind: 'built-in' | 'retrieved';
+  kind: 'built-in' | 'retrieved' | 'workspace';
   /** One line the recommender and the owner read. */
   summary: string;
   fits: readonly string[];
@@ -44,6 +57,8 @@ export interface StackEntry {
   /** Retrieved stacks only. */
   prerequisites?: readonly StackPrerequisite[];
   create?: StackCreate;
+  /** Workspace stacks only. */
+  workspace?: StackWorkspace;
 }
 
 export const STACK_CATALOG: readonly StackEntry[] = [
@@ -131,6 +146,29 @@ export const STACK_CATALOG: readonly StackEntry[] = [
       expects: ['pubspec.yaml', 'lib/main.dart'],
     },
   },
+  {
+    id: 'backshack-tool',
+    label: 'Backshack tool',
+    kind: 'workspace',
+    summary:
+      'A tool package inside the Backshack platform (backshack-dev), built in a fresh worktree under the Backshack Build Contract.',
+    fits: [
+      'the description names Backshack, a Backshack tool or a Backshack rack as the target',
+      'a multi-tenant AI workflow for paying members: a staged confirm-and-proceed pipeline, AI pipes, a handoff export and purchasable access',
+    ],
+    avoidWhen: [
+      'a standalone product with its own users, hosting or billing',
+      'anything that does not run inside the Backshack platform',
+    ],
+    platforms: ['backshack'],
+    detect: { ecosystem: 'php' },
+    checks: [],
+    workspace: {
+      branchPrefix: 'incubator/backshack-',
+      base: 'origin/main',
+      contractFile: 'docs/BACKSHACK_CONTRACT.md',
+    },
+  },
 ];
 
 export function stackById(id: string): StackEntry | undefined {
@@ -140,6 +178,9 @@ export function stackById(id: string): StackEntry | undefined {
 export function retrievedStacks(): readonly StackEntry[] {
   return STACK_CATALOG.filter((s) => s.kind === 'retrieved');
 }
+
+/** The id of the Backshack tool stack (ADR-030): the one stack whose runs carry the Backshack Build Contract. */
+export const BACKSHACK_STACK = 'backshack-tool';
 
 /** Dart reserved words, which are not allowed as a package name. */
 const DART_RESERVED = new Set([

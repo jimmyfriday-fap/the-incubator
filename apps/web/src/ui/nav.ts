@@ -27,12 +27,13 @@ export function historyState(nav: NavigationState | undefined = currentNavigatio
   return { canBack: nav?.canGoBack ?? true, canForward: nav?.canGoForward ?? true };
 }
 
-export type Area = 'home' | 'projects' | 'runs' | 'settings';
+export type Area = 'home' | 'projects' | 'runs' | 'requests' | 'settings';
 
 /** Which tab a path belongs to: a run or a project page stays under its own tab. */
 export function areaOf(path: string): Area {
   if (path === '/runs' || path.startsWith('/runs/')) return 'runs';
   if (path === '/projects' || path.startsWith('/projects/')) return 'projects';
+  if (path === '/requests') return 'requests';
   if (path === '/settings') return 'settings';
   return 'home';
 }

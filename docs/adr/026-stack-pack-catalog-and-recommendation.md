@@ -2,6 +2,7 @@
 
 - **Status:** Proposed
 - **Amended by:** [ADR-027](027-retrieved-stacks.md): stacks beyond the four packs are retrieved from their own generator; plans 016 to 018 are no longer one pack each
+- **Amended by:** [ADR-030](030-backshack-tool-stack.md): for `backshack-tool` only, the approved decision is also written to `incubator-recommendation.yaml`
 - **Date:** 2026-10-02
 - **Context doc:** [`docs/TDD.md`](../TDD.md) §7, §9
 
