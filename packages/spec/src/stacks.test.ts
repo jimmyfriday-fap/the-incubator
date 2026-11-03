@@ -1,7 +1,13 @@
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { STACK_CATALOG, retrievedStacks, stackById, validStackNames } from './stacks.js';
+import {
+  BACKSHACK_STACK,
+  STACK_CATALOG,
+  retrievedStacks,
+  stackById,
+  validStackNames,
+} from './stacks.js';
 
 const packs = path.resolve(import.meta.dirname, '../../templates/packs/stack');
 
@@ -36,6 +42,22 @@ describe('the stack catalog (ADR-027)', () => {
       expect(s.avoidWhen.length, s.id).toBeGreaterThan(0);
       expect(s.platforms.length, s.id).toBeGreaterThan(0);
     }
+  });
+
+  it('holds the Backshack tool stack, built in a worktree under its contract, never as a pack (ADR-030)', () => {
+    const b = stackById(BACKSHACK_STACK)!;
+    expect(b.kind).toBe('workspace');
+    expect(readdirSync(packs)).not.toContain(b.id);
+    expect(b.create).toBeUndefined();
+    expect(b.workspace).toEqual({
+      branchPrefix: 'incubator/backshack-',
+      base: 'origin/main',
+      contractFile: 'docs/BACKSHACK_CONTRACT.md',
+    });
+    expect(b.fits.join(' ')).toMatch(/Backshack tool or a Backshack rack/);
+    expect(b.fits.join(' ')).toMatch(
+      /staged confirm-and-proceed.*AI pipes.*handoff export.*purchasable access/,
+    );
   });
 
   it('detects a Flutter app by its ecosystem and its sdk marker', () => {

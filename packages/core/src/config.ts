@@ -13,6 +13,12 @@ export interface IncubatorConfig {
   toolPaths?: Record<string, string>;
   /** Custom App requests: the Leantime project the build requests arrive in (https, or http on localhost). */
   intake?: { leantime?: { baseUrl: string; projectId: number } };
+  /**
+   * The Backshack tool stack (ADR-030), absolute paths only: the backshack-dev repository the worktree is cut from,
+   * the backshack-generator repository that holds the build contract, and where worktrees go (default: under the
+   * Incubator's home, outside any checkout).
+   */
+  backshack?: { devRepo?: string; generatorRepo?: string; worktreeRoot?: string };
 }
 
 /**

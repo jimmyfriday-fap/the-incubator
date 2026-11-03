@@ -3,7 +3,15 @@
   "note": "an alternative that repeats the pick",
   "response": {
     "stack": "node-web",
-    "reasons": ["A website with a database."],
-    "alternatives": [{ "stack": "node-web", "tradeoff": "The same thing." }]
-  }
+    "reasons": [
+      "A website with a database."
+    ],
+    "alternatives": [
+      {
+        "stack": "node-web",
+        "tradeoff": "The same thing."
+      }
+    ]
+  },
+  "key": "119d5acebf7ad762d6356ab91da567532dc8a8ec013cca04c08fae300e81082d"
 }

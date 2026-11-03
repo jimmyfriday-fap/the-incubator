@@ -14,6 +14,7 @@ import type { Capabilities, LlmAdapter, LlmAdapterId } from '@incubator/llm';
 import { complete } from '@incubator/llm';
 import type { GitOps, RepoRef } from '@incubator/git';
 import {
+  BACKSHACK_STACK,
   DEFAULT_RUN_CEILINGS,
   ENHANCEMENT_SPEC_VERSION,
   LEANTIME_FALLBACK,
@@ -181,6 +182,19 @@ import {
   type CodePart,
 } from './handoff.js';
 import { CHECK_NOT_RUN, checkBudgetMs, runChecks, type CheckRun } from './check-run.js';
+import {
+  RECOMMENDATION_FILE,
+  backshackFit,
+  backshackPaths,
+  backshackWorktree,
+  createBackshackWorktree,
+  readBackshackContract,
+  recommendationYaml,
+  requireBackshackPaths,
+  type BackshackDecision,
+  type BackshackFit,
+  type BackshackPaths,
+} from './backshack.js';
 
 /**
  * The identity of what the owner asked for. `existingRepo` (the base commit and the scan) is left
@@ -344,8 +358,17 @@ export class Engine {
 
   /** INTAKE: creates the run and its first (empty) draft. */
   start(input: RunInput): string {
+    if (input.stack === BACKSHACK_STACK) this.checkBackshackInput(input);
     const { runId } = this.deps.store.create(input, { incubator: INCUBATOR_VERSION });
     this.record(runId, 'run.start', { runId, input });
+    if (input.backshack) {
+      // ADR-030: the owner's approval of the Backshack target, durable in the run folder and the journal.
+      writeFileSync(
+        path.join(this.deps.store.runDir(runId), RECOMMENDATION_FILE),
+        recommendationYaml(input.backshack),
+      );
+      this.record(runId, 'stack.approved', { stack: BACKSHACK_STACK, decision: input.backshack });
+    }
     this.enter(runId, 'INTAKE');
     this.writeRevision(runId, { intent: { narrative: input.narrative ?? '' }, decisions: [] });
     return runId;
@@ -696,6 +719,8 @@ export class Engine {
   /** ANALYZE (enhance): acquire a copy, scan the whole repository, draft from the detectors, then REQUEST. */
   private async enhanceAnalyzeStep(runId: string, s: RunState): Promise<void> {
     await this.effect(runId, async () => {
+      // ADR-030: a Backshack tool is never planned without its contract.
+      this.backshackContract(s);
       if (s.input.dir) await this.checkOwnerFolder(runId, s);
       const a = this.adopter();
       const got = await a.acquire(this.adoptContext(runId), s.input.repo!, s.input.repoRef);
@@ -1468,6 +1493,92 @@ export class Engine {
     });
   }
 
+  // --- the Backshack tool stack (ADR-030) ---------------------------------------------------------
+
+  private backshackPaths(): BackshackPaths {
+    return requireBackshackPaths(this.cfg(), this.deps.store.home);
+  }
+
+  /** Is everything a Backshack build needs configured and present? Changes nothing. */
+  backshackProbe():
+    | { ok: true; stack: string; devRepo: string; contract: string; worktreeRoot: string }
+    | { ok: false; stack: string; problems: string[] } {
+    const p = backshackPaths(this.cfg(), this.deps.store.home);
+    if (!p.ok) return { ok: false, stack: BACKSHACK_STACK, problems: p.problems };
+    try {
+      readBackshackContract(p.paths);
+    } catch (e) {
+      return { ok: false, stack: BACKSHACK_STACK, problems: [(e as Error).message] };
+    }
+    return { ok: true, stack: BACKSHACK_STACK, ...p.paths };
+  }
+
+  /**
+   * The owner approved the Backshack target: check the contract is there, create the backshack-dev worktree on
+   * the tool's branch, and return the input of the run that builds the tool in it. Committed only: the run never
+   * creates a repository, adds canonical files, pushes or opens a pull request.
+   */
+  async backshackPrepare(input: {
+    narrative: string;
+    fit: Partial<Record<keyof BackshackFit, unknown>>;
+    rationale?: readonly string[];
+    surface: RunInput['surface'];
+  }): Promise<{ input: RunInput; dir: string; branch: string }> {
+    const git = this.deps.publish?.git;
+    if (!git) throw new PolicyError('this build cannot run git', { code: 'no_git' });
+    const request = sanitizeRequest(input.narrative);
+    if (!request) throw new PolicyError('describe the tool first', { code: 'empty_request' });
+    const fit = backshackFit(input.fit);
+    const paths = this.backshackPaths();
+    readBackshackContract(paths);
+    const decision: BackshackDecision = {
+      target: 'backshack',
+      rationale: (input.rationale ?? [])
+        .map((r) => cleanAgentText(r, 300) ?? '')
+        .filter(Boolean)
+        .slice(0, 3),
+      fit,
+      decidedAt: this.deps.clock.now().toISOString(),
+    };
+    const wt = await createBackshackWorktree(git, paths, fit.toolSlug);
+    return {
+      dir: wt.dir,
+      branch: wt.branch,
+      input: {
+        kind: 'enhance',
+        repo: wt.dir,
+        dir: wt.dir,
+        request,
+        noPublish: true,
+        stack: BACKSHACK_STACK,
+        backshack: decision,
+        surface: input.surface,
+      },
+    };
+  }
+
+  /** A Backshack run works only in its own worktree, carries the owner's decision, and is never published. */
+  private checkBackshackInput(input: RunInput): void {
+    const fail = (why: string): never => {
+      throw new PolicyError(`not a Backshack tool run: ${why}`, { code: 'bad_backshack_run' });
+    };
+    if (input.kind !== 'enhance') fail('it must be an update run');
+    if (!input.backshack) fail('the owner’s decision is missing');
+    if (input.noPublish !== true || input.withGaps)
+      fail('it must be committed only, with no canonical files');
+    const { dir } = backshackWorktree(this.backshackPaths(), input.backshack!.fit.toolSlug);
+    if (!input.dir || path.resolve(input.dir) !== dir) fail(`it must work in ${dir}`);
+  }
+
+  private isBackshack(s: RunState): boolean {
+    return s.input.stack === BACKSHACK_STACK;
+  }
+
+  /** The contract, verbatim, for a Backshack run (parks when the file is missing); null for any other run. */
+  private backshackContract(s: RunState): string | null {
+    return this.isBackshack(s) ? readBackshackContract(this.backshackPaths()) : null;
+  }
+
   /** The enhance outcome: nothing to change, the local branch, or the pull request. */
   enhanceSummary(runId: string): {
     noop: string | null;
@@ -1767,8 +1878,11 @@ export class Engine {
     const git = this.deps.publish!.git;
     const dir = this.runDir(s);
     const base = s.steps['folder.base']!.data as { head: string; branch: string };
-    const branch = (s.steps[partStep('enhance')]?.data as { branch?: string } | undefined)?.branch;
+    const part = s.steps[partStep('enhance')]?.data as
+      { branch?: string; sha?: string } | undefined;
+    const branch = part?.branch;
     if (!branch) throw new ToolError('the enhance branch was not recorded');
+    if (this.isBackshack(s)) return this.deliverBackshack(runId, dir, base, branch, part.sha);
     const now = await git.currentBranch(dir);
     if (now !== branch) {
       const status = await git.status(dir);
@@ -1787,6 +1901,41 @@ export class Engine {
     }
     ensureLocalExclude(dir);
     this.record(runId, 'step.ok', { step: 'deliver', data: { branch, from: base.branch } });
+  }
+
+  /**
+   * ADR-030: the plan commit moves the worktree's own branch forward (`incubator/backshack-<slug>`), so the tool
+   * is built on the branch the owner approved and no other branch is left in backshack-dev.
+   */
+  private async deliverBackshack(
+    runId: string,
+    dir: string,
+    base: { head: string; branch: string },
+    planBranch: string,
+    planSha: string | undefined,
+  ): Promise<void> {
+    const git = this.deps.publish!.git;
+    const head = await git.headSha(dir);
+    if (head !== planSha) {
+      const status = await git.status(dir);
+      if (status.length || (await git.currentBranch(dir)) !== base.branch || head !== base.head)
+        throw new ParkError(
+          'folder_changed',
+          'the Backshack worktree changed while the plan was being prepared; put it back on its branch with no changes, and resume',
+          { expected: base, changed: status.slice(0, 8).map((e) => e.path) },
+        );
+      await git.fetch(
+        dir,
+        path.join(this.deps.store.runDir(runId), 'workspace', 'repo'),
+        `refs/heads/${planBranch}`,
+      );
+      await git.fastForward(dir, 'FETCH_HEAD');
+    }
+    ensureLocalExclude(dir);
+    this.record(runId, 'step.ok', {
+      step: 'deliver',
+      data: { branch: base.branch, from: base.branch },
+    });
   }
 
   private async codeStep(runId: string, s: RunState): Promise<void> {
@@ -2407,22 +2556,25 @@ export class Engine {
         setup: this.setupProblem(runId),
         branch: start.branch,
       });
-      writeFileSync(path.join(dir, WHAT_NOW_FILE), whatNowMarkdown(guide));
-      // Plan 065: the design and the stand-up steps travel with the code, not only in the run folder.
-      const spec = this.approvedSpec(runId);
-      mkdirSync(path.join(dir, 'docs'), { recursive: true });
-      writeFileSync(path.join(dir, DESIGN_FILE), designMarkdown(spec));
-      writeFileSync(
-        path.join(dir, STAND_UP_FILE),
-        standUp({
-          runId,
-          name: spec.project.name,
-          slug: spec.project.slug,
-          pack: spec.stack.pack,
-          platform: spec.platform,
-          guide,
-        }).markdown,
-      );
+      // ADR-030: a Backshack tool is one package in backshack-dev; the Incubator's guides stay in the run folder.
+      if (!this.isBackshack(s)) {
+        writeFileSync(path.join(dir, WHAT_NOW_FILE), whatNowMarkdown(guide));
+        // Plan 065: the design and the stand-up steps travel with the code, not only in the run folder.
+        const spec = this.approvedSpec(runId);
+        mkdirSync(path.join(dir, 'docs'), { recursive: true });
+        writeFileSync(path.join(dir, DESIGN_FILE), designMarkdown(spec));
+        writeFileSync(
+          path.join(dir, STAND_UP_FILE),
+          standUp({
+            runId,
+            name: spec.project.name,
+            slug: spec.project.slug,
+            pack: spec.stack.pack,
+            platform: spec.platform,
+            guide,
+          }).markdown,
+        );
+      }
       await git.addAll(dir);
       const sha = await git.commit(
         dir,
@@ -2441,6 +2593,15 @@ export class Engine {
   /** PUSH: the owner decides whether the branch goes to GitHub as a pull request. */
   private async pushStep(runId: string, s: RunState): Promise<void> {
     const committed = s.steps['finish.commit']!.data as { sha: string | null; branch: string };
+    if (this.isBackshack(s)) {
+      // ADR-030: committed on the worktree branch and parked for the owner, who runs the contract check, the
+      // gate and the push to staging themselves.
+      this.record(runId, 'run.done', {
+        committedLocally: true,
+        reason: `a Backshack tool is committed on ${committed.branch} only: the push to staging is yours`,
+      });
+      return;
+    }
     const target = this.pushTarget(runId, s);
     if (!target.repo) {
       this.record(runId, 'run.done', { committedLocally: true, reason: target.reason });
@@ -2589,6 +2750,8 @@ export class Engine {
         'checks_unenforceable',
         `${AGENT_ADAPTERS[agent]} cannot restrict which commands an agent runs, so it cannot code in a repository the Incubator did not build`,
       );
+    // ADR-030: read before anything starts, so a missing contract parks the run instead of coding without it.
+    const contract = this.backshackContract(s);
     const tools = this.tools();
     const env = external && tools ? await toolPathEnv(checks.commands, tools) : null;
     const plan: HandoffPlan = {
@@ -2613,6 +2776,7 @@ export class Engine {
         handoffPrompt(
           readFileSync(planPath, 'utf8'),
           external ? { checks: checks.commands } : undefined,
+          contract !== null ? { contract } : undefined,
         ) + (opts.continuation ? `\n${continuationText(opts.continuation)}` : ''),
       ticket: activeTicket(repo, spec, delivered?.features.map(ticketId)),
       checks,

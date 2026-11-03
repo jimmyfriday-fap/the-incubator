@@ -1,0 +1,77 @@
+# ADR-030: The Backshack tool stack is built in a backshack-dev worktree, under the Backshack Build Contract
+
+- **Status:** Proposed
+- **Date:** 2026-11-02
+- **Context doc:** [`docs/TDD.md`](../TDD.md) §7, §9; [`docs/incubator-research.md`](../incubator-research.md);
+  amends [ADR-026](026-stack-pack-catalog-and-recommendation.md) for this one stack only
+
+## Context
+
+When a description was really a Backshack tool (a multi-tenant AI workflow sold to Backshack members), the
+Incubator had no way to say so. The closest catalog entry was `wordpress`, so the COI Tracker run built a
+standalone WordPress plugin in a new repository, with its own namespace and its own tables. It diverged from
+the Backshack tool package at the first file and had to be rebuilt by hand as The Gauge.
+
+Backshack now writes down what a conforming tool is in one generic document, the Backshack Build Contract
+(`docs/BACKSHACK_CONTRACT.md` in the backshack-generator repository). The contract must reach the coding agent
+only when Backshack is the target, and from the first file; every other stack must be unaffected.
+
+The Incubator decides the stack once, before any code (`stackRecommend`, owner confirmation), and never
+re-plans after CODE starts. ADR-026 keeps the recommendation only in the turn and the journal.
+
+## Decision
+
+1. **A third kind of stack.** `packages/spec/src/stacks.ts` gains `kind: 'workspace'`: a stack built inside a
+   fresh worktree of an existing repository the owner configures. Its one entry is `backshack-tool`, which fits
+   when the description names Backshack, a Backshack tool or rack as the target, or describes a multi-tenant AI
+   workflow for paying members (staged confirm-and-proceed, AI pipes, a handoff export, purchasable access).
+   The recommendation prompt states that rule and asks, for this stack only, for the tool's shape
+   (`backshackFit`: name, slug, prefix, rack, stages, AI pipes, handoff schema).
+2. **The decision is durable (amends ADR-026 point 7 for this stack).** When the owner approves
+   `backshack-tool`, the run folder gets `incubator-recommendation.yaml` (target, rationale, `backshack_fit`,
+   `decided_at`) and the journal a `stack.approved` entry. `incubator.json` still gains no field. Every value in
+   the YAML is quoted, so owner or model text cannot change its shape.
+3. **Where the build happens.** The paths come from `~/.incubator/config.json` (`backshack.devRepo`,
+   `backshack.generatorRepo`, optional `backshack.worktreeRoot`, default `<incubator home>/worktrees`), never
+   from code. Approval fetches `origin/main` in backshack-dev and adds a worktree on
+   `incubator/backshack-<slug>`; an existing folder is refused, never reused or removed. The run is the
+   existing in-place update (enhance) flow on that folder, except: no repository is created, the
+   canonical-pattern files (stack packs) are never added, the plan commit fast-forwards the worktree's own branch
+   instead of adding an `incubator/enhance-*` branch, the Incubator's guides (`WHAT-NOW.md`, design doc,
+   stand-up guide) stay out of the repository, and after the owner's commit the run ends committed locally with
+   no push and no pull request. The handoff to staging (contract Section 5, the local gate, push, the ship
+   skills) is the owner's.
+4. **The contract reaches the coding agent verbatim.** For a `backshack-tool` run only, the coding prompt ends
+   with `prompts/handoff-backshack.md` (read the contract first, it wins over the plan, run Section 5 before
+   declaring done) followed by the contract file as it is on disk. `prompts/handoff.md` and
+   `prompts/handoff-external.md` are unchanged, so no other stack's prompt changes by a byte.
+5. **No contract, no build.** The contract is read when the owner approves the stack, again before the scan,
+   and again before each coding part. A missing or empty file parks the run (`backshack_contract_missing`) with
+   the path in the message; a worktree is never created without it.
+6. **The run is checked, not trusted.** A run that says `stack: 'backshack-tool'` must be an update run in the
+   worktree computed from its own slug, carry the owner's decision, and be `noPublish` without canonical
+   files; anything else is refused before the run is created.
+
+## Alternatives considered
+
+- **A `backshack` stack pack (built-in).** It would render a tool package from templates, but the package is
+  defined by backshack-dev's own conventions and changes with them; a pack would drift. Rejected.
+- **A new repository per tool, ported later.** What happened with the COI Tracker; it is the problem.
+- **Loading the contract through a pack's agent instructions.** Packs apply to repositories the Incubator
+  renders; a backshack-dev worktree is not one, and the contract would land in every generated file tree.
+- **Copying the contract into the Incubator.** Two copies drift. It is read from the generator repository,
+  where it is maintained.
+- **Pushing the branch to backshack-dev's origin.** Backshack ships by push to `main` after the local gate; a
+  pushed side branch has no use there. The operator decided: commit only.
+
+## Consequences
+
+- Adding another workspace stack means another catalog entry and its own run checks; the kind is generic, the
+  run rules here are Backshack's.
+- The enhance plan files (`docs/plans/NNN-*.md`, `.incubator/tickets/`, `.incubator/lanes/`) are committed on
+  the worktree branch with the plan, as on any update run. The owner drops them before the push if backshack-dev
+  should not keep them.
+- The coding agent runs only the check commands the owner approves for backshack-dev (ADR-025); the contract's
+  searches it does with its own file search, and it names any Section 5 command it could not run.
+- Tests: the catalog holds `backshack-tool`; a `node-web` run's coding prompt has no contract text; a
+  `backshack-tool` run's prompt has it verbatim; a missing contract parks the run.

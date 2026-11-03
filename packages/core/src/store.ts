@@ -17,6 +17,7 @@ import {
   type Clock,
 } from '@incubator/runtime';
 import { serializeSpec } from '@incubator/spec';
+import type { BackshackDecision } from './backshack.js';
 import { Journal } from './journal.js';
 
 export interface RunInput {
@@ -55,6 +56,13 @@ export interface RunInput {
     depositReceived: true;
     ceilings: { turns: number; toolCalls: number; minutes: number; usd: number };
   };
+  /**
+   * ADR-030: the stack the owner approved for this run, when it changes how the run works. Only
+   * `backshack-tool`: an enhance run in a fresh backshack-dev worktree (`dir`), committed only, under the
+   * Backshack Build Contract, with the owner's decision in `backshack`.
+   */
+  stack?: 'backshack-tool';
+  backshack?: BackshackDecision;
 }
 
 /** `~/.incubator` layout (TDD §2.5): config.json, runs/<id>/{run.json,journal.jsonl,spec/,workspace/,logs/}, cache/. */

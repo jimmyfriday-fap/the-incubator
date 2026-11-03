@@ -92,14 +92,22 @@ export function buildHandoffArgv(
 
 /**
  * The agent's prompt. `external` is a repository the Incubator did not build (ADR-025): another
- * prompt, with the check commands the owner approved (possibly none) spelled out.
+ * prompt, with the check commands the owner approved (possibly none) spelled out. `backshack` is the
+ * Backshack Build Contract (ADR-030), given only on a `backshack-tool` run: it follows the plan, verbatim.
  */
-export function handoffPrompt(planText: string, external?: { checks: readonly string[] }): string {
-  if (!external) return `${loadPrompt('handoff').body}\n\n${planText.trim()}\n`;
+export function handoffPrompt(
+  planText: string,
+  external?: { checks: readonly string[] },
+  backshack?: { contract: string },
+): string {
+  const contract = backshack
+    ? `\n${loadPrompt('handoff-backshack').body}\n\n${backshack.contract.trim()}\n`
+    : '';
+  if (!external) return `${loadPrompt('handoff').body}\n\n${planText.trim()}\n${contract}`;
   const checks = external.checks.length
     ? external.checks.map((c) => `- \`${c}\``).join('\n')
     : '(none: run no commands)';
-  return `${loadPrompt('handoff-external').body}\n\n## Approved check commands\n\n${checks}\n\n## Executor plan\n\n${planText.trim()}\n`;
+  return `${loadPrompt('handoff-external').body}\n\n## Approved check commands\n\n${checks}\n\n## Executor plan\n\n${planText.trim()}\n${contract}`;
 }
 
 /** A part of the coding work already committed by the engine (plan 036). */

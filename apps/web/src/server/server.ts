@@ -27,6 +27,8 @@ import {
   type IncubatorSpec,
 } from '@incubator/spec';
 import type {
+  BackshackStartBody,
+  BackshackStartResponse,
   ProjectBrief,
   ProjectCard,
   ProjectDetail,
@@ -280,6 +282,54 @@ export function createApp(opts: ServerOptions): WebApp {
     async (req, reply) => {
       try {
         return await engine.stackCreate({ ...req.body, org: req.body.org ?? 'com.example' });
+      } catch (err) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  // The Backshack tool stack (ADR-030): whether it is configured, and starting a build in a fresh worktree.
+  app.get('/api/backshack/probe', () => engine.backshackProbe());
+
+  app.post<{ Body: BackshackStartBody }>(
+    '/api/backshack/start',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['narrative', 'fit'],
+          properties: {
+            narrative: { type: 'string', minLength: 1, maxLength: 20000 },
+            rationale: {
+              type: 'array',
+              maxItems: 3,
+              items: { type: 'string', maxLength: 300 },
+            },
+            fit: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['toolName'],
+              properties: {
+                toolName: { type: 'string', minLength: 1, maxLength: 80 },
+                toolSlug: { type: 'string', maxLength: 64 },
+                prefix: { type: 'string', maxLength: 24 },
+                rack: { type: 'string', maxLength: 60 },
+                stages: { type: 'array', maxItems: 12, items: { type: 'string', maxLength: 80 } },
+                aiPipes: { type: 'array', maxItems: 12, items: { type: 'string', maxLength: 80 } },
+                handoffSchema: { type: 'string', maxLength: 100 },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        const prepared = await engine.backshackPrepare({ ...req.body, surface: 'web' });
+        const runId = driver.start(prepared.input);
+        const body: BackshackStartResponse = { runId, dir: prepared.dir, branch: prepared.branch };
+        return reply.code(202).send(body);
       } catch (err) {
         return sendError(reply, err);
       }

@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react';
-import type { StackInfo, StackProbeResponse, StackRecommendResponse } from '../../api-types.js';
+import type {
+  BackshackFit,
+  BackshackProbeResponse,
+  StackInfo,
+  StackProbeResponse,
+  StackRecommendResponse,
+} from '../../api-types.js';
 import { get, post } from '../api.js';
 
 /**
  * Which stack a new project uses (ADR-027). The default is the Incubator's built-in stacks, chosen during
  * discovery. A stack the Incubator does not build in, such as Flutter, is created by its own generator on
- * this computer: the model can recommend one for the idea, and the owner decides.
+ * this computer: the model can recommend one for the idea, and the owner decides. A Backshack tool (ADR-030) is
+ * built in a fresh worktree of the owner's backshack-dev checkout instead of the chosen folder.
  */
 export function StackChoice(props: {
   idea: string;
@@ -17,8 +24,12 @@ export function StackChoice(props: {
   onName: (name: string) => void;
   /** The probe result for the chosen stack, so the wizard can hold back "start" while the tool is missing. */
   onProbe: (probe: StackProbeResponse | null) => void;
+  /** ADR-030: whether a Backshack build can start, and the fit and reasons the recommender gave. */
+  onBackshackProbe: (probe: BackshackProbeResponse | null) => void;
+  onSuggested: (s: { fit: BackshackFit | null; reasons: string[] }) => void;
 }) {
-  const { value, onChange, onProbe } = props;
+  const { value, onChange, onProbe, onBackshackProbe } = props;
+  const [bsProbe, setBsProbe] = useState<BackshackProbeResponse | null>(null);
   const [stacks, setStacks] = useState<StackInfo[]>([]);
   const [rec, setRec] = useState<StackRecommendResponse | null>(null);
   const [asking, setAsking] = useState(false);
@@ -33,8 +44,22 @@ export function StackChoice(props: {
   useEffect(() => {
     setProbe(null);
     onProbe(null);
+    setBsProbe(null);
+    onBackshackProbe(null);
     if (!value) return;
     let live = true;
+    if (stacks.find((s) => s.id === value)?.kind === 'workspace') {
+      get<BackshackProbeResponse>('/api/backshack/probe')
+        .then((p) => {
+          if (!live) return;
+          setBsProbe(p);
+          onBackshackProbe(p);
+        })
+        .catch(() => undefined);
+      return () => {
+        live = false;
+      };
+    }
     post<StackProbeResponse>('/api/stacks/probe', { stack: value })
       .then((p) => {
         if (!live) return;
@@ -45,9 +70,10 @@ export function StackChoice(props: {
     return () => {
       live = false;
     };
-  }, [value, onProbe]);
+  }, [value, onProbe, onBackshackProbe, stacks]);
 
-  const retrieved = stacks.filter((s) => s.kind === 'retrieved');
+  // why: every stack the owner can pick here is one that discovery does not choose by itself.
+  const retrieved = stacks.filter((s) => s.kind !== 'built-in');
   if (retrieved.length === 0) return null;
   const label = (id: string) => stacks.find((s) => s.id === id)?.label ?? id;
   const ask = () => {
@@ -69,7 +95,10 @@ export function StackChoice(props: {
           <option value="">The Incubator&apos;s built-in stacks (chosen during discovery)</option>
           {retrieved.map((s) => (
             <option key={s.id} value={s.id}>
-              {s.label}: created with its own tool
+              {s.label}:{' '}
+              {s.kind === 'workspace'
+                ? 'built in a backshack-dev worktree'
+                : 'created with its own tool'}
             </option>
           ))}
         </select>
@@ -113,18 +142,51 @@ export function StackChoice(props: {
           <button
             type="button"
             data-testid="use-suggested"
-            onClick={() =>
+            onClick={() => {
+              props.onSuggested({
+                fit: rec.recommendation.backshackFit ?? null,
+                reasons: rec.recommendation.reasons,
+              });
               onChange(
                 retrieved.some((s) => s.id === rec.recommendation.stack)
                   ? rec.recommendation.stack
                   : '',
-              )
-            }
+              );
+            }}
           >
             {retrieved.some((s) => s.id === rec.recommendation.stack)
               ? `Use ${label(rec.recommendation.stack)}`
               : 'Use the built-in stacks'}
           </button>
+        </div>
+      )}
+      {picked && picked.kind === 'workspace' && (
+        <div data-testid="backshack-details">
+          <p className="muted">
+            The Incubator creates a fresh worktree of your backshack-dev checkout on its own branch,
+            plans the tool there, and a coding assistant builds it under the Backshack Build
+            Contract. It is committed on that branch only: no new repository, no push, no pull
+            request. The folder above is not used.
+          </p>
+          {bsProbe?.ok === true && (
+            <p className="muted" data-testid="backshack-ready">
+              Worktrees go under {bsProbe.worktreeRoot}; the contract is {bsProbe.contract}.
+            </p>
+          )}
+          {bsProbe?.ok === false && (
+            <p className="warn" data-testid="backshack-missing">
+              {bsProbe.problems.join(' ')}
+            </p>
+          )}
+          <label>
+            Tool name
+            <input
+              data-testid="backshack-name"
+              value={props.name}
+              onChange={(e) => props.onName(e.target.value)}
+              placeholder="The Scope"
+            />
+          </label>
         </div>
       )}
       {picked && picked.kind === 'retrieved' && (

@@ -1468,3 +1468,4 @@ flowchart LR
 | [027](adr/027-retrieved-stacks.md)                      | Larger stacks are retrieved from their own generator, not built in as packs        |
 | [028](adr/028-project-portfolio-and-repo-marker.md)     | A project portfolio, and a marker in the repository that ties a folder to it       |
 | [029](adr/029-stop-cancel-and-settings.md)              | Stop and cancel a run, settings the owner can change, and which model did each job |
+| [030](adr/030-backshack-tool-stack.md)                  | The Backshack tool stack is built in a backshack-dev worktree, under its contract  |

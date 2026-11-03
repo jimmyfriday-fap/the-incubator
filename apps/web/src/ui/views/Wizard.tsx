@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type {
+  BackshackFit,
+  BackshackProbeResponse,
+  BackshackStartResponse,
   FolderCheck,
   StackCreateResponse,
   StackProbeResponse,
   StartRunBody,
 } from '../../api-types.js';
 import { getSession, post } from '../api.js';
+import { navigate } from '../nav.js';
 import { FolderField } from './FolderField.js';
 import { StackChoice } from './StackChoice.js';
 import { addMarkdownFiles } from '../markdownFiles.js';
@@ -34,6 +38,12 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
   const [stackName, setStackName] = useState('');
   const [probe, setProbe] = useState<StackProbeResponse | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
+  // ADR-030: a Backshack tool is built in a backshack-dev worktree; what the recommender suggested for it.
+  const [bsProbe, setBsProbe] = useState<BackshackProbeResponse | null>(null);
+  const [suggested, setSuggested] = useState<{ fit: BackshackFit | null; reasons: string[] }>({
+    fit: null,
+    reasons: [],
+  });
 
   useEffect(() => {
     getSession()
@@ -98,6 +108,22 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
         }
         return start({ kind: 'enhance', dir: check!.path, request: narrative });
       })
+      .catch((e: Error) => setCreateError(e.message))
+      .finally(() => setStarting(false));
+  };
+  const backshack = stack === 'backshack-tool';
+  const toolName = stackName.trim() || suggested.fit?.toolName || '';
+  // The owner's approval of the Backshack target: the worktree is created and the run starts in it.
+  const startBackshack = () => {
+    setStarting(true);
+    setCreateError(null);
+    const fit = suggested.fit?.toolName === toolName ? suggested.fit : { toolName };
+    post<BackshackStartResponse>('/api/backshack/start', {
+      narrative,
+      fit,
+      rationale: suggested.reasons,
+    })
+      .then((r) => navigate(`/runs/${r.runId}`))
       .catch((e: Error) => setCreateError(e.message))
       .finally(() => setStarting(false));
   };
@@ -173,16 +199,26 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
             onChange={setStack}
             org={stackOrg}
             onOrg={setStackOrg}
-            name={stackName || folderName}
+            name={stackName || (backshack ? (suggested.fit?.toolName ?? '') : folderName)}
             onName={setStackName}
             onProbe={setProbe}
+            onBackshackProbe={setBsProbe}
+            onSuggested={setSuggested}
           />
           {createError && (
             <p className="error" role="alert" data-testid="stack-create-error">
               {createError}
             </p>
           )}
-          {stack ? (
+          {backshack ? (
+            <button
+              data-testid="start-backshack"
+              disabled={!narrative.trim() || !toolName || starting || bsProbe?.ok !== true}
+              onClick={startBackshack}
+            >
+              {starting ? 'Creating the worktree…' : 'Create the Backshack worktree and plan it'}
+            </button>
+          ) : stack ? (
             <button
               data-testid="start-create"
               disabled={!usable || !narrative.trim() || starting || probe?.ok !== true}

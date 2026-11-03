@@ -1015,6 +1015,21 @@ describe('retrieved stacks over the API (ADR-027)', () => {
     ).toMatchObject({ ok: false, reason: 'missing' });
   });
 
+  it('offers the Backshack tool stack, and says what to configure before it can start (ADR-030)', async () => {
+    const { api } = await boot();
+    const list = (await api.get<{ id: string; kind: string }[]>('/api/stacks')).body;
+    expect(list.find((s) => s.id === 'backshack-tool')).toMatchObject({ kind: 'workspace' });
+    const probe = (await api.get<{ ok: boolean; problems: string[] }>('/api/backshack/probe')).body;
+    expect(probe.ok).toBe(false);
+    expect(probe.problems.join(' ')).toContain('backshack.devRepo');
+    const start = await api.post('/api/backshack/start', {
+      narrative: 'A staged AI workflow for Backshack members',
+      fit: { toolName: 'The Scope' },
+    });
+    expect(start.status).toBeGreaterThanOrEqual(400);
+    expect((await api.post('/api/backshack/start', { narrative: 'x', fit: {} })).status).toBe(400);
+  });
+
   it('recommends a stack from the catalog for an idea', async () => {
     const { api } = await boot({ fixtureDir: stackFixtures });
     const r = (

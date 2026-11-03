@@ -68,6 +68,10 @@ export interface GitOps {
   remoteAdd(dir: string, name: string, url: string): Promise<void>;
   /** The configured `user.name` and `user.email`, or null when either is unset. */
   identity(dir: string): Promise<GitIdentity | null>;
+  /** `git worktree add -b <branch> <path> <base>` run in `repo`: a new branch checked out in a new folder. */
+  worktreeAdd(repo: string, dir: string, branch: string, base: string): Promise<void>;
+  /** Moves the checked-out branch forward to `ref` (`git merge --ff-only`); fails when that is not a fast-forward. */
+  fastForward(dir: string, ref: string): Promise<void>;
 }
 
 /** One path from `git status`: the two-letter porcelain code and the path (POSIX separators). */
@@ -206,6 +210,12 @@ export function createGitOps(exec: Exec): GitOps {
     },
     async checkout(dir, branch) {
       await git(['checkout', '-q', branch, '--'], { cwd: dir });
+    },
+    async worktreeAdd(repo, dir, branch, base) {
+      await git(['worktree', 'add', '-q', '-b', branch, dir, base], { cwd: repo });
+    },
+    async fastForward(dir, ref) {
+      await git(['merge', '-q', '--ff-only', ref], { cwd: dir });
     },
     async countBetween(dir, from, to) {
       // why: only commit ids reach git here, so nothing can be read as an option (plan 025).

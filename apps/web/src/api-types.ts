@@ -322,7 +322,7 @@ export type ReviewSummaryResponse =
 export interface StackInfo {
   id: string;
   label: string;
-  kind: 'built-in' | 'retrieved';
+  kind: 'built-in' | 'retrieved' | 'workspace';
   summary: string;
   platforms: string[];
   /** Retrieved stacks: where the owner gets the tool. */
@@ -335,9 +335,36 @@ export type StackRecommendResponse =
         stack: string;
         reasons: string[];
         alternatives: { stack: string; tradeoff: string }[];
+        backshackFit?: BackshackFit;
       };
     }
   | { status: 'failed'; message: string };
+
+/** ADR-030: the shape of a Backshack tool, as recommended or as the owner named it. */
+export interface BackshackFit {
+  toolName: string;
+  toolSlug: string;
+  prefix: string;
+  rack: string;
+  stages: string[];
+  aiPipes: string[];
+  handoffSchema: string;
+}
+/** GET /api/backshack/probe: is backshack-dev and the build contract configured and present? */
+export type BackshackProbeResponse =
+  | { ok: true; stack: string; devRepo: string; contract: string; worktreeRoot: string }
+  | { ok: false; stack: string; problems: string[] };
+/** POST /api/backshack/start: the owner approved the Backshack target; a worktree is created and the run starts. */
+export interface BackshackStartBody {
+  narrative: string;
+  fit: Partial<BackshackFit> & { toolName: string };
+  rationale?: string[];
+}
+export interface BackshackStartResponse {
+  runId: string;
+  dir: string;
+  branch: string;
+}
 export type StackProbeResponse =
   | { ok: true; stack: string; tool: string; version: string }
   | {
