@@ -7,9 +7,11 @@ import { ChangeRequest } from './ChangeRequest.js';
 import { Coding } from './Coding.js';
 import { CommitRequest, PushRequest } from './FinishChanges.js';
 import { Crumbs, ProjectBanner } from './Projects.js';
+import { MemoryRun } from './MemoryRun.js';
 import { ModelsUsed } from './ModelsUsed.js';
 import { Questions } from './Questions.js';
 import { RepoMoved } from './RepoMoved.js';
+import { ReverseOut } from './ReverseOut.js';
 import { Review } from './Review.js';
 import { RunLog } from './RunLog.js';
 import { Summary } from './Summary.js';
@@ -125,7 +127,8 @@ export function RunView({ runId }: { runId: string }) {
   const requesting = run.state === 'PARKED' && run.parked?.reason === 'needs_request' && !run.busy;
   const committing = run.state === 'PARKED' && run.parked?.reason === 'needs_commit' && !run.busy;
   const pushing = run.state === 'PARKED' && run.parked?.reason === 'needs_push' && !run.busy;
-  const coding = run.busy && (run.state === 'CODE' || run.finish?.stage === 'coding');
+  const coding =
+    run.kind !== 'memory' && run.busy && (run.state === 'CODE' || run.finish?.stage === 'coding');
   // why: a run parked because its repository moved on (plan 025) is refreshed, not resumed; the banner says so.
   const movedAway = run.state === 'PARKED' && run.parked?.reason === 'repo_moved' && !!repo?.moved;
   const stuck =
@@ -168,11 +171,13 @@ export function RunView({ runId }: { runId: string }) {
         <h2>
           {run.kind === 'adopt'
             ? 'Adopt '
-            : run.kind === 'enhance'
-              ? 'Update '
-              : run.input.dir
-                ? 'New solution '
-                : 'New project '}
+            : run.kind === 'memory'
+              ? 'Add memory '
+              : run.kind === 'enhance'
+                ? 'Update '
+                : run.input.dir
+                  ? 'New solution '
+                  : 'New project '}
           <code>{runId}</code>{' '}
           <span
             data-testid="run-state"
@@ -243,6 +248,7 @@ export function RunView({ runId }: { runId: string }) {
             your folder are still there.
           </p>
         )}
+        {(run.cancelled || !run.done) && !run.busy && <ReverseOut runId={runId} />}
         <p className="muted">
           {run.input.dir ??
             (run.kind === 'adopt' || run.kind === 'enhance' ? run.input.repo : run.input.narrative)}
@@ -325,6 +331,14 @@ export function RunView({ runId }: { runId: string }) {
       />
       <TabPanel name="runtab" id="overview" active={tab}>
         {coding && <Coding run={run} />}
+        {run.memory && (
+          <MemoryRun
+            memory={run.memory}
+            busy={run.busy}
+            onPush={() => act(post(`/api/runs/${runId}/push`, { action: 'push' }))}
+            onSkip={() => act(post(`/api/runs/${runId}/push`, { action: 'skip' }))}
+          />
+        )}
         {reviewing && (
           <p className="muted" data-testid="overview-review-note">
             The plan is ready for your review in the Plan tab.
@@ -360,7 +374,7 @@ export function RunView({ runId }: { runId: string }) {
             onSubmit={(answers) => act(post(`/api/runs/${runId}/answers`, { answers }))}
           />
         )}
-        {run.done && !run.cancelled && (
+        {run.done && !run.cancelled && run.kind !== 'memory' && (
           <Summary run={run} onContinue={() => void act(post(`/api/runs/${runId}/continue`))} />
         )}
       </TabPanel>

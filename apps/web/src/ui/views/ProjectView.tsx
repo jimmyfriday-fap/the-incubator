@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { ProjectDetail, StartRunBody } from '../../api-types.js';
-import { get, post } from '../api.js';
+import { get, post, put } from '../api.js';
+import { parseTerms, termsText } from '../memoryForm.js';
 import { navigate } from '../nav.js';
+import { AddMemory } from './AddMemory.js';
 import { Crumbs, when, whereIs } from './Projects.js';
 
 const ORIGIN = {
@@ -14,6 +16,8 @@ const ORIGIN = {
 export function ProjectView({ id }: { id: string }) {
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [ids, setIds] = useState<string | null>(null);
 
   useEffect(() => {
     get<ProjectDetail>(`/api/portfolio/${id}`)
@@ -34,6 +38,20 @@ export function ProjectView({ id }: { id: string }) {
     }
   };
 
+  const saveIds = async () => {
+    setError(null);
+    try {
+      const saved = await put<{ identifiers: string[] }>(`/api/portfolio/${id}/identifiers`, {
+        identifiers: parseTerms(ids ?? ''),
+      });
+      setProject({ ...project, identifiers: saved.identifiers });
+      setIds(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const memory = project.memory;
+
   return (
     <div className="run" data-testid="project-page">
       <Crumbs items={[{ label: 'Projects', to: '/projects' }, { label: project.name }]} />
@@ -53,9 +71,89 @@ export function ProjectView({ id }: { id: string }) {
           </p>
         )}
         {project.repo.dir && (
-          <button data-testid="project-update" onClick={() => void update()}>
-            Update again
-          </button>
+          <div className="actions">
+            <button data-testid="project-update" onClick={() => void update()}>
+              Update again
+            </button>
+            <button
+              data-testid="project-add-memory"
+              className="secondary"
+              disabled={memory !== null}
+              title={memory ? 'This solution already has memory' : undefined}
+              onClick={() => setAdding(!adding)}
+            >
+              Add memory
+            </button>
+          </div>
+        )}
+        {adding && !memory && project.repo.dir && (
+          <AddMemory dir={project.repo.dir} projectId={project.id} />
+        )}
+      </section>
+
+      <section className="card wide" data-testid="project-memory">
+        <h2>Memory</h2>
+        {memory ? (
+          <>
+            <p data-testid="memory-status">
+              <span className="badge">{memory.mode} mode</span> system <code>{memory.system}</code>{' '}
+              · seed {memory.seedVersion}
+              {project.memoryUpgradable ? ' (a newer seed is available)' : ''} · store{' '}
+              <code>{memory.store}</code> ·{' '}
+              {memory.commitPolicy === 'pr' ? 'pull requests' : 'direct commits'} · installed{' '}
+              {memory.installedAt}
+            </p>
+            <details>
+              <summary>The install report</summary>
+              <pre className="memory-report">{memory.report}</pre>
+            </details>
+          </>
+        ) : (
+          <p className="muted">No memory installed.</p>
+        )}
+        <h3>Code identifiers</h3>
+        <p className="muted">
+          This solution&apos;s distinctive code identifiers: function or class prefixes, package or
+          plugin slugs, internal endpoint hosts. Other solutions&apos; memory installs keep them
+          out. Never brand names, domains or servers.
+        </p>
+        {ids === null ? (
+          <p>
+            {project.identifiers.length ? (
+              project.identifiers.map((t, i) => (
+                <span key={t}>
+                  {i > 0 ? ', ' : ''}
+                  <code>{t}</code>
+                </span>
+              ))
+            ) : (
+              <span className="muted">None yet.</span>
+            )}{' '}
+            <button
+              className="secondary"
+              data-testid="identifiers-edit"
+              onClick={() => setIds(termsText(project.identifiers))}
+            >
+              Edit
+            </button>
+          </p>
+        ) : (
+          <>
+            <textarea
+              data-testid="identifiers"
+              rows={4}
+              value={ids}
+              onChange={(e) => setIds(e.target.value)}
+            />
+            <div className="actions">
+              <button data-testid="identifiers-save" onClick={() => void saveIds()}>
+                Save
+              </button>
+              <button className="secondary" onClick={() => setIds(null)}>
+                Cancel
+              </button>
+            </div>
+          </>
         )}
       </section>
 

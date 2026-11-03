@@ -20,6 +20,8 @@ export * from './preview.js';
 export * from './config.js';
 export * from './stacks.js';
 export * from './portfolio.js';
+export * from './memory.js';
+export * from './reverse-out.js';
 export * from './settings.js';
 export * from './stack-recommendation.js';
 export * from './intake.js';

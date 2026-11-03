@@ -25,6 +25,8 @@ export type LlmConfigSource = LlmConfig | (() => LlmConfig | undefined);
 export interface LlmRegistry {
   adapters: ReadonlyMap<LlmAdapterId, LlmAdapter>;
   probeAll(): Promise<Record<string, Capabilities>>;
+  /** Like `probeAll`, but each adapter first forgets what it remembered: a tool updated since shows its new version. */
+  refresh(): Promise<Record<string, Capabilities>>;
   /** First eligible adapter for the purpose, honouring an explicit or configured preference. */
   select(
     purpose: 'discovery' | 'analysis' | 'handoff',
@@ -53,9 +55,9 @@ export function anthropicKeySource(
 }
 
 /** One adapter that cannot be probed (e.g. a shim that needs a shell) must not abort the whole registry. */
-async function safeProbe(adapter: LlmAdapter): Promise<Capabilities> {
+async function safeProbe(adapter: LlmAdapter, again = false): Promise<Capabilities> {
   try {
-    return await adapter.probe();
+    return await (again && adapter.reprobe ? adapter.reprobe() : adapter.probe());
   } catch (e) {
     if (!(e instanceof ToolError)) throw e;
     return {
@@ -109,6 +111,11 @@ export function createLlmRegistry(deps: {
     async probeAll() {
       const out: Record<string, Capabilities> = {};
       for (const [id, a] of adapters) out[id] = await safeProbe(a);
+      return out;
+    },
+    async refresh() {
+      const out: Record<string, Capabilities> = {};
+      for (const [id, a] of adapters) out[id] = await safeProbe(a, true);
       return out;
     },
     async select(purpose, preferred) {

@@ -117,6 +117,11 @@ export class CliAdapter implements LlmAdapter {
     return this.#caps;
   }
 
+  reprobe(): Promise<Capabilities> {
+    this.#caps = undefined;
+    return this.probe();
+  }
+
   async invoke(req: CompleteRequest): Promise<RawReply> {
     const caps = await this.probe();
     if (!caps.eligible.discovery) {

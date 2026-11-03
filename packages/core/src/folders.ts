@@ -32,6 +32,8 @@ export interface FolderVerdict {
   stack: { supported: boolean; label: string } | null;
   /** `existing`: the portfolio project this folder already is (ADR-028), when the portfolio is on. */
   project?: { id: string; name: string } | null;
+  /** `existing`: the repository already has `.memory/` or `.memory-link` (plan 071). */
+  memoryPresent?: boolean;
   /** Reasons the folder cannot be used. Empty when `ok`. */
   problems: string[];
   /** Things worth knowing that do not block (for example, "no GitHub origin: push will be unavailable"). */

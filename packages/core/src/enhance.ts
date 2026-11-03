@@ -80,6 +80,9 @@ const REQUEST_CONTROL =
   /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g;
 /* eslint-enable no-control-regex */
 
+/** The most the owner may write to describe a change: the same limit the web form and the API accept. */
+export const REQUEST_MAX = 20000;
+
 /** The owner's request as data: control and bidi characters removed, lines kept, length capped. */
 export function sanitizeRequest(text: string, max = 4000): string {
   const t = text
@@ -363,7 +366,7 @@ export function buildDelivery(d: DeliveryInput): Map<string, RenderedFile> {
         '',
         '> Machine-recorded from the owner; shown as written (control characters removed).',
         '',
-        sanitizeRequest(d.request)
+        sanitizeRequest(d.request, REQUEST_MAX)
           .split('\n')
           .map((l) => `> ${l}`)
           .join('\n'),

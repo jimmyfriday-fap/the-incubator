@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react';
 import type { SettingsPatch, SettingsView } from '../../api-types.js';
-import { get, put } from '../api.js';
+import type { StackInfo } from '../../api-types.js';
+import { get, post, put } from '../api.js';
 import { TabPanel, Tabs } from './Tabs.js';
 
-type Section = 'models' | 'limits' | 'accounts';
+type Section = 'models' | 'limits' | 'stacks' | 'accounts';
+
+const KIND_NOTE: Record<StackInfo['kind'], string> = {
+  'built-in': 'Built in: the Incubator renders the whole project.',
+  retrieved: 'Created by its own official generator on your machine.',
+  workspace: 'Built in a fresh worktree of a repository you configure.',
+};
 
 const MODELS = [
   'opus',
@@ -47,6 +54,10 @@ export function Settings() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [section, setSection] = useState<Section>('models');
+  const [stacks, setStacks] = useState<StackInfo[] | null>(null);
+  const [stacksError, setStacksError] = useState<string | null>(null);
+  const [rechecked, setRechecked] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
 
   useEffect(() => {
     get<SettingsView>('/api/settings')
@@ -55,6 +66,12 @@ export function Settings() {
         setForm(toForm(v));
       })
       .catch((e: Error) => setError(e.message));
+  }, []);
+
+  useEffect(() => {
+    get<StackInfo[]>('/api/stacks')
+      .then(setStacks)
+      .catch((e: Error) => setStacksError(e.message));
   }, []);
 
   if (!view || !form) return <p className={error ? 'error' : 'muted'}>{error ?? 'Loading…'}</p>;
@@ -99,6 +116,19 @@ export function Settings() {
     }
   };
 
+  const recheck = async () => {
+    setRechecking(true);
+    setError(null);
+    try {
+      setView(await post<SettingsView>('/api/settings/recheck', {}));
+      setRechecked(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setRechecking(false);
+    }
+  };
+
   const e = view.effective;
   return (
     <div className="run" data-testid="settings-page">
@@ -139,10 +169,11 @@ export function Settings() {
         tabs={[
           { id: 'models', label: 'AI models' },
           { id: 'limits', label: 'Limits & tools' },
+          { id: 'stacks', label: 'Stacks' },
           { id: 'accounts', label: 'Accounts & about' },
         ]}
       />
-      <section className="card wide" hidden={section === 'accounts'}>
+      <section className="card wide" hidden={section === 'accounts' || section === 'stacks'}>
         <TabPanel name="settingstab" id="models" active={section}>
           <h3>AI for planning</h3>
           <label>
@@ -174,6 +205,9 @@ export function Settings() {
           {modelProblem(form.planningModel) && (
             <p className="error">{modelProblem(form.planningModel)}</p>
           )}
+          <p className="muted">
+            Updated a tool? Open Accounts &amp; about and choose Check again to see its new version.
+          </p>
           {planner && !planner.takesModel && form.planningModel.trim() && (
             <p className="warn">{planner.id} cannot be told which model to use; this is ignored.</p>
           )}
@@ -323,12 +357,62 @@ export function Settings() {
       <section
         className="card wide"
         role="tabpanel"
+        id="settingstab-panel-stacks"
+        aria-labelledby="settingstab-stacks"
+        data-testid="settingstab-panel-stacks"
+        hidden={section !== 'stacks'}
+      >
+        <h3>Stacks the Incubator knows</h3>
+        <p className="muted">
+          A new project starts from one of these. The recommendation on the new-project page picks
+          from this list.
+        </p>
+        {stacksError && <p className="error">{stacksError}</p>}
+        {!stacks && !stacksError && <p className="muted">Loading…</p>}
+        <ul className="plain" data-testid="stack-list">
+          {(stacks ?? []).map((s) => (
+            <li key={s.id} data-testid={`stack-${s.id}`}>
+              <strong>{s.label}</strong> <code>{s.id}</code>
+              <div className="muted">{KIND_NOTE[s.kind]}</div>
+              <div>{s.summary}</div>
+              <div className="muted">
+                For: {s.platforms.join(', ')}
+                {s.install && (
+                  <>
+                    {' '}
+                    · tool: <code>{s.install}</code>
+                  </>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section
+        className="card wide"
+        role="tabpanel"
         id="settingstab-panel-accounts"
         aria-labelledby="settingstab-accounts"
         data-testid="settingstab-panel-accounts"
         hidden={section !== 'accounts'}
       >
         <h3>Tools found</h3>
+        <div className="actions">
+          <button
+            className="secondary"
+            data-testid="recheck-tools"
+            disabled={rechecking}
+            onClick={() => void recheck()}
+          >
+            {rechecking ? 'Checking…' : 'Check again'}
+          </button>
+          {rechecked && (
+            <span className="ok" data-testid="tools-rechecked">
+              Checked just now.
+            </span>
+          )}
+        </div>
         <ul className="plain" data-testid="adapters">
           {view.adapters.map((a) => (
             <li key={a.id}>

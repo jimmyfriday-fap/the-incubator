@@ -29,6 +29,8 @@ export interface FolderCheck {
   stack: { supported: boolean; label: string } | null;
   /** The portfolio project this folder already is (ADR-028); absent when the portfolio is off. */
   project?: { id: string; name: string } | null;
+  /** `existing`: the repository already has `.memory/` or `.memory-link`, so Add memory is off (plan 071). */
+  memoryPresent?: boolean;
   problems: string[];
   warnings: string[];
 }
@@ -118,7 +120,7 @@ export interface Question {
 
 export interface RunListItem {
   runId: string;
-  kind: 'new' | 'adopt' | 'enhance' | 'scaffold';
+  kind: 'new' | 'adopt' | 'enhance' | 'scaffold' | 'memory';
   state: string;
   done: boolean;
   parked: string | null;
@@ -136,7 +138,7 @@ export interface RunListItem {
 
 export interface RunDetail {
   runId: string;
-  kind: 'new' | 'adopt' | 'enhance' | 'scaffold';
+  kind: 'new' | 'adopt' | 'enhance' | 'scaffold' | 'memory';
   state: string;
   done: boolean;
   /** A finished folder run whose agent did not finish the plan can continue coding (plan 037). */
@@ -174,6 +176,8 @@ export interface RunDetail {
   stopped: { by: string; state: string } | null;
   /** Folder runs: the coding, commit and push stages. */
   finish: FinishInfo | null;
+  /** Add memory runs (plan 071): the install, its report and the push decision. */
+  memory: MemoryInfo | null;
   /** The portfolio project this run belongs to (null until it is filed, or when the portfolio is off). */
   project: ProjectBrief | null;
   /** Which tool and model did each kind of work so far (ADR-029). */
@@ -232,6 +236,65 @@ export interface SettingsPatch {
   toolPaths?: Record<string, string>;
 }
 
+/** What a memory install left on a solution (plan 071). */
+export interface MemoryRecord {
+  mode: 'repo' | 'member';
+  system: string;
+  store: string;
+  seedVersion: string;
+  commitPolicy: 'pr' | 'direct';
+  installedAt: string;
+  report: string;
+}
+
+/** An Add memory run, as its run page shows it (plan 071). */
+export interface MemoryInfo {
+  stage: 'running' | 'checks' | 'push' | 'done';
+  dir: string;
+  system: string;
+  isolationTerms: string[];
+  seedVersion: string | null;
+  policy: 'pr' | 'direct' | null;
+  branch: string | null;
+  /** The playbook's report, verbatim: the review artifact. */
+  report: string | null;
+  verificationPassed: boolean | null;
+  kept: string[];
+  dropped: string[];
+  problems: string[];
+  effortApplied: boolean | null;
+  target: { repo: { owner: string; name: string } | null; reason: string | null };
+  pr: { number: number; url: string } | null;
+  pushed: boolean;
+  progress: {
+    turns: number;
+    toolCalls: number;
+    costUsd: number | null;
+    snippet: string | null;
+  } | null;
+}
+
+/** `GET /api/memory/defaults`: what the Add memory form starts from. */
+export interface MemoryDefaults {
+  system: string;
+  isolationTerms: string[];
+  seedVersion: string;
+  installed: MemoryRecord | null;
+  project: { id: string; name: string } | null;
+  model: string;
+  effort: string;
+  efforts: string[];
+}
+
+/** The Add memory choices (`POST /api/runs` with kind "memory"). */
+export interface MemoryChoices {
+  system: string;
+  isolationTerms: string[];
+  commitPolicy: 'auto' | 'pr' | 'direct';
+  model?: string;
+  effort?: string;
+}
+
 /** A project of the portfolio (ADR-028), as the run page shows it. */
 export interface ProjectBrief {
   id: string;
@@ -240,6 +303,10 @@ export interface ProjectBrief {
   stack: string | null;
   repo: { dir: string | null; url: string | null };
   runCount: number;
+  /** The memory installed into it (plan 071), or null. */
+  memory: MemoryRecord | null;
+  /** The seed shipped now is newer than the one installed. */
+  memoryUpgradable: boolean;
 }
 
 /** One card on the dashboard home (GET /api/portfolio). */
@@ -273,6 +340,8 @@ export interface ProjectDetail extends ProjectBrief {
   updatedAt: string;
   repo: { dir: string | null; url: string | null; remote: string | null };
   runs: ProjectRunInfo[];
+  /** Its distinctive code identifiers, kept out of other solutions' memory (plan 071). */
+  identifiers: string[];
 }
 
 /** What an enhance run shows: the scan, the request, and the outcome. */
@@ -416,7 +485,9 @@ export interface LogEntry {
 }
 
 export interface StartRunBody {
-  kind: 'new' | 'adopt' | 'enhance';
+  kind: 'new' | 'adopt' | 'enhance' | 'memory';
+  /** kind "memory" (plan 071): the Add memory choices; `dir` is the repository. */
+  memory?: MemoryChoices;
   narrative?: string;
   repo?: string;
   /** adopt and enhance: owner/name when the source is not a GitHub URL. */

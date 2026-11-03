@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FAKE_GITHUB_TOKEN } from '@incubator/core/testing';
 import { nodeExec } from '@incubator/runtime';
+import { STACK_CATALOG } from '@incubator/spec';
 import type {
   FolderCheck,
   LogEntry,
@@ -16,6 +17,7 @@ import type {
   RunListItem,
   SettingsView,
   SpecChange,
+  StackInfo,
   TreeFile,
 } from '../api-types.js';
 import { apiClient, seedAdoptRepo, startFakeServer } from '../testing-fixtures/fake-web.js';
@@ -252,6 +254,27 @@ describe('brownfield over the API', () => {
 
 describe('enhance over the API', () => {
   const REQUEST = 'Kitchen staff need to export the orders list as a CSV file.';
+
+  it('keeps a long change request whole, such as an uploaded markdown spec (plan 070)', async () => {
+    const { api, h } = await boot({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        repo: dir,
+        repoRef: 'octo/bare-node',
+      })
+    ).body;
+    await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
+    const line = 'Staff export the orders list as CSV, with the order id.';
+    const spec = ['# Orders export', '', ...Array.from({ length: 160 }, () => line)].join('\n');
+    expect(spec.length).toBeGreaterThan(8000);
+    expect((await api.post(`/api/runs/${runId}/request`, { narrative: spec })).status).toBe(200);
+    expect(h.engine.requestText(runId)).toBe(spec.trim());
+    // The server's own limit still holds.
+    const tooLong = 'x'.repeat(20001);
+    expect((await api.post(`/api/runs/${runId}/request`, { narrative: tooLong })).status).toBe(400);
+  });
 
   it('scans, asks what to change, previews the delivery and opens the pull request', async () => {
     const { api, h } = await boot({ enhance: 'export-orders' });
@@ -778,6 +801,84 @@ describe('folders, coding, and the commit and push requests over the API', () =>
     });
   });
 
+  it('reverses out of a cancelled run: refuses over uncommitted work, then removes the branch, the run and its record (plan 069)', async () => {
+    const { api, h } = await boot({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const branchOf = async (): Promise<string> =>
+      (
+        await nodeExec.run('git', ['branch', '--show-current'], { cwd: dir, timeoutMs: 30_000 })
+      ).stdout.trim();
+    const before = await branchOf();
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        dir,
+        repoRef: 'octo/bare-node',
+        request: 'Kitchen staff need to export the orders list as a CSV file.',
+      })
+    ).body;
+    await until(api, runId, (x) => !x.busy && x.parked?.state === 'REVIEW');
+    await api.post(`/api/runs/${runId}/approve`);
+    await until(api, runId, (x) => !x.busy && x.parked?.reason === 'needs_commit');
+    expect(await branchOf()).toMatch(/^incubator\/enhance-/);
+    // A finished-looking run is refused, and so is one with the agent's files still uncommitted.
+    await api.post(`/api/runs/${runId}/cancel`);
+    const preview = (
+      await api.get<{ allowed: boolean; refusal?: { code: string } }>(
+        `/api/runs/${runId}/reverse-out`,
+      )
+    ).body;
+    expect(preview).toMatchObject({ allowed: false, refusal: { code: 'dirty_tree' } });
+    expect((await api.post(`/api/runs/${runId}/reverse-out`, {})).status).toBe(422);
+    expect(existsSync(path.join(h.home, 'runs', runId))).toBe(true);
+
+    // The owner puts the folder back; now the branch goes, the folder is back where it was, the run is gone.
+    await nodeExec.run('git', ['reset', '--hard', '-q'], { cwd: dir, timeoutMs: 30_000 });
+    await nodeExec.run('git', ['clean', '-fdq'], { cwd: dir, timeoutMs: 30_000 });
+    const plan = (
+      await api.get<{ allowed: boolean; actions: { kind: string }[] }>(
+        `/api/runs/${runId}/reverse-out`,
+      )
+    ).body;
+    expect(plan.allowed).toBe(true);
+    expect(plan.actions.map((a) => a.kind)).toEqual(['delete-branch', 'remove-run-folder']);
+    const done = await api.post<{ removed: string[] }>(`/api/runs/${runId}/reverse-out`, {});
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect(done.status).toBe(200);
+    expect(await branchOf()).toBe(before);
+    const branches = await nodeExec.run('git', ['branch', '--list', 'incubator/*'], {
+      cwd: dir,
+      timeoutMs: 30_000,
+    });
+    expect(branches.stdout.trim()).toBe('');
+    expect(existsSync(path.join(h.home, 'runs', runId))).toBe(false);
+    expect((await api.get<RunListItem[]>('/api/runs')).body.map((r) => r.runId)).not.toContain(
+      runId,
+    );
+    expect((await api.get<ProjectCard[]>('/api/portfolio')).body).toEqual([]);
+  });
+
+  it('refuses to reverse out of a run that is still working (plan 069)', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'slow');
+    const { api, h } = await boot({ enhance: 'export-orders' });
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'enhance',
+        dir,
+        repoRef: 'octo/bare-node',
+        request: 'Kitchen staff need to export the orders list as a CSV file.',
+      })
+    ).body;
+    await until(api, runId, (x) => !x.busy && x.parked?.state === 'REVIEW');
+    await api.post(`/api/runs/${runId}/approve`);
+    await until(api, runId, (x) => x.busy && x.finish?.stage === 'coding');
+    const working = await api.post<{ error: string }>(`/api/runs/${runId}/reverse-out`, {});
+    expect(working.status).toBe(422);
+    expect(working.body.error).toMatch(/stop it first/);
+    expect(existsSync(path.join(h.home, 'runs', runId))).toBe(true);
+  });
+
   it('cancelling a run that is working stops it first, and closing the server stops what is running', async () => {
     vi.stubEnv('FAKE_AGENT_MODE', 'slow');
     const { api, h } = await boot({ enhance: 'export-orders' });
@@ -1107,6 +1208,16 @@ describe('retrieved stacks over the API (ADR-027)', () => {
 });
 
 describe('settings over the API (ADR-029)', () => {
+  it('checks the tools again on request and lists every stack', async () => {
+    const { api } = await boot();
+    const again = await api.post<SettingsView>('/api/settings/recheck', {});
+    expect(again.status).toBe(200);
+    expect(again.body.adapters.map((a) => a.id)).toContain('claude-cli');
+    const stacks = (await api.get<StackInfo[]>('/api/stacks')).body;
+    expect(stacks.map((s) => s.id)).toEqual(STACK_CATALOG.map((s) => s.id));
+    expect(stacks.find((s) => s.id === 'flutter')?.kind).toBe('retrieved');
+  });
+
   it('shows what the next run uses, saves a choice, refuses a bad one, and never carries a secret', async () => {
     const { api, h, server } = await boot();
     const first = (await api.get<SettingsView>('/api/settings')).body;

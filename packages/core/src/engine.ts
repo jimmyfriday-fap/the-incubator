@@ -92,7 +92,9 @@ import {
   type Portfolio,
   type PortfolioProject,
   type PortfolioRun,
+  type MemoryRecord,
 } from './portfolio.js';
+import { planReverseOut, type LeftBehind, type ReversePlan } from './reverse-out.js';
 import type { Prompter } from './prompter.js';
 import {
   reduce,
@@ -161,6 +163,7 @@ import {
   partStep,
   renderPrBody,
   resolveTargets,
+  REQUEST_MAX,
   sanitizeRequest,
   ticketId,
   type EnhancePlanRecord,
@@ -195,6 +198,26 @@ import {
   type BackshackFit,
   type BackshackPaths,
 } from './backshack.js';
+import {
+  MEMORY_ALLOWED_TOOLS,
+  MEMORY_BRANCH,
+  MEMORY_DEFAULT_EFFORT,
+  MEMORY_DEFAULT_MODEL,
+  REPO_STORE,
+  allowedMemoryPath,
+  checkMemoryInput,
+  checkTerms,
+  copySeed,
+  installedPolicy,
+  kebab,
+  memoryConsumptionLine,
+  memoryPrompt,
+  parseMemoryReport,
+  prefillIsolationTerms,
+  seedVersion,
+  type MemoryDetail,
+  type MemoryDone,
+} from './memory.js';
 
 /**
  * The identity of what the owner asked for. `existingRepo` (the base commit and the scan) is left
@@ -251,6 +274,7 @@ const PORTFOLIO_EVENTS = new Set([
   'spec.revision',
   'interrupted',
   'run.cancel',
+  'memory.installed',
 ]);
 
 /** Who asked the work to stop: the owner in the UI, a signal (Ctrl+C), or the app shutting down. */
@@ -359,6 +383,13 @@ export class Engine {
   /** INTAKE: creates the run and its first (empty) draft. */
   start(input: RunInput): string {
     if (input.stack === BACKSHACK_STACK) this.checkBackshackInput(input);
+    if (input.kind === 'memory') {
+      if (!input.dir || !input.memory)
+        throw new PolicyError('an Add memory run needs a folder and its memory choices', {
+          code: 'bad_memory_input',
+        });
+      input = { ...input, memory: checkMemoryInput(input.memory) };
+    }
     const { runId } = this.deps.store.create(input, { incubator: INCUBATOR_VERSION });
     this.record(runId, 'run.start', { runId, input });
     if (input.backshack) {
@@ -607,7 +638,10 @@ export class Engine {
       (e) => e.type === 'enhance.request' && e.seq > cut,
     );
     const given = cut > 0 ? '' : (this.state(runId).input.request ?? '');
-    return sanitizeRequest(typeof submitted?.['text'] === 'string' ? submitted['text'] : given);
+    return sanitizeRequest(
+      typeof submitted?.['text'] === 'string' ? submitted['text'] : given,
+      REQUEST_MAX,
+    );
   }
 
   /** The seq of the latest repository refresh (plan 025), or 0: what the owner said before it is asked again. */
@@ -710,7 +744,7 @@ export class Engine {
       throw new PolicyError(`run ${runId} is not waiting for a change request`, {
         code: 'not_waiting',
       });
-    const clean = sanitizeRequest(text);
+    const clean = sanitizeRequest(text, REQUEST_MAX);
     if (!clean)
       throw new PolicyError('describe what you want to change', { code: 'empty_request' });
     this.record(runId, 'enhance.request', { text: clean });
@@ -1151,6 +1185,69 @@ export class Engine {
     this.record(runId, 'run.cancel', reason ? { reason: cleanAgentText(reason, 200) } : {});
   }
 
+  // --- reversing out (plan 069) -----------------------------------------------------------------
+
+  /** What reversing out would remove and what it would leave, from the run's record and the folder as it is now. */
+  async reverseOutPreview(runId: string): Promise<ReversePlan> {
+    const s = this.state(runId);
+    const git = this.deps.publish?.git;
+    const dir = s.input.dir ? path.resolve(s.input.dir) : null;
+    let backshack: { repo: string; dir: string } | null = null;
+    if (this.isBackshack(s) && s.input.backshack) {
+      const paths = this.backshackPaths();
+      const wt = backshackWorktree(paths, s.input.backshack.fit.toolSlug);
+      // why: only the worktree this tool's name maps to is ever removed, never a path the record names.
+      if (dir && path.resolve(wt.dir) === dir) backshack = { repo: paths.devRepo, dir };
+    }
+    const here = dir && existsSync(dir) && git ? dir : null;
+    return planReverseOut({
+      state: s,
+      working: this.#active.has(runId),
+      runFolder: this.deps.store.runDir(runId),
+      dir,
+      currentBranch: here && git ? await git.currentBranch(here) : null,
+      dirtyCount: here && git ? (await git.status(here)).length : 0,
+      backshack,
+    });
+  }
+
+  /**
+   * Undoes a run that did not finish: its branch in the owner's folder (or its Backshack worktree), its folder
+   * under the Incubator home and its place in the portfolio. Never deletes through a shell, never discards the
+   * owner's uncommitted work, and only names what the run left on GitHub.
+   */
+  async reverseOut(
+    runId: string,
+    opts: { confirmDirtyWorktree?: boolean } = {},
+  ): Promise<{ removed: string[]; leftBehind: LeftBehind[] }> {
+    const plan = await this.reverseOutPreview(runId);
+    if (!plan.allowed) throw new PolicyError(plan.refusal!.message, { code: plan.refusal!.code });
+    if (plan.needsConfirm && !opts.confirmDirtyWorktree)
+      throw new PolicyError('the worktree has uncommitted files: confirm to remove it anyway', {
+        code: 'confirm_dirty_worktree',
+      });
+    const git = this.deps.publish?.git;
+    const removed: string[] = [];
+    for (const a of plan.actions) {
+      switch (a.kind) {
+        case 'remove-worktree':
+          if (existsSync(a.dir)) await git!.worktreeRemove(a.repo, a.dir, a.dirtyCount > 0);
+          removed.push(`the worktree ${a.dir}`);
+          break;
+        case 'delete-branch':
+          if (a.returnTo) await git!.checkout(a.dir, a.returnTo);
+          if (await git!.deleteBranch(a.dir, a.branch)) removed.push(`the branch ${a.branch}`);
+          break;
+        case 'remove-run-folder':
+          this.deps.store.remove(runId);
+          removed.push('the run and its working copy');
+          break;
+      }
+    }
+    this.deps.portfolio?.detachRun(runId);
+    return { removed, leftBehind: plan.leftBehind };
+  }
+
   // --- settings and models (ADR-029) -------------------------------------------------------------
 
   private cfg(): IncubatorConfig {
@@ -1300,6 +1397,7 @@ export class Engine {
 
   private portfolioRequest(runId: string): string | null {
     const s = this.state(runId);
+    if (s.input.kind === 'memory') return `Add memory (${s.input.memory?.system ?? 'repo'})`;
     const text = s.input.kind === 'enhance' ? this.requestText(runId) : (s.input.narrative ?? '');
     return text ? sanitizeRequest(text, 600) : null;
   }
@@ -1365,6 +1463,9 @@ export class Engine {
           }
           case 'spec.revision':
             if (x['final'] === true) this.portfolioFromSpec(e.runId, p);
+            break;
+          case 'memory.installed':
+            p.memory = x['record'] as NonNullable<PortfolioProject['memory']>;
             break;
         }
       });
@@ -1825,7 +1926,16 @@ export class Engine {
   /** Explains a folder the owner chose before a run starts (the wizard, the CLI). Changes nothing. */
   async inspectFolder(folder: string, purpose: FolderPurpose): Promise<FolderVerdict> {
     if (!this.deps.publish) throw new ToolError('folders need git dependencies');
-    const v = await inspectFolder(this.deps.publish.git, folder, purpose);
+    const found = await inspectFolder(this.deps.publish.git, folder, purpose);
+    const v =
+      purpose === 'existing' && found.path && found.exists
+        ? {
+            ...found,
+            memoryPresent:
+              existsSync(path.join(found.path, '.memory')) ||
+              existsSync(path.join(found.path, '.memory-link')),
+          }
+        : found;
     if (!this.deps.portfolio || purpose !== 'existing' || !v.path) return v;
     const project = await this.portfolioFor(v.path);
     return { ...v, project: project ? { id: project.id, name: project.name } : null };
@@ -2211,7 +2321,7 @@ export class Engine {
   /** The review the owner needs at the commit request, computed from the folder as it is now. */
   async finishDetail(runId: string): Promise<FinishDetail | null> {
     const s = this.state(runId);
-    if (!s.input.dir || !this.deps.publish) return null;
+    if (!s.input.dir || !this.deps.publish || s.input.kind === 'memory') return null;
     // Nothing to review (and the spec may still be a draft) until the run reaches the coding stage.
     const reached =
       s.steps['code.start'] !== undefined ||
@@ -2672,6 +2782,376 @@ export class Engine {
     this.record(runId, 'finish.push', { action });
   }
 
+  // --- Add memory (plan 071, ADR-031) ----------------------------------------------------------
+
+  /**
+   * What the Add memory form starts from, for a portfolio project or a folder: the system name (the
+   * solution's name, kebab-case), the isolation terms (every other solution's code identifiers), the shipped
+   * seed version, and the memory already recorded, if any.
+   */
+  async memoryDefaults(target: { projectId?: string; dir?: string }): Promise<{
+    system: string;
+    isolationTerms: string[];
+    seedVersion: string;
+    installed: MemoryRecord | null;
+    project: { id: string; name: string } | null;
+  }> {
+    const project = target.projectId
+      ? this.portfolioGet(target.projectId)
+      : target.dir
+        ? await this.portfolioFor(path.resolve(target.dir))
+        : undefined;
+    if (target.projectId && !project)
+      throw new PolicyError(`no project ${target.projectId}`, { code: 'not_found' });
+    const name = project?.name ?? (target.dir ? path.basename(path.resolve(target.dir)) : '');
+    const system = project?.memory?.system ?? (kebab(name) || 'solution');
+    return {
+      system,
+      isolationTerms: prefillIsolationTerms(
+        this.portfolioList(),
+        project ? [project.id] : [],
+        system,
+      ),
+      seedVersion: seedVersion(),
+      installed: project?.memory ?? null,
+      project: project ? { id: project.id, name: project.name } : null,
+    };
+  }
+
+  /** The owner's list of a project's distinctive code identifiers (plan 071). */
+  setIdentifiers(projectId: string, list: readonly string[]): PortfolioProject {
+    const pf = this.deps.portfolio;
+    if (!pf) throw new ToolError('the portfolio is off');
+    const terms = checkTerms(list);
+    const p = pf.update(projectId, (x) => {
+      x.identifiers = terms;
+    });
+    if (!p) throw new PolicyError(`no project ${projectId}`, { code: 'not_found' });
+    return p;
+  }
+
+  /**
+   * CODE for an Add memory run: checks the folder, gives the agent a copy of the seed and the playbook's inputs,
+   * then checks what it committed against the rules the Incubator must never break. The agent makes the
+   * playbook's commits; it never pushes (ADR-031).
+   */
+  private async memoryRunStep(runId: string, s: RunState): Promise<void> {
+    if (s.steps['memory.done']?.status === 'ok') return this.enter(runId, 'PUSH');
+    const git = this.deps.publish?.git;
+    if (!git || !this.deps.handoff)
+      throw new ToolError('Add memory needs git and a coding agent CLI');
+    const dir = this.runDir(s);
+    await this.effect(runId, async () => {
+      if (this.state(runId).steps['memory.start']?.status !== 'ok') {
+        // Spec rule 2: a folder with uncommitted changes parks `dirty_tree` before anything runs.
+        await this.checkOwnerFolder(runId, this.state(runId));
+        const project = await this.portfolioFor(dir);
+        if (project?.memory)
+          throw new ParkError(
+            'memory_installed',
+            `${project.name} already has memory (${project.memory.mode} mode, seed ${project.memory.seedVersion})`,
+          );
+        if (existsSync(path.join(dir, '.memory')) || existsSync(path.join(dir, '.memory-link')))
+          throw new ParkError(
+            'memory_present',
+            'the repository already has .memory/ or .memory-link: Add memory is a first install, not an upgrade',
+          );
+        if (!(await git.identity(dir)))
+          throw new ParkError(
+            'no_git_identity',
+            'git does not know who you are, and the install is committed: run `git config --global user.name "Your Name"` and `git config --global user.email you@example.com`, then resume',
+          );
+        const seed = path.join(this.deps.store.runDir(runId), 'memory-seed');
+        const version = copySeed(seed);
+        const base = this.state(runId).steps['folder.base']!.data as {
+          head: string;
+          branch: string | null;
+        };
+        this.record(runId, 'step.ok', {
+          step: 'memory.start',
+          data: { seed, seedVersion: version, base: base.head, branch: base.branch },
+        });
+      }
+      if (this.state(runId).steps['memory.agent']?.status !== 'ok')
+        await this.runMemoryAgent(runId);
+      const done = await this.checkMemoryInstall(runId);
+      this.record(runId, 'step.ok', { step: 'memory.done', data: done });
+    });
+    this.enter(runId, 'PUSH');
+  }
+
+  private async runMemoryAgent(runId: string): Promise<void> {
+    const s = this.state(runId);
+    const m = s.input.memory!;
+    const dir = this.runDir(s);
+    const start = s.steps['memory.start']!.data as { seed: string };
+    const agent = this.cfg().agents?.primary ?? 'claude';
+    const caps = await this.deps.handoff!.probe(AGENT_ADAPTERS[agent]);
+    if (!caps.installed || !caps.path)
+      throw new PolicyError(`${AGENT_ADAPTERS[agent]} is not installed`, { code: 'agent_missing' });
+    if (!caps.flags.allowedTools)
+      throw new ParkError(
+        'checks_unenforceable',
+        `${AGENT_ADAPTERS[agent]} cannot restrict which commands an agent runs, so it cannot install memory`,
+      );
+    const model = m.model ?? MEMORY_DEFAULT_MODEL;
+    const effort = m.effort ?? MEMORY_DEFAULT_EFFORT;
+    if (!caps.flags.effort)
+      this.record(runId, 'step.warn', {
+        step: 'memory.effort',
+        message: `${AGENT_ADAPTERS[agent]} has no flag for reasoning effort, so "${effort}" was not applied`,
+      });
+    const ceilings = { ...DEFAULT_RUN_CEILINGS };
+    const plan: HandoffPlan = {
+      agent,
+      bin: caps.path,
+      argv: buildHandoffArgv(caps, ceilings, MEMORY_ALLOWED_TOOLS, model, {
+        addDirs: [start.seed],
+        effort,
+      }),
+      model,
+      cwd: dir,
+      planPath: path.join(start.seed, 'playbooks', 'deploy-repo.md'),
+      ceilings,
+      unenforceable: [],
+    };
+    const prompt = memoryPrompt({
+      target: dir,
+      seed: start.seed,
+      // Spec rule 5: the only thing another system contributes is this list of terms.
+      terms: m.isolationTerms,
+      policy: m.commitPolicy,
+      today: this.deps.clock.now().toISOString().slice(0, 10),
+    });
+    let last = 0;
+    const out = await this.runHandoff(
+      runId,
+      plan,
+      prompt,
+      null,
+      { mode: 'none', commands: [] },
+      {
+        onProgress: (p) => {
+          if (last && Date.now() - last < 1000) return;
+          last = Date.now();
+          this.record(runId, 'handoff.progress', { ...p });
+        },
+        summaryMax: 20_000,
+      },
+    );
+    if (out.stopped) throw new InterruptedError(`run ${runId} was stopped`);
+    this.record(runId, 'step.ok', {
+      step: 'memory.agent',
+      data: { ...agentReport(out), effortApplied: Boolean(caps.flags.effort) },
+    });
+  }
+
+  /**
+   * The Incubator's own checks of the install (spec rules 2, 4a and 6, and the playbook's ground rule 2), run
+   * after the agent stops and again on every resume: a broken rule parks, and nothing is pushed.
+   */
+  private async checkMemoryInstall(runId: string): Promise<MemoryDone> {
+    const s = this.state(runId);
+    const git = this.deps.publish!.git;
+    const dir = this.runDir(s);
+    const m = s.input.memory!;
+    const start = s.steps['memory.start']!.data as {
+      seedVersion: string;
+      base: string;
+      branch: string | null;
+    };
+    const agent = s.steps['memory.agent']!.data as AgentReport;
+    const report = parseMemoryReport(agent.summary);
+    const problems: string[] = [];
+    if (agent.tripped) problems.push(`the agent stopped at a run limit (${agent.tripped})`);
+    else if (agent.exitCode !== 0) problems.push(`the agent exited with code ${agent.exitCode}`);
+    if (!report) problems.push("the agent did not end with the playbook's report");
+    const changes = await git.status(dir);
+    if (changes.length)
+      problems.push(
+        `uncommitted changes were left: ${changes
+          .slice(0, 8)
+          .map((e) => e.path)
+          .join(', ')}`,
+      );
+    const head = await git.headSha(dir);
+    const branch = await git.currentBranch(dir);
+    const changed =
+      head && head !== start.base
+        ? (await git.diffNameStatus(dir, start.base, head)).map(([, p]) => p)
+        : [];
+    if (changed.length === 0) problems.push('nothing was committed');
+    if (changed.includes('AGENTS.md')) problems.push('AGENTS.md was changed (it never may be)');
+    const outside = changed.filter((p) => !allowedMemoryPath(p));
+    if (outside.length)
+      problems.push(`files outside the memory install changed: ${outside.slice(0, 8).join(', ')}`);
+    const policy = installedPolicy(dir);
+    if (!policy) problems.push('.memory/memory.conf names no commit policy');
+    else if (m.commitPolicy !== 'auto' && policy !== m.commitPolicy)
+      problems.push(`the install used the ${policy} policy, but ${m.commitPolicy} was chosen`);
+    if (policy === 'pr' && branch !== MEMORY_BRANCH)
+      problems.push(
+        `the pr policy works on ${MEMORY_BRANCH}, but the folder is on ${branch ?? 'a detached HEAD'}`,
+      );
+    if (policy === 'direct' && branch !== start.branch)
+      problems.push(
+        `the direct policy commits to ${start.branch ?? 'the branch it started on'}, but the folder is on ${branch ?? 'a detached HEAD'}`,
+      );
+    const result = {
+      report: report?.text ?? agent.summary,
+      policy,
+      branch,
+      head,
+      seedVersion: start.seedVersion,
+      kept: report?.kept ?? [],
+      dropped: report?.dropped ?? [],
+      verificationPassed: report?.verificationPassed ?? false,
+      problems,
+    };
+    this.record(runId, 'memory.result', result);
+    if (problems.length)
+      throw new ParkError(
+        'memory_rules_broken',
+        `the install broke a rule, so nothing was pushed: ${problems.join('; ')}. Fix the folder and resume, or cancel the run.`,
+        { problems },
+      );
+    if (!result.verificationPassed)
+      throw new ParkError(
+        'memory_verify_failed',
+        "the playbook's own verification did not all pass (see its report), so nothing was pushed. Fix the install and resume, or cancel the run.",
+      );
+    return {
+      seedVersion: start.seedVersion,
+      policy: policy!,
+      branch: branch!,
+      head: head!,
+      report: result.report ?? '',
+      kept: result.kept,
+      dropped: result.dropped,
+    };
+  }
+
+  /**
+   * PUSH for an Add memory run: the report is the review artifact. With a GitHub origin the owner decides the
+   * push (and, for `pr`, the pull request); without one the install stays local. The Incubator never merges.
+   */
+  private async memoryPushStep(runId: string, s: RunState): Promise<void> {
+    const done = s.steps['memory.done']!.data as MemoryDone;
+    const dir = this.runDir(s);
+    const target = this.pushTarget(runId, s);
+    const decision = target.repo
+      ? this.entries(runId).findLast((e) => e.type === 'finish.push')
+      : undefined;
+    if (target.repo && !decision)
+      throw new ParkError(
+        'needs_push',
+        `push ${done.branch} to ${target.repo.owner}/${target.repo.name}${done.policy === 'pr' ? ' and open a pull request' : ''}?`,
+      );
+    const pushed = decision?.['action'] === 'push';
+    if (target.repo && pushed) {
+      const repo = target.repo;
+      await this.effect(runId, async () => {
+        if (done.policy === 'pr') {
+          const pr = await this.adopter().publish(
+            this.adoptContext(runId),
+            dir,
+            repo,
+            done.report,
+            undefined,
+            {
+              prefix: 'memory',
+              commitStep: 'memory.done',
+              title: `Memory infrastructure v${done.seedVersion}`,
+              fallbackBranch: MEMORY_BRANCH,
+            },
+          );
+          this.record(runId, 'finish.summary', {
+            pr,
+            repo: `https://github.com/${repo.owner}/${repo.name}`,
+          });
+        } else if (this.state(runId).steps['memory.push']?.status !== 'ok') {
+          const pub = this.deps.publish!;
+          const token = await pub.resolveToken();
+          if (!token) throw new PolicyError('no GitHub token to push with', { code: 'no_token' });
+          await pub.git.push(
+            dir,
+            pub.github(token.token).remoteUrl(repo),
+            `HEAD:refs/heads/${done.branch}`,
+            token.token,
+          );
+          this.record(runId, 'step.ok', { step: 'memory.push', data: { branch: done.branch } });
+        }
+      });
+    }
+    const record: NonNullable<PortfolioProject['memory']> = {
+      mode: 'repo',
+      system: s.input.memory!.system,
+      store: REPO_STORE,
+      seedVersion: done.seedVersion,
+      commitPolicy: done.policy,
+      installedAt: this.deps.clock.now().toISOString().slice(0, 10),
+      report: done.report,
+    };
+    this.record(runId, 'memory.installed', { record });
+    this.record(runId, 'run.done', {
+      ...(pushed ? {} : { committedLocally: true, local: dir }),
+      ...(target.repo ? {} : { reason: target.reason }),
+    });
+  }
+
+  /** The run page's view of an Add memory run (plan 071); null for other runs. */
+  memoryDetail(runId: string): MemoryDetail | null {
+    const s = this.state(runId);
+    const m = s.input.memory;
+    if (s.input.kind !== 'memory' || !m) return null;
+    const at = s.state === 'PARKED' ? s.parked?.state : s.state;
+    const entries = this.entries(runId);
+    const result = entries.findLast((e) => e.type === 'memory.result');
+    const agent = s.steps['memory.agent']?.data as { effortApplied?: boolean } | undefined;
+    const progress = entries.findLast((e) => e.type === 'handoff.progress');
+    const pr = entries.findLast((e) => e.type === 'finish.summary')?.['pr'] as
+      { number: number; url: string } | undefined;
+    const strings = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+    const stage: MemoryDetail['stage'] = s.done
+      ? 'done'
+      : at === 'PUSH'
+        ? 'push'
+        : result && s.parked?.reason.startsWith('memory_')
+          ? 'checks'
+          : 'running';
+    return {
+      stage,
+      dir: s.input.dir ?? '',
+      system: m.system,
+      isolationTerms: m.isolationTerms,
+      seedVersion:
+        (s.steps['memory.start']?.data as { seedVersion?: string } | undefined)?.seedVersion ??
+        null,
+      policy: (result?.['policy'] as 'pr' | 'direct' | null | undefined) ?? null,
+      branch: (result?.['branch'] as string | null | undefined) ?? null,
+      report: typeof result?.['report'] === 'string' ? result['report'] : null,
+      verificationPassed:
+        typeof result?.['verificationPassed'] === 'boolean' ? result['verificationPassed'] : null,
+      kept: strings(result?.['kept']),
+      dropped: strings(result?.['dropped']),
+      problems: strings(result?.['problems']),
+      effortApplied: agent ? agent.effortApplied !== false : null,
+      target: this.pushTarget(runId, s),
+      pr: pr ?? null,
+      pushed: s.steps['memory.push']?.status === 'ok' || s.steps['memory.pr']?.status === 'ok',
+      progress:
+        stage === 'running' && progress
+          ? {
+              turns: Number(progress['turns'] ?? 0),
+              toolCalls: Number(progress['toolCalls'] ?? 0),
+              costUsd: typeof progress['costUsd'] === 'number' ? progress['costUsd'] : null,
+              snippet: typeof progress['snippet'] === 'string' ? progress['snippet'] : null,
+            }
+          : null,
+    };
+  }
+
   /**
    * Prepares `incubator handoff`: the repository (scaffold-only output, or a fresh clone of the
    * published repo), the agent's headless argv from its probed capabilities, the ceilings and the
@@ -2770,14 +3250,22 @@ export class Engine {
       ...(env ? { env } : {}),
       unenforceable: [],
     };
+    // Plan 071 (spec §6): a solution with memory reads it first and writes back to it at the end.
+    const memory = this.deps.portfolio?.forRun(runId)?.memory;
     return {
       plan,
       prompt:
+        (memory
+          ? `${memoryConsumptionLine(memory.store)}
+
+`
+          : '') +
         handoffPrompt(
           readFileSync(planPath, 'utf8'),
           external ? { checks: checks.commands } : undefined,
           contract !== null ? { contract } : undefined,
-        ) + (opts.continuation ? `\n${continuationText(opts.continuation)}` : ''),
+        ) +
+        (opts.continuation ? `\n${continuationText(opts.continuation)}` : ''),
       ticket: activeTicket(repo, spec, delivered?.features.map(ticketId)),
       checks,
     };
@@ -2817,6 +3305,7 @@ export class Engine {
       onEvent?: (chunk: string) => void;
       onProgress?: (p: HandoffProgress) => void;
       signal?: AbortSignal;
+      summaryMax?: number;
     },
   ): Promise<HandoffOutcome> {
     this.record(runId, 'handoff.launch', {
@@ -2833,6 +3322,7 @@ export class Engine {
       ...(opts.onEvent ? { onEvent: opts.onEvent } : {}),
       ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
       ...(opts.signal ? { signal: opts.signal } : this.sig(runId)),
+      ...(opts.summaryMax ? { summaryMax: opts.summaryMax } : {}),
     });
     this.record(runId, 'handoff.result', { ...outcome });
     return outcome;
@@ -3360,7 +3850,9 @@ export class Engine {
       ? `${asked}\n\nCorrections you gave at review:\n${corrections.map((c) => `- ${c}`).join('\n')}`
       : asked;
     // why: a second refresh before the request was confirmed keeps the text from the first.
-    const previous = asked ? sanitizeRequest(withCorrections) : (this.previousRequest(runId) ?? '');
+    const previous = asked
+      ? sanitizeRequest(withCorrections, REQUEST_MAX)
+      : (this.previousRequest(runId) ?? '');
     // why: the summary is only rewritten when the model call succeeds; the old snapshot's must not survive.
     rmSync(this.enhanceFile(runId, 'analysis-summary.md'), { force: true });
     this.record(runId, 'repo.refresh', {
@@ -3477,7 +3969,9 @@ export class Engine {
         const s = this.state(runId);
         switch (s.state) {
           case 'INTAKE':
-            if (s.input.repo) this.enter(runId, 'ANALYZE');
+            // Plan 071: an Add memory run plans nothing; the seed's playbook is its plan.
+            if (s.input.kind === 'memory') this.enter(runId, 'CODE');
+            else if (s.input.repo) this.enter(runId, 'ANALYZE');
             else this.enter(runId, 'DRAFT_SPEC', 1);
             break;
           case 'ANALYZE':
@@ -3519,13 +4013,15 @@ export class Engine {
             await this.handoffStep(runId);
             break;
           case 'CODE':
-            await this.codeStep(runId, s);
+            if (s.input.kind === 'memory') await this.memoryRunStep(runId, s);
+            else await this.codeStep(runId, s);
             break;
           case 'COMMIT':
             await this.commitStep(runId, s);
             break;
           case 'PUSH':
-            await this.pushStep(runId, s);
+            if (s.input.kind === 'memory') await this.memoryPushStep(runId, s);
+            else await this.pushStep(runId, s);
             break;
           case 'DONE':
           case 'PARKED':

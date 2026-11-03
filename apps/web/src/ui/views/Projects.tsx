@@ -58,6 +58,11 @@ export function ProjectGrid({ projects }: { projects: ProjectCard[] }) {
           >
             <strong>{p.name}</strong>
             {p.stack && <span className="badge">{p.stack}</span>}
+            {p.memory && (
+              <span className="badge" data-testid="project-memory-badge">
+                memory {p.memory.mode} · {p.memory.system} · {p.memory.seedVersion}
+              </span>
+            )}
             <span className="project-summary">{p.summary || 'No summary yet.'}</span>
             {whereIs(p) && <span className="muted project-where">{whereIs(p)}</span>}
             <span className="muted">

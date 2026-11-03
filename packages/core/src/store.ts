@@ -18,10 +18,11 @@ import {
 } from '@incubator/runtime';
 import { serializeSpec } from '@incubator/spec';
 import type { BackshackDecision } from './backshack.js';
+import type { MemoryRunInput } from './memory.js';
 import { Journal } from './journal.js';
 
 export interface RunInput {
-  kind: 'new' | 'adopt' | 'enhance' | 'scaffold';
+  kind: 'new' | 'adopt' | 'enhance' | 'scaffold' | 'memory';
   narrative?: string;
   repo?: string;
   specOnly?: boolean;
@@ -63,6 +64,11 @@ export interface RunInput {
    */
   stack?: 'backshack-tool';
   backshack?: BackshackDecision;
+  /**
+   * Plan 071: an "Add memory" run on the folder `dir` (repo mode). The memory seed's playbook runs in an
+   * agent session that commits the install; the owner then decides the push and the pull request.
+   */
+  memory?: MemoryRunInput;
 }
 
 /** `~/.incubator` layout (TDD §2.5): config.json, runs/<id>/{run.json,journal.jsonl,spec/,workspace/,logs/}, cache/. */

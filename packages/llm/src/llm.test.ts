@@ -590,3 +590,33 @@ describe('registry', () => {
     expect((await reg2.select('analysis')).id).toBe('anthropic-api');
   });
 });
+
+describe('checking a tool again', () => {
+  // A hand-made Exec: `--version` prints whatever `shown.version` holds right now, as after `claude update`.
+  const shown = { version: '2.1.306' };
+  const exec = {
+    which: () => Promise.resolve({ path: 'C:/bin/claude' }),
+    run: (_bin: string, args: readonly string[]) =>
+      Promise.resolve({
+        code: 0,
+        stdout: args[0] === '--version' ? `${shown.version} (Claude Code)` : COPILOT_HELP,
+        stderr: '',
+      }),
+  } as unknown as Exec;
+
+  it('keeps the version it found until refresh asks the tool again', async () => {
+    shown.version = '2.1.306';
+    const home = mkdtempSync(path.join(tmpdir(), 'home-'));
+    const reg = createLlmRegistry({
+      exec,
+      keychain: new MemoryKeychain(),
+      env: { INCUBATOR_HOME: home },
+    });
+    expect((await reg.probeAll())['claude-cli']?.version).toBe('2.1.306 (Claude Code)');
+    shown.version = '2.1.400';
+    expect((await reg.probeAll())['claude-cli']?.version).toBe('2.1.306 (Claude Code)');
+    expect((await reg.refresh())['claude-cli']?.version).toBe('2.1.400 (Claude Code)');
+    // The new version is what later probes report too.
+    expect((await reg.probeAll())['claude-cli']?.version).toBe('2.1.400 (Claude Code)');
+  });
+});

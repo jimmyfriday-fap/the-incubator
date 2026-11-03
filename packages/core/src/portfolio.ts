@@ -47,6 +47,28 @@ export interface PortfolioProject {
   updatedAt: string;
   /** Newest first. */
   runs: PortfolioRun[];
+  /**
+   * The project's distinctive code identifiers (function or class prefixes, package or plugin slugs,
+   * internal endpoint hosts), never brand names, domains or servers. Other projects' memory installs keep
+   * them out of their stores (plan 071). Absent in files written before it.
+   */
+  identifiers?: string[];
+  /** The agent memory installed into the project (plan 071); absent when there is none. */
+  memory?: MemoryRecord;
+}
+
+/** What a memory install left on a project (docs/incubator-memory-feature.md §4). */
+export interface MemoryRecord {
+  /** `repo`: the store is `.memory/` inside the repository. `member`: it belongs to a system's store. */
+  mode: 'repo' | 'member';
+  system: string;
+  /** `.memory/` in repo mode; the store repository's path or URL for a member. */
+  store: string;
+  seedVersion: string;
+  commitPolicy: 'pr' | 'direct';
+  installedAt: string;
+  /** The playbook's final report, verbatim. */
+  report: string;
 }
 
 interface PortfolioFile {
@@ -190,6 +212,20 @@ export class Portfolio {
     );
     this.write(data);
     return project;
+  }
+
+  /**
+   * Forgets a run (it was reversed out). A project left with no runs is forgotten too: it is only a record,
+   * and the marker in the owner's repository lets the next run find it again.
+   */
+  detachRun(runId: string): void {
+    const data = this.read();
+    const hit = data.projects.find((p) => p.runs.some((r) => r.runId === runId));
+    if (!hit) return;
+    hit.runs = hit.runs.filter((r) => r.runId !== runId);
+    if (hit.runs.length === 0) data.projects = data.projects.filter((p) => p !== hit);
+    else hit.updatedAt = this.now();
+    this.write(data);
   }
 
   /** The project a run belongs to, if any. */

@@ -10,7 +10,12 @@ import {
 import {
   INCUBATOR_VERSION,
   INTAKE_RUN_CEILINGS,
+  MEMORY_DEFAULT_EFFORT,
+  MEMORY_DEFAULT_MODEL,
+  MEMORY_EFFORTS,
   hardenSpec,
+  olderSeed,
+  seedVersion,
   type Engine,
   type FolderPurpose,
   type IntakeSource,
@@ -29,6 +34,7 @@ import {
 import type {
   BackshackStartBody,
   BackshackStartResponse,
+  MemoryDefaults,
   ProjectBrief,
   ProjectCard,
   ProjectDetail,
@@ -107,12 +113,24 @@ function sendError(reply: FastifyReply, err: unknown): FastifyReply {
   return reply.code(status).send(body);
 }
 
+/** A solution's memory was installed from an older seed than the one shipped now (plan 071). */
+function memoryUpgradable(installed: string): boolean {
+  try {
+    return olderSeed(installed, seedVersion());
+  } catch {
+    // why: a missing or damaged seed must not break the project list; there is simply nothing to upgrade to.
+    return false;
+  }
+}
+
 function title(engine: Engine, runId: string): string {
   const s = engine.state(runId);
   const text =
-    s.input.kind === 'adopt' || s.input.kind === 'enhance'
-      ? (s.input.repo ?? '')
-      : (s.input.narrative ?? '');
+    s.input.kind === 'memory'
+      ? `Add memory: ${s.input.dir ?? ''}`
+      : s.input.kind === 'adopt' || s.input.kind === 'enhance'
+        ? (s.input.repo ?? '')
+        : (s.input.narrative ?? '');
   return text.length > 80 ? `${text.slice(0, 77)}…` : text;
 }
 
@@ -344,6 +362,8 @@ export function createApp(opts: ServerOptions): WebApp {
     stack: p.stack,
     repo: { dir: p.repo.dir, url: p.repo.url },
     runCount: p.runs.length,
+    memory: p.memory ?? null,
+    memoryUpgradable: p.memory ? memoryUpgradable(p.memory.seedVersion) : false,
   });
 
   app.get('/api/portfolio', (): ProjectCard[] =>
@@ -374,8 +394,73 @@ export function createApp(opts: ServerOptions): WebApp {
       updatedAt: p.updatedAt,
       repo: { dir: p.repo.dir, url: p.repo.url, remote: p.repo.remote },
       runs: p.runs.map((r) => ({ ...r, available: onDisk.has(r.runId) })),
+      identifiers: p.identifiers ?? [],
     };
   });
+
+  // Add memory (plan 071): a project's code identifiers, and what the Add memory form starts from.
+  app.put<{ Params: { id: string }; Body: { identifiers: string[] } }>(
+    '/api/portfolio/:id/identifiers',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['identifiers'],
+          properties: {
+            identifiers: {
+              type: 'array',
+              maxItems: 200,
+              items: { type: 'string', maxLength: 100 },
+            },
+          },
+        },
+      },
+    },
+    (req, reply) => {
+      try {
+        return {
+          identifiers: engine.setIdentifiers(req.params.id, req.body.identifiers).identifiers ?? [],
+        };
+      } catch (err) {
+        return sendError(reply, err);
+      }
+    },
+  );
+
+  app.get<{ Querystring: { projectId?: string; dir?: string } }>(
+    '/api/memory/defaults',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            projectId: { type: 'string', maxLength: 64 },
+            dir: { type: 'string', maxLength: 2000 },
+          },
+        },
+      },
+    },
+    async (req, reply): Promise<MemoryDefaults | void> => {
+      try {
+        const { projectId, dir } = req.query;
+        if (!projectId && !dir)
+          return void reply.code(400).send({ error: 'name a project or a folder' });
+        return {
+          ...(await engine.memoryDefaults({
+            ...(projectId ? { projectId } : {}),
+            ...(dir ? { dir } : {}),
+          })),
+          model: MEMORY_DEFAULT_MODEL,
+          effort: MEMORY_DEFAULT_EFFORT,
+          efforts: [...MEMORY_EFFORTS],
+        };
+      } catch (err) {
+        return sendError(reply, err);
+      }
+    },
+  );
 
   // Custom App requests: read a build-request ticket from the configured Leantime project (numeric id only).
   app.get<{ Params: { id: string } }>(
@@ -406,6 +491,16 @@ export function createApp(opts: ServerOptions): WebApp {
     if (!opts.settings) return reply.code(501).send({ error: 'settings are not available here' });
     try {
       return await opts.settings.view();
+    } catch (err) {
+      return sendError(reply, err);
+    }
+  });
+
+  // Asks each tool for its version again (an updated tool is otherwise shown as it was when the app started).
+  app.post('/api/settings/recheck', async (_req, reply): Promise<SettingsView | FastifyReply> => {
+    if (!opts.settings) return reply.code(501).send({ error: 'settings are not available here' });
+    try {
+      return await opts.settings.view({ recheck: true });
     } catch (err) {
       return sendError(reply, err);
     }
@@ -496,7 +591,23 @@ export function createApp(opts: ServerOptions): WebApp {
           additionalProperties: false,
           required: ['kind'],
           properties: {
-            kind: { enum: ['new', 'adopt', 'enhance'] },
+            kind: { enum: ['new', 'adopt', 'enhance', 'memory'] },
+            memory: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['system', 'isolationTerms', 'commitPolicy'],
+              properties: {
+                system: { type: 'string', minLength: 1, maxLength: 60 },
+                isolationTerms: {
+                  type: 'array',
+                  maxItems: 200,
+                  items: { type: 'string', maxLength: 100 },
+                },
+                commitPolicy: { enum: ['auto', 'pr', 'direct'] },
+                model: { type: 'string', maxLength: 80 },
+                effort: { enum: [...MEMORY_EFFORTS] },
+              },
+            },
             narrative: { type: 'string', maxLength: 20000 },
             request: { type: 'string', maxLength: 20000 },
             withGaps: { type: 'boolean' },
@@ -576,6 +687,36 @@ export function createApp(opts: ServerOptions): WebApp {
         return reply
           .code(202)
           .send({ runId: driver.start({ kind: 'new', narrative: b.narrative }) });
+      }
+      if (b.kind === 'memory') {
+        if (b.dir === undefined || b.memory === undefined)
+          return reply.code(400).send({ error: 'Add memory needs a folder and its choices' });
+        const v = await engine.inspectFolder(b.dir, 'existing');
+        if (!v.ok) return reply.code(422).send({ error: v.problems.join(' '), evidence: v });
+        if (v.memoryPresent)
+          return reply
+            .code(409)
+            .send({ error: 'this repository already has memory (.memory/ or .memory-link)' });
+        const project = await engine.portfolioFor(v.path);
+        if (project?.memory)
+          return reply.code(409).send({ error: `${project.name} already has memory` });
+        try {
+          const runId = driver.start({
+            kind: 'memory',
+            dir: v.path,
+            repo: v.path,
+            memory: {
+              system: b.memory.system,
+              isolationTerms: b.memory.isolationTerms,
+              commitPolicy: b.memory.commitPolicy,
+              ...(b.memory.model ? { model: b.memory.model } : {}),
+              ...(b.memory.effort ? { effort: b.memory.effort } : {}),
+            },
+          });
+          return reply.code(202).send({ runId });
+        } catch (err) {
+          return sendError(reply, err);
+        }
       }
       // An update names its folder in `dir`; the older adopt and URL forms name `repo`.
       let repo = b.repo;
@@ -666,6 +807,7 @@ export function createApp(opts: ServerOptions): WebApp {
         cancelled: s.cancelled,
         stopped: s.stopped,
         finish,
+        memory: engine.memoryDetail(runId),
         project: ((p) => (p ? brief(p) : null))(engine.portfolioForRun(runId)),
         models: engine.models(runId),
       };
@@ -958,6 +1100,30 @@ export function createApp(opts: ServerOptions): WebApp {
     withRun(async (runId, req: { body?: { reason?: string } | null }) => {
       await driver.cancel(runId, req.body?.reason);
       return { cancelled: true };
+    }),
+  );
+
+  // Reversing out (plan 069): what would go and what would stay, then doing it. Only for a run that did not finish.
+  app.get(
+    '/api/runs/:id/reverse-out',
+    withRun((runId) => engine.reverseOutPreview(runId)),
+  );
+
+  app.post<{ Body: { confirmDirtyWorktree?: boolean } | null }>(
+    '/api/runs/:id/reverse-out',
+    {
+      schema: {
+        body: {
+          type: ['object', 'null'],
+          additionalProperties: false,
+          properties: { confirmDirtyWorktree: { type: 'boolean' } },
+        },
+      },
+    },
+    withRun(async (runId, req: { body?: { confirmDirtyWorktree?: boolean } | null }) => {
+      return engine.reverseOut(runId, {
+        ...(req.body?.confirmDirtyWorktree ? { confirmDirtyWorktree: true } : {}),
+      });
     }),
   );
 

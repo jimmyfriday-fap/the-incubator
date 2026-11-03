@@ -54,14 +54,24 @@ export const HANDOFF_ALLOWED_TOOLS = [
   'Bash(git diff:*)',
 ];
 
-/** Headless argv from probed capabilities: print mode, streaming JSON, and max turns when offered. */
+/**
+ * Headless argv from probed capabilities: print mode, streaming JSON, and max turns when offered. `extra`
+ * (plan 071): directories the agent may also read, and a reasoning effort. Effort is left out when the CLI
+ * has no flag for it; the caller reports that (`effortApplied`).
+ */
 export function buildHandoffArgv(
   caps: Capabilities,
   ceilings: Ceilings,
   tools: readonly string[] = HANDOFF_ALLOWED_TOOLS,
   model?: string,
+  extra: { addDirs?: readonly string[]; effort?: string } = {},
 ): string[] {
   const f = caps.flags;
+  if (extra.addDirs?.length && !f.addDir)
+    throw new ParkError(
+      'add_dir_unsupported',
+      'this CLI cannot be given another directory to read, so it cannot be handed the memory seed',
+    );
   if (model !== undefined) {
     if (!MODEL_ID.test(model))
       throw new ParkError(
@@ -85,6 +95,9 @@ export function buildHandoffArgv(
     ...(f.verbose ? [f.verbose] : []),
     ...(f.maxTurns ? [f.maxTurns, String(ceilings.turns)] : []),
     ...(model !== undefined && f.model ? [f.model, model] : []),
+    ...(extra.effort !== undefined && f.effort ? [f.effort, extra.effort] : []),
+    // why: `--add-dir` takes several values, so it is always followed by another flag.
+    ...(extra.addDirs?.length && f.addDir ? [f.addDir, ...extra.addDirs] : []),
     ...(f.acceptEdits ?? []),
     ...(f.allowedTools ? [f.allowedTools, tools.join(',')] : []),
   ];
@@ -345,6 +358,8 @@ export async function launchHandoff(
     onProgress?: (p: HandoffProgress) => void;
     /** Stops the agent: its process tree is killed and the outcome says `stopped`. */
     signal?: AbortSignal;
+    /** How long `summary` may be (default 4,000 characters); a memory run keeps the whole report. */
+    summaryMax?: number;
   },
 ): Promise<HandoffOutcome> {
   mkdirSync(path.dirname(opts.logFile), { recursive: true });
@@ -397,6 +412,6 @@ export async function launchHandoff(
     stopped: Boolean(opts.signal?.aborted) && !monitor.tripped,
     model: monitor.model,
     ticketState: opts.ticket ? ticketState(plan.cwd, opts.ticket) : null,
-    summary: cleanAgentText(monitor.resultText ?? monitor.lastText),
+    summary: cleanAgentText(monitor.resultText ?? monitor.lastText, opts.summaryMax),
   };
 }

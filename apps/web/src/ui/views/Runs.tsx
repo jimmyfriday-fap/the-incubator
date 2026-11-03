@@ -3,6 +3,7 @@ import type { RunListItem } from '../../api-types.js';
 import { get } from '../api.js';
 import { navigate } from '../nav.js';
 import { Empty } from './Icon.js';
+import { takeReverseNotice } from './ReverseOut.js';
 
 type Filter = 'all' | 'active' | 'waiting' | 'finished' | 'cancelled';
 
@@ -29,6 +30,7 @@ export const matches = (r: RunListItem, f: Filter): boolean =>
 export function Runs() {
   const [runs, setRuns] = useState<RunListItem[] | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
+  const [reversed] = useState(takeReverseNotice);
 
   useEffect(() => {
     get<RunListItem[]>('/api/runs')
@@ -41,6 +43,13 @@ export function Runs() {
   return (
     <section className="card wide" data-testid="runs-page">
       <h2>Runs</h2>
+      {reversed && (
+        <p className="ok" data-testid="reverse-out-done">
+          Reversed out: {reversed.removed.join('; ')}.
+          {reversed.leftBehind.length > 0 &&
+            ` Still there, to remove by hand: ${reversed.leftBehind.map((l) => l.url ?? l.what).join('; ')}.`}
+        </p>
+      )}
       <div className="filters" role="tablist" aria-label="Filter runs">
         {FILTERS.map((f) => (
           <button

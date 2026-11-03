@@ -54,6 +54,10 @@ export interface Capabilities {
     acceptEdits?: string[];
     /** Flag taking an allow-list of tools/commands for a headless handoff. */
     allowedTools?: string;
+    /** Flag giving the agent another directory it may read (plan 071: the memory seed copy). */
+    addDir?: string;
+    /** Flag choosing the agent's reasoning effort (plan 071). */
+    effort?: string;
   };
   stdinPrompt: boolean;
   eligible: { discovery: boolean; analysis: boolean; handoff: boolean };
@@ -63,6 +67,8 @@ export interface Capabilities {
 export interface LlmAdapter {
   readonly id: LlmAdapterId;
   probe(): Promise<Capabilities>;
+  /** Forgets what `probe()` remembered and probes again, so an updated tool shows its new version. */
+  reprobe?(): Promise<Capabilities>;
   /** Returns the raw reply; `complete()` in gate.ts adds validation, retry and parking. */
   invoke(req: CompleteRequest): Promise<RawReply>;
 }

@@ -70,6 +70,10 @@ export interface GitOps {
   identity(dir: string): Promise<GitIdentity | null>;
   /** `git worktree add -b <branch> <path> <base>` run in `repo`: a new branch checked out in a new folder. */
   worktreeAdd(repo: string, dir: string, branch: string, base: string): Promise<void>;
+  /** `git branch -D -- <branch>`; false when there was no such branch. The branch must not be checked out. */
+  deleteBranch(dir: string, branch: string): Promise<boolean>;
+  /** `git worktree remove [--force] -- <path>` run in `repo`, then `git worktree prune`. */
+  worktreeRemove(repo: string, dir: string, force: boolean): Promise<void>;
   /** Moves the checked-out branch forward to `ref` (`git merge --ff-only`); fails when that is not a fast-forward. */
   fastForward(dir: string, ref: string): Promise<void>;
 }
@@ -213,6 +217,18 @@ export function createGitOps(exec: Exec): GitOps {
     },
     async worktreeAdd(repo, dir, branch, base) {
       await git(['worktree', 'add', '-q', '-b', branch, dir, base], { cwd: repo });
+    },
+    async deleteBranch(dir, branch) {
+      const r = await git(['branch', '-D', '--', branch], { cwd: dir, allowFail: true });
+      if (r.code === 0) return true;
+      if (/not found/i.test(r.stderr)) return false;
+      throw new ToolError(`git branch failed (exit ${r.code}): ${r.stderr.trim()}`, {
+        code: 'git_failed',
+      });
+    },
+    async worktreeRemove(repo, dir, force) {
+      await git(['worktree', 'remove', ...(force ? ['--force'] : []), '--', dir], { cwd: repo });
+      await git(['worktree', 'prune'], { cwd: repo });
     },
     async fastForward(dir, ref) {
       await git(['merge', '-q', '--ff-only', ref], { cwd: dir });

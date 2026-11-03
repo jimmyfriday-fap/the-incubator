@@ -143,18 +143,20 @@ export function fakeSettings(home: string, config: ConfigStore): Settings {
     eligible: { discovery: installed, analysis: installed, handoff: installed },
     reasons: installed ? [] : ['not installed'],
   });
+  const probeAll = () =>
+    Promise.resolve({
+      'claude-cli': caps(true, true),
+      'copilot-cli': caps(false, false),
+      'cursor-cli': caps(false, false),
+      'anthropic-api': {
+        ...caps(true, false),
+        eligible: { discovery: true, analysis: true, handoff: false },
+      },
+    });
   const llm = {
     adapters: new Map(),
-    probeAll: () =>
-      Promise.resolve({
-        'claude-cli': caps(true, true),
-        'copilot-cli': caps(false, false),
-        'cursor-cli': caps(false, false),
-        'anthropic-api': {
-          ...caps(true, false),
-          eligible: { discovery: true, analysis: true, handoff: false },
-        },
-      }),
+    probeAll,
+    refresh: probeAll,
     select: (_purpose: string, preferred?: string) =>
       Promise.resolve({ id: preferred ?? config.get().llm?.preferred ?? 'claude-cli' }),
   } as unknown as LlmRegistry;
@@ -234,6 +236,8 @@ export function faultyGit(inner: GitOps) {
         'upstreamFiles',
         'worktreeAdd',
         'fastForward',
+        'deleteBranch',
+        'worktreeRemove',
       ] as const
     ).map((m) => [m, wrap(m)]),
   ) as unknown as GitOps;

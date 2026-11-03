@@ -347,3 +347,36 @@ describe('FakeGitHub', () => {
     ]);
   });
 });
+
+describe('GitOps: removing a branch and a worktree (plan 069)', () => {
+  async function repo() {
+    const dir = tmp('gitops-rm-');
+    await git.init(dir, 'main');
+    writeFileSync(path.join(dir, 'a.txt'), 'one\n');
+    await git.addAll(dir);
+    await git.commit(dir, 'chore: one', ident);
+    return dir;
+  }
+
+  it('deletes a branch that is not checked out, and says false for one that is not there', async () => {
+    const dir = await repo();
+    await git.checkoutNewBranch(dir, 'incubator/x');
+    await git.checkout(dir, 'main');
+    expect(await git.deleteBranch(dir, 'incubator/x')).toBe(true);
+    expect(await git.deleteBranch(dir, 'incubator/x')).toBe(false);
+    // The branch that is checked out cannot be deleted: git refuses and so does this.
+    await expect(git.deleteBranch(dir, 'main')).rejects.toThrow(/branch failed/);
+  });
+
+  it('removes a worktree, refusing uncommitted files unless forced', async () => {
+    const dir = await repo();
+    const wt = path.join(tmp('gitops-wt-'), 'tool');
+    await git.worktreeAdd(dir, wt, 'incubator/tool', 'main');
+    writeFileSync(path.join(wt, 'new.txt'), 'x\n');
+    await expect(git.worktreeRemove(dir, wt, false)).rejects.toThrow(/worktree failed/);
+    expect(existsSync(wt)).toBe(true);
+    await git.worktreeRemove(dir, wt, true);
+    expect(existsSync(wt)).toBe(false);
+    expect(await git.deleteBranch(dir, 'incubator/tool')).toBe(true);
+  });
+});

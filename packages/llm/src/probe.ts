@@ -16,6 +16,8 @@ export const CANDIDATES = {
   verbose: ['--verbose'],
   acceptEdits: [['--permission-mode', 'acceptEdits']],
   allowedTools: ['--allowedTools', '--allowed-tools'],
+  addDir: ['--add-dir'],
+  effort: ['--effort', '--reasoning-effort'],
 } as const;
 
 function hasFlag(help: string, flag: string): boolean {
@@ -57,6 +59,8 @@ export function capabilitiesFromHelp(version: string, help: string, path?: strin
   set('verbose', pickFlag(help, CANDIDATES.verbose));
   set('acceptEdits', pickArgs(help, CANDIDATES.acceptEdits));
   set('allowedTools', pickFlag(help, CANDIDATES.allowedTools));
+  set('addDir', pickFlag(help, CANDIDATES.addDir));
+  set('effort', pickFlag(help, CANDIDATES.effort));
   const stdinPrompt = /stdin|standard input|piped/i.test(help);
   const reasons: string[] = [];
   if (!flags.printMode) reasons.push('no non-interactive print mode');

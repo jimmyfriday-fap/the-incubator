@@ -131,7 +131,7 @@ describe('Settings', () => {
     eligible: { discovery: installed, analysis: installed, handoff },
     reasons: installed ? [] : ['not installed'],
   });
-  const registry = (picked: string | null): LlmRegistry => ({
+  const registry = (picked: string | null, refreshed?: () => void): LlmRegistry => ({
     adapters: new Map(),
     probeAll: () =>
       Promise.resolve({
@@ -140,6 +140,15 @@ describe('Settings', () => {
         'anthropic-api': caps(true, false),
         fake: caps(true, true),
       }),
+    refresh: () => {
+      refreshed?.();
+      return Promise.resolve({
+        'claude-cli': { ...caps(true, true, '--model'), version: '2.1.999' },
+        'copilot-cli': caps(false, false),
+        'anthropic-api': caps(true, false),
+        fake: caps(true, true),
+      });
+    },
     select: () =>
       picked
         ? Promise.resolve({ id: picked } as never)
@@ -157,6 +166,26 @@ describe('Settings', () => {
     });
     return { settings, config, h };
   };
+
+  it('asks the tools again only when told to, or when a tool location changed', async () => {
+    let asked = 0;
+    const h = home();
+    const settings = new Settings({
+      home: h,
+      config: new ConfigStore(h),
+      llm: registry('claude-cli', () => (asked += 1)),
+      keychain: new MemoryKeychain(),
+      credentials: () => Promise.resolve([]),
+    });
+    expect((await settings.view()).adapters[0]?.version).toBe('2.0.0');
+    expect(asked).toBe(0);
+    expect((await settings.view({ recheck: true })).adapters[0]?.version).toBe('2.1.999');
+    expect(asked).toBe(1);
+    await settings.update({ planning: { model: 'opus' } });
+    expect(asked).toBe(1);
+    await settings.update({ toolPaths: {} });
+    expect(asked).toBe(2);
+  });
 
   it('shows what is chosen, what the next run will use, which tools exist and where accounts come from', async () => {
     const { settings } = make();

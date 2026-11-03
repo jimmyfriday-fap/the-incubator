@@ -1123,3 +1123,14 @@ blockquote {
   background: var(--warn);
   vertical-align: middle;
 }
+
+.memory-report {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.memory-form {
+  display: grid;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}

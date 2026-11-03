@@ -10,6 +10,7 @@ import type {
 } from '../../api-types.js';
 import { getSession, post } from '../api.js';
 import { navigate } from '../nav.js';
+import { AddMemory } from './AddMemory.js';
 import { FolderField } from './FolderField.js';
 import { StackChoice } from './StackChoice.js';
 import { addMarkdownFiles } from '../markdownFiles.js';
@@ -31,6 +32,8 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [repoRef, setRepoRef] = useState('');
   const [gaps, setGaps] = useState(false);
+  // Plan 071: the Add memory form, opened beside "Analyze and update".
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [starting, setStarting] = useState(false);
   // A stack the Incubator creates with its own tool (ADR-027), instead of one of its built-in stacks.
   const [stack, setStack] = useState('');
@@ -56,6 +59,7 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
     // why: a folder that suits a new solution (empty) never suits an update (a repository), and back.
     setFolder('');
     setCheck(null);
+    setMemoryOpen(false);
   };
   // The last repository this form filled in itself; a value the owner typed is never overwritten.
   const suggestedRef = useRef('');
@@ -315,7 +319,29 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
             >
               Only add the missing canonical-pattern files
             </button>
+            <button
+              data-testid="start-memory-open"
+              className="secondary"
+              disabled={!usable || starting || check?.memoryPresent === true}
+              title={check?.memoryPresent ? 'This repository already has memory' : undefined}
+              onClick={() => setMemoryOpen(!memoryOpen)}
+            >
+              Add memory
+            </button>
           </div>
+          {usable && check?.memoryPresent && (
+            <p className="muted" data-testid="memory-present">
+              This repository already has memory (<code>.memory/</code> or <code>.memory-link</code>
+              ).
+            </p>
+          )}
+          {memoryOpen && usable && check && !check.memoryPresent && (
+            <AddMemory
+              key={check.path}
+              dir={check.path}
+              {...(check.project ? { projectId: check.project.id } : {})}
+            />
+          )}
         </div>
       )}
     </section>

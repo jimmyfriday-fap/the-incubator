@@ -457,6 +457,22 @@ describe('web UI (Playwright, fakes)', () => {
     await page
       .getByTestId('request-text')
       .fill('Kitchen staff need to export the orders list as a CSV file at the end of the day.');
+    // A markdown file describing the work can be added to the text box (plan 070).
+    await page.getByTestId('request-files').setInputFiles({
+      name: 'orders.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from('Include the order id and the table number.\n'),
+    });
+    await expect
+      .poll(() => page.getByTestId('request-text').inputValue(), UI)
+      .toContain('end of the day.\n\nInclude the order id and the table number.');
+    expect(await page.getByTestId('request-added').textContent()).toContain('orders.md');
+    await page.getByTestId('request-files').setInputFiles({
+      name: 'notes.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('x'),
+    });
+    await page.getByTestId('request-upload-error').waitFor(UI);
     await page.getByTestId('submit-request').click();
     await page.getByTestId('review').waitFor({ timeout: 30_000 });
     await page.getByTestId('approve').click();
@@ -528,6 +544,12 @@ describe('web UI (Playwright, fakes)', () => {
     expect(await page.getByTestId('commit-request').count()).toBe(0);
     expect(await page.getByTestId('resume').count()).toBe(0);
     await shot(page, 'stop-3-cancelled');
+
+    // Reversing out is offered, but not over the agent's uncommitted file; nothing is removed.
+    await page.getByTestId('reverse-out').click();
+    expect(await page.getByTestId('reverse-out-refused').textContent()).toContain('uncommitted');
+    await page.getByTestId('reverse-out-keep').click();
+    expect(await page.getByTestId('reverse-out').count()).toBe(1);
 
     // Runs lists it under Cancelled, not under Finished.
     await page.getByTestId('tab-runs').click();
@@ -665,6 +687,12 @@ describe('web UI (Playwright, fakes)', () => {
     expect(await page.getByTestId('coding-model').isVisible()).toBe(false);
     await page.getByTestId('settingstab-limits').click();
     await page.getByTestId('gc-days').waitFor(UI);
+    await page.getByTestId('settingstab-stacks').click();
+    await page.getByTestId('stack-flutter').waitFor(UI);
+    await page.getByTestId('stack-node-web').waitFor(UI);
+    await page.getByTestId('settingstab-accounts').click();
+    await page.getByTestId('recheck-tools').click();
+    await page.getByTestId('tools-rechecked').waitFor(UI);
     await shot(page, 'tabs-3-settings');
     expect(errors, errors.join('\n')).toEqual([]);
   });

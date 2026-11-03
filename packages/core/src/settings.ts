@@ -131,9 +131,10 @@ export class Settings {
     },
   ) {}
 
-  async view(): Promise<SettingsView> {
+  /** `recheck` asks each tool for its version again; otherwise what was found earlier is shown. */
+  async view(opts: { recheck?: boolean } = {}): Promise<SettingsView> {
     const cfg = this.deps.config.get();
-    const probes = await this.deps.llm.probeAll();
+    const probes = await (opts.recheck ? this.deps.llm.refresh() : this.deps.llm.probeAll());
     const adapters = Object.entries(probes)
       .filter(([id]) => id !== 'fake')
       .map(([id, caps]) => ({
@@ -190,6 +191,7 @@ export class Settings {
 
   async update(patch: SettingsPatch): Promise<SettingsView> {
     this.deps.config.update((c) => applySettings(c, patch));
-    return this.view();
+    // why: a newly set tool location must show its tool at once.
+    return this.view({ recheck: patch.toolPaths !== undefined });
   }
 }
