@@ -29,6 +29,11 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      # why: semgrep's hash-locked wheels (ruamel.yaml.clib==0.2.15) exist for CPython 3.9-3.14 only; macos-latest's default python3 can be newer.
+      - if: runner.os == 'macOS'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
         env:

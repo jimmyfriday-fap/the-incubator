@@ -43,7 +43,9 @@ async function until(
   pred: (d: RunDetail) => boolean,
 ): Promise<RunDetail> {
   let last: RunDetail | null = null;
-  for (let i = 0; i < 400; i++) {
+  // why: the Windows runner is several times slower, especially under coverage.
+  const deadline = Date.now() + (process.platform === 'win32' ? 90_000 : 30_000);
+  while (Date.now() < deadline) {
     last = (await api.get<RunDetail>(`/api/runs/${runId}`)).body;
     if (pred(last)) return last;
     await new Promise((r) => setTimeout(r, 25));
