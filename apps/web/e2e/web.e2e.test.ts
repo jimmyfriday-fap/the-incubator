@@ -303,7 +303,9 @@ describe('web UI (Playwright, fakes)', () => {
     await expect.poll(() => page.getByTestId('file-view').textContent(), UI).toContain('Stockroom');
     await page.getByTestId('runtab-plan').click();
 
-    expect(await page.getByTestId('approve').isDisabled()).toBe(true);
+    // The owner defaults to the account of the token (plan 054), so the model is never asked.
+    await expect.poll(() => page.getByTestId('owner-login').inputValue(), UI).toBe('octo');
+    expect(await page.getByTestId('approve').isDisabled()).toBe(false);
     await page.getByTestId('owner-login').fill('octo');
     await shot(page, 'greenfield-2-review');
     expect(await page.getByTestId('spec-editor').inputValue()).toContain('"login": "octo"');
@@ -605,7 +607,7 @@ describe('web UI (Playwright, fakes)', () => {
     await page.getByTestId('hero').waitFor(UI);
     expect(await page.getByTestId('hero-art').count()).toBe(1);
     expect(await page.locator('.brand svg').count()).toBe(1);
-    expect(await page.locator('.tab svg').count()).toBe(4);
+    expect(await page.locator('.tab svg').count()).toBe(5);
     const bar = await page
       .locator('.topbar')
       .evaluate((el) => getComputedStyle(el).backgroundColor);

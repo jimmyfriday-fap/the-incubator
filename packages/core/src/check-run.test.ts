@@ -8,7 +8,14 @@ import { checkBudgetMs, checkProgram, runChecks } from './check-run.js';
 const repo = () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'check run '));
   mkdirSync(path.join(dir, 'scripts'));
-  writeFileSync(path.join(dir, 'scripts', 'ok.mjs'), "console.log('all good');\n");
+  // A program run by its path needs a shebang and the execute bit on POSIX.
+  writeFileSync(
+    path.join(dir, 'scripts', 'ok.mjs'),
+    "#!/usr/bin/env node\nconsole.log('all good');\n",
+    {
+      mode: 0o755,
+    },
+  );
   writeFileSync(
     path.join(dir, 'scripts', 'fail.mjs'),
     "for (let i = 0; i < 60; i++) console.log('line ' + i);\nconsole.error('2 tests failed');\nprocess.exit(3);\n",
