@@ -222,6 +222,20 @@ description: Records a non-obvious decision as an architecture decision record. 
 Status: stub from bootstrap; confirm with the owner on first real use.
 ```
 
+### WI-5a Normalize line endings to LF
+
+The editor tools can write CRLF into the files you just created or changed. Convert every file under `.memory` and `.claude/skills` to LF, then count the carriage returns:
+
+```powershell
+foreach ($f in Get-ChildItem .memory, .claude/skills -Recurse -File -Force) {
+  $t = [IO.File]::ReadAllText($f.FullName)
+  if ($t.Contains("`r")) { [IO.File]::WriteAllText($f.FullName, $t.Replace("`r`n", "`n"), [Text.UTF8Encoding]::new($false)) }
+}
+(Get-ChildItem .memory, .claude/skills -Recurse -File -Force | ForEach-Object { [IO.File]::ReadAllBytes($_.FullName) } | Where-Object { $_ -eq 13 }).Count
+```
+
+Expected: `0`. Any other number: stop and report.
+
 ### WI-6 Rebuild the index and run the memory check
 
 ```powershell
