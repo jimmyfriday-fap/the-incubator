@@ -13,6 +13,16 @@
           { "type": "command", "command": "node scripts/agent/on-stop.mjs", "timeout": 900 }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f \"$CLAUDE_PROJECT_DIR/.memory/hooks/session-end\" ] && bash \"$CLAUDE_PROJECT_DIR/.memory/hooks/session-end\" || true"
+          }
+        ]
+      }
     ]
   }
 }

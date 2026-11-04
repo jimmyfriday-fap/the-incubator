@@ -15,3 +15,5 @@ security/fixtures/
 **/*.gen.ts
 packages/core/fixtures/
 assets/memory-seed/
+.memory/
+.claude/skills/

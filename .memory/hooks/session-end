@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Claude Code SessionEnd hook. Copies this session's transcript into the memory store's
+# transcripts/ directory (gitignored). Works in both layouts:
+#   repo mode:   <repo>/.memory/transcripts/<date>/<session>.jsonl
+#   member mode: <store>/transcripts/<repo>/<date>/<session>.jsonl, store found via
+#                $MEMORY_STORE_DIR or the path= line in <repo>/.memory-link
+# Must never fail the session: every path exits 0.
+set -uo pipefail
+input="$(cat)"
+
+if command -v python3 >/dev/null 2>&1; then
+  read -r sid src < <(printf '%s' "$input" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("session_id",""), d.get("transcript_path",""))' 2>/dev/null) || exit 0
+else
+  get() { printf '%s' "$input" | grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/'; }
+  sid="$(get session_id)"; src="$(get transcript_path)"
+fi
+[ -n "${sid:-}" ] && [ -f "${src:-}" ] || exit 0
+
+root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+[ -n "$root" ] || exit 0
+
+if [ -d "$root/.memory/context" ]; then
+  dest="$root/.memory/transcripts"
+elif [ -f "$root/.memory-link" ]; then
+  link() { sed -n "s/^$1=//p" "$root/.memory-link" | head -1; }
+  store="${MEMORY_STORE_DIR:-}"
+  if [ -z "$store" ]; then rel="$(link path)"; [ -n "$rel" ] && store="$root/$rel"; fi
+  [ -n "$store" ] && [ -d "$store/context" ] || exit 0
+  repo="$(link repo)"; repo="${repo:-$(basename "$root")}"
+  dest="$store/transcripts/$repo"
+else
+  exit 0
+fi
+
+dir="$dest/$(date +%F)"
+mkdir -p "$dir" && cp "$src" "$dir/$sid.jsonl"
+exit 0

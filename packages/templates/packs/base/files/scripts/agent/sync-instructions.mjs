@@ -15,6 +15,18 @@ export const TARGETS = [
   },
 ];
 
+/** The memory region at the very top of an existing CLAUDE.md, followed by one blank line, or ''. */
+export function memoryRegion(existing) {
+  if (!existing) return '';
+  const text = existing.replace(/\r\n?/g, '\n');
+  const open = '<!-- <scaffold:' + 'memory> -->';
+  const close = '<!-- </scaffold:' + 'memory> -->';
+  if (!text.startsWith(open)) return '';
+  const end = text.indexOf(close);
+  if (end < 0) return '';
+  return `${text.slice(0, end + close.length)}\n\n`;
+}
+
 export function render(source) {
   const body = source.replace(/\r\n?/g, '\n').replace(/\n+$/, '');
   return (header) =>
@@ -27,7 +39,6 @@ if (isMain(import.meta.url)) {
   const make = render(readFileSync(path.join(root, '.incubator/agent/INSTRUCTIONS.md'), 'utf8'));
   let stale = 0;
   for (const t of TARGETS) {
-    const want = make(t.header);
     const abs = path.join(root, t.file);
     let have;
     try {
@@ -35,6 +46,7 @@ if (isMain(import.meta.url)) {
     } catch {
       have = null;
     }
+    const want = `${t.file === 'CLAUDE.md' ? memoryRegion(have) : ''}${make(t.header)}`;
     if (have === want) continue;
     stale++;
     if (flags.check) process.stdout.write(`stale: ${t.file}\n`);

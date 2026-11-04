@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Memory guardrails (git pre-commit). Works in repo mode and store mode.
+# Runs only when memory files are staged. Checks the working tree (acceptable for v1).
+set -euo pipefail
+REPO="$(git rev-parse --show-toplevel)"
+staged="$(git diff --cached --name-only)"
+
+if [ -d "$REPO/.memory/context" ]; then
+  WATCH='^(\.memory/|\.claude/skills/)'
+  PLATFORM='^(\.memory/context/platform/|\.claude/skills/|\.memory/[A-Z-]+\.(md|txt)$)'
+  BIN="$REPO/.memory/bin/memory"; CONF="$REPO/.memory/memory.conf"
+else
+  WATCH='.'
+  PLATFORM='^(context/platform/|skills/|[A-Z-]+\.(md|txt)$|system\.yaml$|bin/|hooks/)'
+  BIN="$REPO/bin/memory"; CONF="$REPO/memory.conf"
+fi
+
+echo "$staged" | grep -qE "$WATCH" || exit 0
+"$BIN" check
+
+# commit_policy=direct (repos that commit straight to main): format/isolation/secret checks still run,
+# but the platform-on-main guard is off. See PERMISSIONS.md for the rule that replaces it.
+if [ -f "$CONF" ] && grep -qE '^commit_policy=direct[[:space:]]*$' "$CONF"; then exit 0; fi
+
+branch="$(git symbolic-ref --short -q HEAD || echo DETACHED)"
+if echo "$staged" | grep -qE "$PLATFORM"; then
+  case "$branch" in
+    main|master)
+      if [ "${MEMORY_ALLOW_SYSTEM:-0}" != "1" ]; then
+        echo "memory: platform-tier files can't be committed directly to $branch." >&2
+        echo "        Commit on a branch and open a PR, or set MEMORY_ALLOW_SYSTEM=1 if you are the human owner." >&2
+        exit 1
+      fi ;;
+  esac
+fi
