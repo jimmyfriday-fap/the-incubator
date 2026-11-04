@@ -8,6 +8,7 @@ import { STACK_CATALOG } from '@incubator/spec';
 import type {
   FolderCheck,
   LogEntry,
+  MemoryDefaults,
   ProjectCard,
   ProjectDetail,
   Question,
@@ -1283,5 +1284,91 @@ describe('settings over the API (ADR-029)', () => {
     ).body;
     const d = await until(api, runId, (x) => !x.busy && x.state === 'PARKED');
     expect(d.models.map((m) => m.job).sort()).toEqual(['analysis', 'planning']);
+  });
+});
+
+describe('Add memory over the API (plan 071)', () => {
+  const gitIn = (dir: string, args: string[]) =>
+    nodeExec.run('git', args, { cwd: dir, timeoutMs: 30_000 });
+
+  it('offers defaults for a folder, refuses incomplete choices, and starts a memory run that parks on its checks', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'idle');
+    try {
+      const { api, h } = await boot();
+      const { dir } = await seedAdoptRepo(h, 'bare-node');
+      await gitIn(dir, ['config', 'user.name', 'Owner Person']);
+      await gitIn(dir, ['config', 'user.email', 'owner@example.invalid']);
+      expect((await api.get('/api/memory/defaults')).status).toBe(400);
+      const d = await api.get<MemoryDefaults>(
+        `/api/memory/defaults?dir=${encodeURIComponent(dir)}`,
+      );
+      expect(d.status).toBe(200);
+      expect(d.body.system).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+      expect(d.body.seedVersion).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(d.body.installed).toBeNull();
+      expect(d.body.model).toBe('claude-opus-5-5');
+      expect(d.body.effort).toBe('high');
+      expect(d.body.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+      expect((await api.post('/api/runs', { kind: 'memory', dir })).status).toBe(400);
+      expect(
+        (
+          await api.post('/api/runs', {
+            kind: 'memory',
+            dir,
+            memory: { system: 'shop', isolationTerms: [], commitPolicy: 'merge' },
+          })
+        ).status,
+      ).toBe(400);
+      const r = await api.post<{ runId: string }>('/api/runs', {
+        kind: 'memory',
+        dir,
+        memory: { system: 'bare-node', isolationTerms: ['other-app'], commitPolicy: 'pr' },
+      });
+      expect(r.status).toBe(202);
+      const run = await until(api, r.body.runId, (x) => !x.busy && x.state === 'PARKED');
+      // The idle agent commits nothing and writes no report, so the Incubator's own checks park the run.
+      expect(run.parked?.reason).toBe('memory_rules_broken');
+      expect(run.memory?.stage).toBe('checks');
+      expect(run.memory?.problems).toContain('nothing was committed');
+      expect(run.memory?.pushed).toBe(false);
+
+      const id = h.engine.portfolioForRun(r.body.runId)!.id;
+      const put = await api.put<{ identifiers: string[] }>(`/api/portfolio/${id}/identifiers`, {
+        identifiers: ['shop-api', ' shop-api ', 'orders.v2'],
+      });
+      expect(put.status).toBe(200);
+      expect(put.body.identifiers).toEqual(['shop-api', 'orders.v2']);
+      expect(
+        (await api.put(`/api/portfolio/${id}/identifiers`, { identifiers: ['has space'] })).status,
+      ).toBe(422);
+      expect((await api.put(`/api/portfolio/${id}/identifiers`, {})).status).toBe(400);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('refuses a folder that already has memory', async () => {
+    const { api, h } = await boot();
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    mkdirSync(path.join(dir, '.memory'));
+    writeFileSync(path.join(dir, '.memory', 'INDEX.md'), '# Memory index\n');
+    await gitIn(dir, ['add', '-A']);
+    await gitIn(dir, [
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@example.invalid',
+      'commit',
+      '-q',
+      '-m',
+      'memory',
+    ]);
+    const r = await api.post<{ error: string }>('/api/runs', {
+      kind: 'memory',
+      dir,
+      memory: { system: 'bare-node', isolationTerms: [], commitPolicy: 'pr' },
+    });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toContain('already has memory');
   });
 });

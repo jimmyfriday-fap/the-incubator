@@ -1,0 +1,4 @@
+system=<system>
+repo=<repo>
+path=<relative path from this repo to the store, e.g. ../<system>-memory>
+url=<git URL of the store repo, if known>

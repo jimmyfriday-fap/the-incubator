@@ -3,6 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-10-01
 - **Context doc:** [`docs/TDD.md`](../TDD.md) §7.5
+- **Amended by:** [ADR-031](031-add-memory-runs.md) for Add memory runs only (the agent commits; the owner
+  still decides the push)
 
 ## Context
 

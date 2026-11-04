@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "happy-local-install",
+  "feature": "add-memory",
+  "title": "A clean solution without a GitHub origin gets memory committed on memory/bootstrap, with AGENTS.md untouched",
+  "tags": ["happy"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": []
+  },
+  "stages": [
+    {
+      "name": "memory",
+      "input": {
+        "agent": "memory",
+        "policy": "pr"
+      },
+      "assertions": [
+        { "path": "state", "op": "eq", "value": "DONE" },
+        { "path": "exitCode", "op": "eq", "value": 0 },
+        { "path": "branch", "op": "eq", "value": "memory/bootstrap" },
+        { "path": "memoryInstalled", "op": "eq", "value": true },
+        { "path": "agentsUntouched", "op": "eq", "value": true },
+        { "path": "prs", "op": "eq", "value": 0 }
+      ]
+    }
+  ]
+}

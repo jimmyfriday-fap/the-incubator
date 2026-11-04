@@ -1,0 +1,27 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-dirty-tree",
+  "feature": "add-memory",
+  "title": "A folder with uncommitted work parks before the agent runs, and nothing is installed",
+  "tags": ["validation"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": []
+  },
+  "stages": [
+    {
+      "name": "memory",
+      "input": {
+        "dirty": true
+      },
+      "assertions": [
+        { "path": "state", "op": "eq", "value": "PARKED" },
+        { "path": "exitCode", "op": "eq", "value": 2 },
+        { "path": "parkedReason", "op": "eq", "value": "dirty_tree" },
+        { "path": "memoryInstalled", "op": "eq", "value": false },
+        { "path": "branch", "op": "eq", "value": "main" }
+      ]
+    }
+  ]
+}

@@ -10,9 +10,11 @@ npmRebuild: false
 nodeGypRebuild: false
 buildDependenciesFromSource: false
 asar: true
-# why: native modules cannot load from inside the asar archive.
+# why: native modules cannot load from inside the asar archive, and the memory seed (plan 071) is
+# copied with cpSync and its scripts are run by the agent, neither of which works inside the archive.
 asarUnpack:
   - vendor/keyring/*.node
+  - memory-seed/**
 # why: the main process is one bundle; electron-builder would otherwise walk up to the workspace
 # and pack its node_modules.
 # (Template packs are shipped as packs.json because electron-builder drops dotfiles like .github/.)

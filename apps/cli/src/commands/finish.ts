@@ -134,7 +134,8 @@ export async function finishLoop(
 
 /** The parked and finished messages of a folder run. Returns null when this is not one. */
 export async function reportFinish(deps: CliDeps, io: Io, state: RunState): Promise<number | null> {
-  if (!state.input.dir) return null;
+  // An Add memory run (plan 071) reports its playbook's report instead (reportMemory).
+  if (!state.input.dir || state.input.kind === 'memory') return null;
   const id = state.runId;
   if (state.state === 'PARKED' && state.parked?.reason === 'needs_commit') {
     const d = await deps.engine.finishDetail(id);

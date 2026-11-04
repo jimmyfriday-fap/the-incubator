@@ -289,3 +289,31 @@ describe('the portfolio in a run', () => {
     expect(later.portfolioList()).toHaveLength(1);
   });
 });
+
+describe('memory fields on a project (plan 071)', () => {
+  it('keeps code identifiers and the installed memory across a reload', () => {
+    const dir = home();
+    const pf = new Portfolio(dir, () => '2026-11-03T00:00:00.000Z');
+    const p = pf.create(input({ name: 'Shop' }));
+    pf.update(p.id, (x) => {
+      x.identifiers = ['shop-api', 'orders.v2'];
+      x.memory = {
+        mode: 'repo',
+        system: 'shop',
+        store: '.memory/',
+        seedVersion: '1.0.0',
+        commitPolicy: 'pr',
+        installedAt: '2026-11-03',
+        report: '## Memory bootstrap report',
+      };
+    });
+    const again = new Portfolio(dir, () => '2026-11-03T00:00:00.000Z').get(p.id)!;
+    expect(again.identifiers).toEqual(['shop-api', 'orders.v2']);
+    expect(again.memory).toMatchObject({
+      mode: 'repo',
+      system: 'shop',
+      store: '.memory/',
+      commitPolicy: 'pr',
+    });
+  });
+});

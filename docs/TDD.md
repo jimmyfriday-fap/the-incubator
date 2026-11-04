@@ -1146,6 +1146,39 @@ aside.
 - **Not yet.** A new solution and an adopt pull request do not deliver the marker; their projects are matched by
   remote and folder until the first update.
 
+### 7.7 Add memory runs (ADR-031)
+
+"Add memory" installs agent memory into one solution by running the memory seed's own playbook
+(`assets/memory-seed/playbooks/deploy-repo.md`) in a coding-agent session. Every memory rule lives in the
+seed; the Incubator copies it for the run, starts the session, checks what the agent left, and asks the owner
+about the push. Repo mode only (one solution, store `.memory/`).
+
+- **Starting.** The project page and the wizard's update flow offer **Add memory** for a git folder without
+  `.memory/` or `.memory-link`; `incubator memory <path>` does the same from a terminal. The owner picks the
+  system name (kebab-case), the isolation terms (other solutions' code identifiers, prefilled from the
+  portfolio's `identifiers`), the commit policy (`auto`, `pr`, `direct`), and the model and effort (default
+  `claude-opus-5-5`, `high`).
+- **The session.** `kind: "memory"` goes INTAKE → CODE → PUSH. CODE refuses a dirty folder (`dirty_tree`), a
+  solution that already has memory (`memory_installed`, `memory_present`) and a folder without a git identity
+  (`no_git_identity`), copies the seed into the run folder, and launches the agent with the copy as an extra
+  directory (`--add-dir`), the effort (`--effort`, when the CLI has it) and `MEMORY_ALLOWED_TOOLS`: edits, the
+  playbook's scripts, read-only git and the git that commits; never a push, `gh` or the network.
+- **The Incubator's checks.** After the agent stops: its report (`## Memory bootstrap report`) is present, the
+  tree is clean, something was committed, `AGENTS.md` is untouched, only `.memory/`, `.claude/skills/`,
+  `.claude/settings.json` and `CLAUDE.md` changed, and the branch matches the policy (`memory/bootstrap` for
+  `pr`). A broken rule parks `memory_rules_broken`; a failed playbook verification parks
+  `memory_verify_failed`. Nothing is pushed while parked, and the checks run again on resume.
+- **Push.** With a GitHub origin the run parks `needs_push`: push opens one pull request (`pr`) or pushes the
+  branch (`direct`). Without one the install stays committed locally. Either way `memory.installed` records the
+  store on the portfolio project (`memory`).
+- **Later runs.** An update run on a solution with memory starts its prompt with a line telling the agent to
+  read `.memory/INDEX.md` first and to follow the write-memory skill at the end (spec §6).
+- **Surfaces.** `POST /api/runs` (kind `memory`), `GET /api/memory/defaults`,
+  `PUT /api/portfolio/:id/identifiers`, `RunDetail.memory`; `incubator memory <path>` and
+  `incubator portfolio <project> --identifiers a,b`. The desktop app ships the seed unpacked as `memory-seed/`
+  and points `INCUBATOR_MEMORY_SEED_DIR` at it.
+- **Not yet.** Store mode (several repositories, one store), Add member, Upgrade and Dream.
+
 ---
 
 ## 8. Handoff (brief §8)
@@ -1469,3 +1502,4 @@ flowchart LR
 | [028](adr/028-project-portfolio-and-repo-marker.md)     | A project portfolio, and a marker in the repository that ties a folder to it       |
 | [029](adr/029-stop-cancel-and-settings.md)              | Stop and cancel a run, settings the owner can change, and which model did each job |
 | [030](adr/030-backshack-tool-stack.md)                  | The Backshack tool stack is built in a backshack-dev worktree, under its contract  |
+| [031](adr/031-add-memory-runs.md)                       | Add memory runs: the agent commits, the owner decides the push                     |

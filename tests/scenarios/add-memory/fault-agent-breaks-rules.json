@@ -1,0 +1,33 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "fault-agent-breaks-rules",
+  "feature": "add-memory",
+  "title": "An agent that changes AGENTS.md parks on the Incubator's checks and nothing is pushed",
+  "tags": ["fault"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": []
+  },
+  "stages": [
+    {
+      "name": "memory",
+      "input": {
+        "agent": "memory-agents",
+        "github": true
+      },
+      "assertions": [
+        { "path": "state", "op": "eq", "value": "PARKED" },
+        { "path": "exitCode", "op": "eq", "value": 2 },
+        { "path": "parkedReason", "op": "eq", "value": "memory_rules_broken" },
+        {
+          "path": "problems",
+          "op": "contains",
+          "value": "AGENTS.md was changed (it never may be)"
+        },
+        { "path": "agentsUntouched", "op": "eq", "value": false },
+        { "path": "prs", "op": "eq", "value": 0 }
+      ]
+    }
+  ]
+}

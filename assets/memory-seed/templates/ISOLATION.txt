@@ -1,0 +1,13 @@
+# One term per line. Case-insensitive fixed strings.
+# If any appears in context/ or skills, `bin/memory check` fails.
+#
+# Purpose: keep another system's KNOWLEDGE out of this store (its code conventions, internal APIs, architecture).
+# List that system's distinctive code identifiers: function/class prefixes, package or plugin slugs,
+# internal endpoint hosts, table prefixes. Example: some_platform_call_ai, some-platform-datalake.
+#
+# Do NOT list shared brand names, domains, hosting providers, or server names. Systems often share
+# infrastructure (one system hosted on another's domain or servers), and those are legitimate facts
+# about this system. A term that appears in this system's own code is not an isolation term.
+#
+# Never list this system's own name or identifiers. The deployer fills this in and drops any term
+# found in the target repos' own files (see the playbook's preflight).

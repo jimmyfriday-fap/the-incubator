@@ -112,6 +112,53 @@ if (mode === 'slow') {
     assistant(1);
     emit({ type: 'result', subtype: 'success', total_cost_usd: 0.42, result: `Finished step ${n}.` });
   }
+} else if (mode === 'memory' || mode === 'memory-agents' || mode === 'memory-unverified') {
+  // An Add memory run's agent (plan 071): installs a minimal store as the seed's playbook would, commits it
+  // (on memory/bootstrap under the pr policy) and ends with the playbook's report. memory-agents also edits
+  // AGENTS.md (a broken rule); memory-unverified reports a failed verification step. It refuses to run
+  // without the seed directory and the effort, so a test proves the engine passed both.
+  if (!process.argv.includes('--add-dir') || !process.argv.includes('--effort')) {
+    process.stderr.write('memory mode needs --add-dir and --effort\n');
+    process.exit(3);
+  }
+  // As in the parts mode: git hook variables would pin git to the REAL repository; drop them.
+  const env = { ...process.env };
+  for (const k of [
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_INDEX_FILE',
+    'GIT_COMMON_DIR',
+    'GIT_PREFIX',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_IMPLICIT_WORK_TREE',
+  ])
+    delete env[k];
+  const git = (...args) => execFileSync('git', args, { env, stdio: 'pipe' });
+  const policy = /COMMIT_POLICY: direct/.test(prompt) ? 'direct' : 'pr';
+  if (policy === 'pr') git('checkout', '-q', '-b', 'memory/bootstrap');
+  mkdirSync('.memory', { recursive: true });
+  writeFileSync(path.join('.memory', 'INDEX.md'), '# Memory index\n');
+  writeFileSync(path.join('.memory', 'memory.conf'), `store = .memory/\ncommit_policy = ${policy}\n`);
+  writeFileSync('CLAUDE.md', 'Read .memory/INDEX.md before starting.\n');
+  if (mode === 'memory-agents') writeFileSync('AGENTS.md', 'changed by the fake memory agent\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'chore(memory): bootstrap the memory store');
+  assistant(1);
+  emit({
+    type: 'result',
+    subtype: 'success',
+    total_cost_usd: 0.42,
+    result: [
+      'Installed the memory store.',
+      '',
+      '## Memory bootstrap report',
+      '',
+      `- Commit policy: \`${policy}\``,
+      `- Verification 1–7: ${mode === 'memory-unverified' ? '1–5 passed, 6 failed (a refused command)' : 'all passed'}`,
+      '- Isolation terms kept: none; dropped: none',
+    ].join('\n'),
+  });
 } else if (mode === 'runaway') {
   const tick = () => {
     assistant(5);

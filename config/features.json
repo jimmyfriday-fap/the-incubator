@@ -15,6 +15,10 @@
     {
       "id": "local-folder",
       "summary": "A new solution or an update is built in a folder the owner chose; the owner approves the commit and the push at the end of the coding iteration."
+    },
+    {
+      "id": "add-memory",
+      "summary": "Agent memory is installed into one solution by running the memory seed's playbook; the agent commits, the Incubator checks the install, and the owner decides the push."
     }
   ]
 }

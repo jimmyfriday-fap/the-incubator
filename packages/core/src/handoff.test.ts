@@ -453,3 +453,71 @@ describe('handoff on a repository the Incubator did not build (ADR-025)', () => 
     expect(canonical).not.toContain('Approved check commands');
   });
 });
+
+describe('handoff argv for Add memory (plan 071)', () => {
+  const ceilings = { turns: 30, toolCalls: 100, minutes: 20, usd: 5 };
+  const base = {
+    printMode: ['-p'],
+    streamJson: ['--output-format', 'stream-json'],
+    model: '--model',
+    addDir: '--add-dir',
+  };
+
+  it('passes the effort and the extra directory when the CLI has both flags', () => {
+    expect(
+      buildHandoffArgv(
+        caps({ ...base, effort: '--effort' }),
+        ceilings,
+        undefined,
+        'claude-opus-5-5',
+        {
+          addDirs: ['seed-copy'],
+          effort: 'high',
+        },
+      ),
+    ).toEqual([
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--model',
+      'claude-opus-5-5',
+      '--effort',
+      'high',
+      '--add-dir',
+      'seed-copy',
+    ]);
+  });
+
+  it('leaves the effort out when the CLI has no flag for it', () => {
+    expect(
+      buildHandoffArgv(caps(base), ceilings, undefined, 'claude-opus-5-5', {
+        addDirs: ['seed-copy'],
+        effort: 'high',
+      }),
+    ).toEqual([
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--model',
+      'claude-opus-5-5',
+      '--add-dir',
+      'seed-copy',
+    ]);
+  });
+
+  it('parks when the CLI cannot be given another directory', () => {
+    expect(() =>
+      buildHandoffArgv(
+        caps({
+          printMode: ['-p'],
+          streamJson: ['--output-format', 'stream-json'],
+          model: '--model',
+        }),
+        ceilings,
+        undefined,
+        'claude-opus-5-5',
+        { addDirs: ['seed-copy'] },
+      ),
+    ).toThrow(/cannot be given another directory/);
+  });
+});

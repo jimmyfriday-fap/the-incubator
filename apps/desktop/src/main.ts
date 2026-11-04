@@ -193,6 +193,11 @@ async function main(): Promise<void> {
       archive,
       path.join(app.getPath('userData'), 'packs'),
     );
+    // The memory seed (plan 071) is staged unpacked beside the archive; core's default points into the workspace.
+    process.env['INCUBATOR_MEMORY_SEED_DIR'] ??= path.join(
+      appRoot.replace(/app\.asar$/, 'app.asar.unpacked'),
+      'memory-seed',
+    );
     const { engine, store, log, settings, intake, pickFolder } = await wiring();
     const windows: { main?: BrowserWindow } = {};
     server = await startServer({

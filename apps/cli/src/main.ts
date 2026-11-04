@@ -12,6 +12,7 @@ import { collectCheck } from './commands/checks.js';
 import { runGc } from './commands/gc.js';
 import { runAdopt, type AdoptOptions } from './commands/adopt.js';
 import { runEnhance, type EnhanceOptions } from './commands/enhance.js';
+import { runMemory, type MemoryOptions } from './commands/memory.js';
 import { runConfig } from './commands/config.js';
 import { runPortfolio } from './commands/portfolio.js';
 import { runUi } from './commands/ui.js';
@@ -193,6 +194,27 @@ export async function main(
     });
 
   program
+    .command('memory <path>')
+    .description(
+      "add agent memory to a local repository: the memory seed's playbook runs in an agent session that commits the install; you decide the push",
+    )
+    .option('--system <name>', "kebab-case system name (default: the solution's name)")
+    .option(
+      '--terms <a,b>',
+      "isolation terms: other systems' code identifiers (default: every other solution's identifiers)",
+    )
+    .option(
+      '--policy <auto|pr|direct>',
+      'commit policy (default: auto, detected from the repository)',
+    )
+    .option('--model <id>', 'agent model (default: claude-opus-5-5)')
+    .option('--effort <level>', 'agent effort: low | medium | high | xhigh | max (default: high)')
+    .option('-y, --yes', 'accept every default without prompting')
+    .action(async (source: string, opts: MemoryOptions) => {
+      code = await runMemory(getDeps(), io, source, opts);
+    });
+
+  program
     .command('publish <specOrRunId>')
     .description('scaffold, verify and publish a spec to GitHub, or resume a run by id')
     .option('--keep', 'keep the run workspace after publishing')
@@ -246,7 +268,11 @@ export async function main(
     .command('portfolio [project]')
     .description('list the projects the Incubator has worked on, or show one with its runs')
     .option('--json', 'print JSON instead of text')
-    .action(async (project: string | undefined, opts: { json?: boolean }) => {
+    .option(
+      '--identifiers <a,b>',
+      "set the project's code identifiers (kept out of other solutions' memory); empty clears them",
+    )
+    .action(async (project: string | undefined, opts: { json?: boolean; identifiers?: string }) => {
       code = await runPortfolio(getDeps(), io, project, opts);
     });
 

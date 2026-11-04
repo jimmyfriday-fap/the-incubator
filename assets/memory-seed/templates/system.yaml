@@ -1,0 +1,15 @@
+# The repos that belong to this system and share this memory store.
+# Store mode only. Proposed by the deployer, confirmed by the human before anything is written.
+system: <system-name>
+seed_version: <seed VERSION>
+store_repo: <system-name>-memory
+members:
+  # path: relative to this store repo (sibling checkouts in one workspace)
+  # role: platform-source | transcript-source | permission-source | consumer | member
+  - repo: <repo-name>
+    path: ../<repo-name>
+    role: member
+excluded:
+  # Repos found referencing this system that belong to a different system.
+  # - repo: <other-repo>
+  #   reason: separate system

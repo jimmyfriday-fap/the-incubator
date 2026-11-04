@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import http from 'node:http';
 import path from 'node:path';
@@ -1198,5 +1198,28 @@ describe('web UI (Playwright, fakes)', () => {
     }
     const again = await page.goto(server.url);
     expect(again?.status()).toBe(401);
+  });
+});
+
+describe('Add memory (plan 071)', () => {
+  it('offers Add memory for a clean repository and turns it off for one that already has memory', async () => {
+    const { h, page, errors } = await open();
+    const { dir } = await seedAdoptRepo(h, 'bare-node');
+    const withMemory = (await seedAdoptRepo(h, 'flutter-app')).dir;
+    mkdirSync(path.join(withMemory, '.memory'));
+    writeFileSync(path.join(withMemory, '.memory', 'INDEX.md'), '# Memory index\n');
+    await nodeExec.run('git', ['add', '-A'], { cwd: withMemory, timeoutMs: 30_000 });
+    await nodeExec.run('git', ['commit', '-q', '-m', 'memory'], {
+      cwd: withMemory,
+      timeoutMs: 30_000,
+    });
+    await intent(page).selectOption({ label: 'Update an existing solution' });
+    await page.getByTestId('folder-path').fill(dir);
+    await expect.poll(() => page.getByTestId('start-memory-open').isDisabled(), UI).toBe(false);
+    await page.getByTestId('folder-path').fill(withMemory);
+    // The button is also off while the new folder is being checked, so wait for the notice first.
+    await expect.poll(() => page.getByTestId('memory-present').isVisible(), UI).toBe(true);
+    expect(await page.getByTestId('start-memory-open').isDisabled()).toBe(true);
+    expect(errors, errors.join('\n')).toEqual([]);
   });
 });

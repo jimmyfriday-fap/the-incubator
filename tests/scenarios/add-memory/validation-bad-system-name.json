@@ -1,0 +1,26 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "validation-bad-system-name",
+  "feature": "add-memory",
+  "title": "A system name that is not kebab-case is refused before the run starts",
+  "tags": ["validation"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": []
+  },
+  "stages": [
+    {
+      "name": "memory",
+      "input": {
+        "system": "Rolling Schedule"
+      },
+      "assertions": [
+        { "path": "state", "op": "eq", "value": "ERROR" },
+        { "path": "exitCode", "op": "eq", "value": 2 },
+        { "path": "memoryInstalled", "op": "eq", "value": false },
+        { "path": "prs", "op": "eq", "value": 0 }
+      ]
+    }
+  ]
+}

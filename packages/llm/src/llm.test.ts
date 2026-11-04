@@ -620,3 +620,18 @@ describe('checking a tool again', () => {
     expect((await reg.probeAll())['claude-cli']?.version).toBe('2.1.400 (Claude Code)');
   });
 });
+
+describe('capability probing for Add memory (plan 071)', () => {
+  it('finds the add-dir and effort flags when the CLI offers them', () => {
+    const help = `${CLAUDE_HELP}\n  --add-dir <directories...>  Additional directories to allow\n  --effort <level>  Reasoning effort\n`;
+    const caps = capabilitiesFromHelp('2.1.0 (Claude Code)\n', help, '/bin/claude');
+    expect(caps.flags.addDir).toBe('--add-dir');
+    expect(caps.flags.effort).toBe('--effort');
+  });
+
+  it('leaves them out when the CLI does not offer them', () => {
+    const caps = capabilitiesFromHelp('2.1.0 (Claude Code)\n', CLAUDE_HELP, '/bin/claude');
+    expect(caps.flags.addDir).toBeUndefined();
+    expect(caps.flags.effort).toBeUndefined();
+  });
+});

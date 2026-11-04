@@ -30,12 +30,23 @@ export async function runPortfolio(
   deps: CliDeps,
   io: Io,
   ref: string | undefined,
-  opts: { json?: boolean },
+  opts: { json?: boolean; identifiers?: string },
 ): Promise<number> {
   await deps.engine.portfolioBackfill();
   const projects = deps.engine.portfolioList();
+  if (opts.identifiers !== undefined && ref === undefined)
+    throw new PolicyError('--identifiers needs a project', { code: 'usage' });
   if (ref !== undefined) {
-    const p = find(projects, ref);
+    let p = find(projects, ref);
+    // Plan 071: the project's code identifiers, kept out of other solutions' memory.
+    if (opts.identifiers !== undefined)
+      p = deps.engine.setIdentifiers(
+        p.id,
+        opts.identifiers
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+      );
     if (opts.json) io.stdout(`${JSON.stringify(p, null, 2)}\n`);
     else {
       io.stdout(`${p.name}  (${p.id})\n`);
@@ -44,6 +55,11 @@ export async function runPortfolio(
         `stack: ${p.stack ?? '-'} · repository: ${where(p)} · ${p.origin} · since ${day(p.createdAt)}\n`,
       );
       if (p.repo.dir) io.stdout(`folder: ${p.repo.dir}\n`);
+      if (p.identifiers?.length) io.stdout(`code identifiers: ${p.identifiers.join(', ')}\n`);
+      if (p.memory)
+        io.stdout(
+          `memory: ${p.memory.mode} mode, system ${p.memory.system}, seed ${p.memory.seedVersion}, store ${p.memory.store}, ${p.memory.commitPolicy}, installed ${p.memory.installedAt}\n`,
+        );
       io.stdout(`\nruns (${p.runs.length}), newest first:\n`);
       for (const r of p.runs) {
         const out = r.outcome;

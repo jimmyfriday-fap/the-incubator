@@ -13,6 +13,7 @@ import type { CliDeps } from '../deps.js';
 import type { Io } from '../io.js';
 import { TerminalPrompter } from '../prompter.js';
 import { finishLoop, reportFinish } from './finish.js';
+import { reportMemory } from './memory-report.js';
 import { summarizeSpec } from '../summary.js';
 
 export interface NewOptions {
@@ -50,6 +51,7 @@ export async function settleRun(
 
 /** Prints the outcome of an advance() and returns the exit code. */
 export function reportRun(deps: CliDeps, io: Io, state: RunState, out?: string): number {
+  if (state.input.kind === 'memory') return reportMemory(deps, io, state);
   if (state.state === 'PARKED') {
     io.stderr(
       `⏸ run ${state.runId} parked at ${state.parked?.state ?? '?'}: ${state.parked?.message ?? ''}\n`,

@@ -120,6 +120,9 @@ export function fakeAgentHandoff(): NonNullable<EngineDeps['handoff']> {
           printMode: [fakeAgentPath(), '-p'],
           streamJson: ['--output-format', 'stream-json'],
           model: '--model',
+          // Add memory (plan 071) hands the agent the seed copy and an effort, as the real claude CLI allows.
+          addDir: '--add-dir',
+          effort: '--effort',
           // As the real claude CLI: the allowed-tool list is how approved checks are enforced.
           allowedTools: '--allowedTools',
         },

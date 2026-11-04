@@ -105,6 +105,8 @@ writeFileSync(
 copy('packages/templates/schema', 'schema');
 copy('packages/spec/schema', 'schema');
 copy('packages/core/prompts', 'prompts');
+// The memory seed (plan 071): read-only, copied for each Add memory run; unpacked from the asar archive.
+copy('assets/memory-seed', 'memory-seed');
 copy('packages/analyzer/canonical.json', 'canonical.json');
 copy('apps/desktop/build/icon.png', 'icon.png');
 cpSync(ui, path.join(out, 'ui'), { recursive: true });

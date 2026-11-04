@@ -518,6 +518,47 @@ describe('publish, handoff, auth, gc', () => {
       return { ...d, ref, dir };
     };
 
+    it('refuses an Add memory run on a URL, a bad policy or a bad effort, with exit 2 (plan 071)', async () => {
+      const d = publishDeps(undefined, { portfolio: true });
+      const { dir } = await seedExistingRepo(d.h.github, 'memory-shop', bareNode);
+      const url = io();
+      expect(
+        await main(['memory', 'https://github.com/octo/memory-shop', '--yes'], url.io, d.factory),
+      ).toBe(2);
+      expect(url.err.join('')).toContain('needs a local folder');
+      const policy = io();
+      expect(await main(['memory', dir, '--policy', 'merge', '--yes'], policy.io, d.factory)).toBe(
+        2,
+      );
+      expect(policy.err.join('')).toContain('--policy is auto, pr or direct');
+      const effort = io();
+      expect(await main(['memory', dir, '--effort', 'huge', '--yes'], effort.io, d.factory)).toBe(
+        2,
+      );
+      expect(effort.err.join('')).toContain('--effort is one of');
+    });
+
+    it('sets a project code identifiers, and refuses a bad one or a missing project (plan 071)', async () => {
+      const d = publishDeps({ dir: enhanceFixtureDir('export-orders') }, { portfolio: true });
+      const { dir } = await seedExistingRepo(d.h.github, 'order-desk', bareNode);
+      const run = ['enhance', dir, '--repo', 'octo/order-desk', '--prompt', REQUEST];
+      expect(await main([...run, '--no-publish', '--yes'], io().io, d.factory)).toBe(0);
+      const name = path.basename(dir);
+      const set = io();
+      expect(
+        await main(['portfolio', name, '--identifiers', 'desk-api, orders.v2'], set.io, d.factory),
+      ).toBe(0);
+      expect(set.out.join('')).toContain('code identifiers: desk-api, orders.v2');
+      const bad = io();
+      expect(await main(['portfolio', name, '--identifiers', 'has space'], bad.io, d.factory)).toBe(
+        2,
+      );
+      expect(bad.err.join('')).toContain('not a code identifier');
+      const none = io();
+      expect(await main(['portfolio', '--identifiers', 'x'], none.io, d.factory)).toBe(2);
+      expect(none.err.join('')).toContain('--identifiers needs a project');
+    });
+
     it('lists the portfolio, shows one project with its runs, and refuses a name it does not know', async () => {
       const d = publishDeps({ dir: enhanceFixtureDir('export-orders') }, { portfolio: true });
       const { dir } = await seedExistingRepo(d.h.github, 'order-desk', bareNode);
