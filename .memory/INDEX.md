@@ -19,8 +19,11 @@ Read this at the start of any non-trivial task, then open only the files you nee
 
 ## Skills (open the SKILL.md when the description matches your task)
 
+- `.claude/skills/add-an-adr/SKILL.md` · Records a non-obvious decision as an architecture decision record. Use when a change picks between real alternatives or amends an earlier ADR.
 - `.claude/skills/dream/SKILL.md` · Out-of-band curation of this system's memory. Reads recent session transcripts against the store and proposes evidence-backed changes as a PR. Run when asked to "dream" or "curate memory".
 - `.claude/skills/memory-bootstrap/SKILL.md` · Populates a memory store from the codebase of one or more member repos, then reconciles shared knowledge into the platform tier. Run at install, when adding a member, or after a major restructure. Produces a PR, never a direct commit.
+- `.claude/skills/sync-pack-copies/SKILL.md` · Refreshes the copies of the guard toolkit that live in the base template pack, and the golden manifests that hash them. Use after editing any script that scripts/packs-sync.mjs copies, or .claude/settings.json.
+- `.claude/skills/write-executor-plan/SKILL.md` · Writes a new executor plan under docs/plans that passes the plan-lint guard. Use when a change is handed to a smaller model or another session to carry out.
 - `.claude/skills/write-memory/SKILL.md` · How to record a durable learning in this system's memory store. Use at the end of a task when you made a decision, fixed something likely to recur, or were corrected by the human.
 
 ## Rules

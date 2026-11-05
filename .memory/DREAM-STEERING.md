@@ -7,7 +7,12 @@ last_verified: 2026-11-04
 
 ## Care about
 
-- (drafted by bootstrap; replace with this system's real failure types)
+- Windows breakage: shell shims, CRLF line endings, the git index lock, slow git-heavy tests.
+- Drift between the repository and the base template pack: stale pack copies, stale golden manifests, missing dogfood exceptions.
+- Gate vetoes that recur: check:quick failures at the Stop hook, plan-lint findings, a scaffold marker alone on a line.
+- Agent runs crossing their boundary: a push, gh, network access or an edit to AGENTS.md from an Add memory or folder run.
+- Target-specific knowledge written into this store instead of the solution's own store.
+- Executor plans that miss: a marker that never landed, a find/replace that matched nothing, a plan that outgrew its budget.
 
 ## Ignore
 
