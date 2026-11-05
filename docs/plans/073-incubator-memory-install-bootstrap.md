@@ -41,13 +41,13 @@ Not applicable. This plan only fills memory files for the Incubator's own reposi
 ### WI-1 Preflight (no changes)
 
 ```powershell
-git log -1 --format=%s
+git log -3 --format=%s
 git status --porcelain
 git branch --show-current
 Test-Path .memory/context/platform/architecture.md
 ```
 
-Expected: `mem(platform): scaffold memory infrastructure`, then nothing, then a non-empty branch name, then `True`. Anything else: stop.
+Expected: three subjects, newest first, where one of them is `mem(platform): scaffold memory infrastructure` (later commits may only edit docs/plans), then nothing, then a non-empty branch name, then `True`. Anything else: stop.
 
 ### WI-2 Fill the platform context files
 
