@@ -8,7 +8,7 @@ import type {
   StackProbeResponse,
   StartRunBody,
 } from '../../api-types.js';
-import { getSession, post } from '../api.js';
+import { get, getSession, post } from '../api.js';
 import { navigate } from '../nav.js';
 import { AddMemory } from './AddMemory.js';
 import { FolderField } from './FolderField.js';
@@ -26,6 +26,14 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
   const [canBrowse, setCanBrowse] = useState(false);
   // Plan 074: a new build gets an agent memory store unless the owner turns this off.
   const [buildMemory, setBuildMemory] = useState(true);
+  // Plan 077: a new repository can join a system whose memory store exists (offered only when there is one).
+  const [systems, setSystems] = useState<string[]>([]);
+  const [buildSystem, setBuildSystem] = useState('');
+  useEffect(() => {
+    get<{ name: string }[]>('/api/memory/systems')
+      .then((all) => setSystems(all.map((x) => x.name)))
+      .catch(() => setSystems([]));
+  }, []);
   const [folder, setFolder] = useState('');
   const [check, setCheck] = useState<FolderCheck | null>(null);
   const [narrative, setNarrative] = useState('');
@@ -223,6 +231,23 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
               build it learn as they go
             </label>
           )}
+          {!stack && buildMemory && systems.length > 0 && (
+            <label>
+              Part of a system (optional)
+              <select
+                data-testid="build-system"
+                value={buildSystem}
+                onChange={(e) => setBuildSystem(e.target.value)}
+              >
+                <option value="">No: its own memory store</option>
+                {systems.map((x) => (
+                  <option key={x} value={x}>
+                    {x}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {createError && (
             <p className="error" role="alert" data-testid="stack-create-error">
               {createError}
@@ -253,7 +278,11 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
                   kind: 'new',
                   narrative,
                   dir: check!.path,
-                  ...(buildMemory ? {} : { buildMemory: { enabled: false } }),
+                  ...(buildMemory
+                    ? buildSystem
+                      ? { buildMemory: { enabled: true, system: buildSystem } }
+                      : {}
+                    : { buildMemory: { enabled: false } }),
                 })
               }
             >

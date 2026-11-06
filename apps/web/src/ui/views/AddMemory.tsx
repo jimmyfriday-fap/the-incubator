@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { MemoryChoices, MemoryDefaults, ProjectCard, StartRunBody } from '../../api-types.js';
+import type {
+  MemoryChoices,
+  MemoryDefaults,
+  MemorySystemInfo,
+  ProjectCard,
+  StartRunBody,
+} from '../../api-types.js';
 import { get, post } from '../api.js';
 import { folderName, memoryBody, parentOf, termsText, validSystem } from '../memoryForm.js';
 import { navigate } from '../nav.js';
@@ -23,6 +29,15 @@ export function AddMemory({ dir, projectId }: { dir: string; projectId?: string 
   const [storePolicy, setStorePolicy] = useState<'pr' | 'direct'>('pr');
   const [storeRemote, setStoreRemote] = useState('');
   const store = picked.length > 0;
+  // Add member (plan 077): join a system whose store already exists instead of getting one of its own.
+  const [systems, setSystems] = useState<MemorySystemInfo[]>([]);
+  const [join, setJoin] = useState('');
+
+  useEffect(() => {
+    get<MemorySystemInfo[]>('/api/memory/systems')
+      .then(setSystems)
+      .catch(() => setSystems([]));
+  }, []);
 
   useEffect(() => {
     const here = parentOf(dir).toLowerCase();
@@ -74,7 +89,8 @@ export function AddMemory({ dir, projectId }: { dir: string; projectId?: string 
           model,
           effort,
           dir,
-          members: siblings.filter((s) => picked.includes(s.dir)),
+          members: join ? [] : siblings.filter((s) => picked.includes(s.dir)),
+          ...(join ? { joinSystem: join } : {}),
           storePolicy,
           storeRemote,
         }),
@@ -110,7 +126,36 @@ export function AddMemory({ dir, projectId }: { dir: string; projectId?: string 
           Use lowercase words joined by hyphens, like rolling-schedule.
         </p>
       )}
-      {siblings.length > 0 && (
+      {systems.length > 0 && (
+        <label>
+          Join an existing system (optional)
+          <select
+            data-testid="memory-join"
+            value={join}
+            onChange={(e) => {
+              setJoin(e.target.value);
+              if (e.target.value) {
+                setSystem(e.target.value);
+                setPicked([]);
+              }
+            }}
+          >
+            <option value="">No: this repository gets its own memory</option>
+            {systems.map((x) => (
+              <option key={x.name} value={x.name}>
+                {x.name} (shares {x.store})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {join && (
+        <p className="muted" data-testid="memory-join-note">
+          The store&apos;s system.yaml gets one new entry for this repository. You will see the
+          updated file and confirm it before anything is written.
+        </p>
+      )}
+      {!join && siblings.length > 0 && (
         <fieldset data-testid="memory-members">
           <legend>Share one memory store with other repositories (optional)</legend>
           <p className="muted">
@@ -216,9 +261,11 @@ export function AddMemory({ dir, projectId }: { dir: string; projectId?: string 
       >
         {starting
           ? 'Starting…'
-          : store
-            ? 'Find the system and propose a manifest'
-            : 'Install memory'}
+          : join
+            ? 'Propose the updated manifest'
+            : store
+              ? 'Find the system and propose a manifest'
+              : 'Install memory'}
       </button>
     </div>
   );

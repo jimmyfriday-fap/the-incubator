@@ -633,6 +633,7 @@ export function createApp(opts: ServerOptions): WebApp {
                   },
                 },
                 storeCommitPolicy: { enum: ['pr', 'direct'] },
+                joinSystem: { type: 'string', minLength: 1, maxLength: 60 },
                 storeRemote: { type: 'string', maxLength: 300 },
               },
             },
@@ -772,6 +773,7 @@ export function createApp(opts: ServerOptions): WebApp {
                 ? { storeCommitPolicy: b.memory.storeCommitPolicy }
                 : {}),
               ...(b.memory.storeRemote ? { storeRemote: b.memory.storeRemote } : {}),
+              ...(b.memory.joinSystem ? { joinSystem: b.memory.joinSystem } : {}),
             },
           });
           return reply.code(202).send({ runId });

@@ -211,6 +211,7 @@ export async function main(
       '--policy <auto|pr|direct>',
       'commit policy (default: auto, detected from the repository)',
     )
+    .option('--join <system>', 'add this one repository to an existing system (Add member)')
     .option(
       '--store-policy <pr|direct>',
       "store mode: the store repository's own policy (default: pr)",

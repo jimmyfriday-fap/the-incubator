@@ -316,6 +316,8 @@ export interface MemoryChoices {
   members?: { dir: string; name: string }[];
   storeCommitPolicy?: 'pr' | 'direct';
   storeRemote?: string;
+  /** Add member (plan 077): join this existing system instead of getting a store of its own. */
+  joinSystem?: string;
 }
 
 /** A system whose repositories share one memory store (plan 076), from `GET /api/memory/systems`. */

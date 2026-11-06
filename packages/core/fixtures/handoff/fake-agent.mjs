@@ -21,7 +21,8 @@ emit({
 const assistant = (tools) =>
   emit({ type: 'assistant', message: { content: [{ type: 'text', text: 'working' }, ...Array.from({ length: tools }, () => ({ type: 'tool_use', name: 'Edit' }))] } });
 
-const phase = /^PHASE: (scaffold|bootstrap)$/m.exec(prompt)?.[1];
+const isMember = /^NEW_MEMBER: /m.test(prompt);
+const phase = isMember ? undefined : /^PHASE: (scaffold|bootstrap)$/m.exec(prompt)?.[1];
 if (phase) {
   // A new build's memory sessions (plan 075), whatever the coding mode is: the scaffold makes a minimal store
   // and commits it before any code; the bootstrap fills it and commits only the memory paths, leaving the
@@ -90,6 +91,51 @@ if (phase) {
           '- Isolation terms kept: none; dropped: none',
         ].join('\n');
   emit({ type: 'result', subtype: 'success', total_cost_usd: 0.1, result });
+} else if (isMember) {
+  // Add member (plan 077): the new repository joins an existing store, whatever the coding mode is.
+  const env = { ...process.env };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_IMPLICIT_WORK_TREE']) delete env[k];
+  const ident = ['-c', 'user.name=Fake Agent', '-c', 'user.email=fake@example.invalid'];
+  const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...ident, ...args], { env, stdio: 'pipe' });
+  const input = (k) => new RegExp('^' + k + ': (.+)$', 'm').exec(prompt)?.[1]?.trim() ?? '';
+  const system = input('SYSTEM');
+  const storePolicy = input('STORE_COMMIT_POLICY') || 'pr';
+  const quirk = process.env.FAKE_MEMORY_STORE ?? '';
+  assistant(1);
+    // Add member (plan 077): the new repository joins an existing store.
+    const memberPhase = /^PHASE: (full|link|bootstrap)$/m.exec(prompt)[1];
+    const repo = input('NEW_MEMBER');
+    const dir = input('NEW_MEMBER_DIR');
+    const store = input('STORE_DIR');
+    const manifest = /```yaml\n([\s\S]*?)\n```/.exec(prompt)?.[1] ?? '';
+    if (memberPhase !== 'bootstrap') {
+      writeFileSync(path.join(store, 'system.yaml'), manifest + '\n');
+      mkdirSync(path.join(store, 'context', 'projects', repo), { recursive: true });
+      writeFileSync(path.join(store, 'context', 'projects', repo, 'overview.md'), '# ' + repo + '\n');
+    }
+    if (memberPhase !== 'link') {
+      mkdirSync(path.join(store, 'context', 'projects', repo), { recursive: true });
+      writeFileSync(path.join(store, 'context', 'projects', repo, 'status.md'), '- a line about ' + repo + '\n');
+    }
+    git(store, 'add', '-A');
+    git(store, 'commit', '-q', '-m', 'mem(platform): add ' + repo + ' to ' + system + '\n\nActor: bootstrap');
+    if (memberPhase !== 'bootstrap') {
+      if (process.env.FAKE_MEMORY_STORE_MEMBERS === 'pr') git(dir, 'checkout', '-q', '-b', 'memory/link');
+      writeFileSync(path.join(dir, '.memory-link'), 'system=' + system + '\nrepo=' + repo + '\npath=' + path.relative(dir, store).replace(/\\/g, '/') + '\nurl=\n');
+      writeFileSync(path.join(dir, 'CLAUDE.md'), 'Memory lives in ' + store + '.\n');
+      if (quirk === 'agents') writeFileSync(path.join(dir, 'AGENTS.md'), 'changed by the fake memory agent\n');
+      git(dir, 'add', '.memory-link', 'CLAUDE.md', ...(quirk === 'agents' ? ['AGENTS.md'] : []));
+      git(dir, 'commit', '-q', '-m', 'mem(link): connect ' + repo + ' to ' + system + '-memory\n\nActor: bootstrap');
+    }
+    emit({
+      type: 'result',
+      subtype: 'success',
+      total_cost_usd: 0.3,
+      result:
+        memberPhase === 'link'
+          ? 'Linked ' + repo + '.'
+          : ['Added the member.', '', '## Memory bootstrap report (store mode): ' + system, '', '- Members: ' + repo, '- Store commit policy: `' + storePolicy + '`', '- Verification 1–8: ' + (quirk === 'unverified' ? '1–5 passed, 6 failed (a refused command)' : 'all passed'), '- Isolation terms kept: none; dropped: none'].join('\n'),
+    });
 } else if (mode === 'slow') {
   // Works slowly and never finishes by itself: for tests that stop the agent. Writes a file first, as a
   // real agent would have, so a stopped run has something in the folder.

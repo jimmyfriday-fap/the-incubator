@@ -17,6 +17,7 @@ export interface MemoryOptions {
   yes?: boolean;
   storePolicy?: string;
   storeRemote?: string;
+  join?: string;
 }
 
 /**
@@ -35,6 +36,13 @@ export async function runMemory(
     if (/^[a-z]+:\/\//i.test(x) || x.startsWith('git@'))
       throw new PolicyError('Add memory needs a local folder, not a URL', { code: 'usage' });
   const store = list.length > 1;
+  if (
+    opts.join !== undefined &&
+    (store || opts.storePolicy !== undefined || opts.storeRemote !== undefined)
+  )
+    throw new PolicyError('--join adds one repository to an existing system: use it alone', {
+      code: 'usage',
+    });
   if (store && !opts.system)
     throw new PolicyError('store mode (several repositories) needs --system <name>', {
       code: 'usage',
@@ -88,7 +96,8 @@ export async function runMemory(
     surface: 'cli',
     yes: Boolean(opts.yes),
     memory: {
-      system: opts.system ?? defaults.system,
+      system: opts.join ?? opts.system ?? defaults.system,
+      ...(opts.join ? { joinSystem: opts.join } : {}),
       isolationTerms: terms,
       commitPolicy: policy,
       ...(opts.model ? { model: opts.model } : {}),

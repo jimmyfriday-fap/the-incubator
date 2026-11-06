@@ -35,6 +35,8 @@ export function memoryBody(f: {
   dir?: string;
   storePolicy?: 'pr' | 'direct';
   storeRemote?: string;
+  /** Add member: the system to join; it is also the system name. */
+  joinSystem?: string;
 }): MemoryChoices {
   const others = f.members ?? [];
   return {
@@ -48,6 +50,7 @@ export function memoryBody(f: {
       : {}),
     ...(others.length ? { storeCommitPolicy: f.storePolicy ?? 'pr' } : {}),
     ...(others.length && f.storeRemote?.trim() ? { storeRemote: f.storeRemote.trim() } : {}),
+    ...(f.joinSystem ? { joinSystem: f.joinSystem } : {}),
   };
 }
 
