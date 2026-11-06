@@ -10,6 +10,8 @@ pre-commit:
       run: node scripts/guard/bom.mjs --quiet {staged_files}
     abs-path:
       run: node scripts/guard/abs-path.mjs --quiet {staged_files}
+    memory:
+      run: bash .memory/hooks/pre-commit
     # <scaffold:lefthook-pre-commit>
     # @node
     format:

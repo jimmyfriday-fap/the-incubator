@@ -608,6 +608,15 @@ export function createApp(opts: ServerOptions): WebApp {
                 effort: { enum: [...MEMORY_EFFORTS] },
               },
             },
+            buildMemory: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['enabled'],
+              properties: {
+                enabled: { type: 'boolean' },
+                system: { type: 'string', minLength: 1, maxLength: 60 },
+              },
+            },
             narrative: { type: 'string', maxLength: 20000 },
             request: { type: 'string', maxLength: 20000 },
             withGaps: { type: 'boolean' },
@@ -680,9 +689,14 @@ export function createApp(opts: ServerOptions): WebApp {
         if (b.dir !== undefined) {
           const v = await engine.inspectFolder(b.dir, 'new');
           if (!v.ok) return reply.code(422).send({ error: v.problems.join(' '), evidence: v });
-          return reply
-            .code(202)
-            .send({ runId: driver.start({ kind: 'new', narrative: b.narrative, dir: v.path }) });
+          return reply.code(202).send({
+            runId: driver.start({
+              kind: 'new',
+              narrative: b.narrative,
+              dir: v.path,
+              ...(b.buildMemory ? { buildMemory: b.buildMemory } : {}),
+            }),
+          });
         }
         return reply
           .code(202)

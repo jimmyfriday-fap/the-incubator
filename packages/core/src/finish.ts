@@ -131,6 +131,15 @@ export interface FinishDetail {
   whatNow: WhatNow | null;
   /** The parts committed as checkpoints since coding last started (plan 036). */
   checkpoints: { part: number; sha: string }[];
+  /** Plan 075: where the new build's memory lives, and the bootstrap report once it exists; null for other runs. */
+  memory: {
+    mode: 'repo' | 'member' | 'none' | 'target';
+    reason: string;
+    scaffolded: boolean;
+    bootstrapped: boolean;
+    report: string | null;
+    note: string | null;
+  } | null;
   /** Live counters while the agent works. */
   progress: {
     turns: number;

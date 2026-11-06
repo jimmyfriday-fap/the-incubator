@@ -14,6 +14,10 @@
       "reason": "The monorepo CI runs check on three operating systems and the packs matrix; generated repos get the single-job template."
     },
     {
+      "glob": "lefthook.yml",
+      "reason": "The Incubator's own pre-commit adds the memory guard (.memory/hooks/pre-commit); generated repositories get it only when an Add memory run installs it."
+    },
+    {
       "glob": ".gitignore",
       "reason": "Monorepo-specific ignores (*.tsbuildinfo, apps/desktop/release/) and no stack marker region."
     },

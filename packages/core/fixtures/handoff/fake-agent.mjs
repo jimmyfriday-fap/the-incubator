@@ -21,7 +21,76 @@ emit({
 const assistant = (tools) =>
   emit({ type: 'assistant', message: { content: [{ type: 'text', text: 'working' }, ...Array.from({ length: tools }, () => ({ type: 'tool_use', name: 'Edit' }))] } });
 
-if (mode === 'slow') {
+const phase = /^PHASE: (scaffold|bootstrap)$/m.exec(prompt)?.[1];
+if (phase) {
+  // A new build's memory sessions (plan 075), whatever the coding mode is: the scaffold makes a minimal store
+  // and commits it before any code; the bootstrap fills it and commits only the memory paths, leaving the
+  // owner's build work alone. FAKE_MEMORY_BUILD: agents (also edits AGENTS.md), unverified (the report's
+  // verification fails), nothing (commits nothing).
+  const quirk = process.env.FAKE_MEMORY_BUILD ?? '';
+  const env = { ...process.env };
+  for (const k of [
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_INDEX_FILE',
+    'GIT_COMMON_DIR',
+    'GIT_PREFIX',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_IMPLICIT_WORK_TREE',
+  ])
+    delete env[k];
+  const git = (...args) => execFileSync('git', args, { env, stdio: 'pipe' });
+  if (!process.argv.includes('--add-dir')) {
+    process.stderr.write('memory build needs --add-dir\n');
+    process.exit(3);
+  }
+  const today = /^TODAY: (.+)$/m.exec(prompt)?.[1] ?? '2026-01-01';
+  const stated = /```text\n([\s\S]*?)\n```/.exec(prompt)?.[1]?.split('.')[0]?.trim() ?? 'nothing';
+  let result;
+  if (quirk !== 'nothing') {
+    const paths = [];
+    const put = (p, text) => {
+      mkdirSync(path.dirname(p), { recursive: true });
+      writeFileSync(p, text);
+      paths.push(p);
+    };
+    if (phase === 'scaffold') {
+      put(path.join('.memory', 'INDEX.md'), '# Memory index\n');
+      put(path.join('.memory', 'memory.conf'), 'commit_policy=direct\n');
+      put(
+        path.join('.memory', 'context', 'platform', 'decisions.md'),
+        `- [${today}] [bootstrap] ${stated}. (src: solution description)\n`,
+      );
+      put(path.join('.claude', 'skills', 'write-memory', 'SKILL.md'), '---\nname: write-memory\n---\n');
+      put('CLAUDE.md', 'Read .memory/INDEX.md before starting.\n');
+    } else {
+      put(path.join('.memory', 'context', 'platform', 'architecture.md'), `- [${today}] [bootstrap] A small service. (src: src/agent-work.txt)\n`);
+    }
+    if (quirk === 'agents') put('AGENTS.md', 'changed by the fake memory agent\n');
+    git('add', '--', ...paths);
+    git(
+      'commit',
+      '-q',
+      '-m',
+      `mem(platform): ${phase === 'scaffold' ? 'scaffold memory infrastructure' : 'bootstrap repo memory'}\n\nActor: bootstrap\nSession: manual`,
+    );
+  }
+  assistant(1);
+  result =
+    phase === 'scaffold'
+      ? 'Scaffold done: 1 decision lines.'
+      : [
+          'Filled the store.',
+          '',
+          '## Memory bootstrap report',
+          '',
+          '- Commit policy: `direct`',
+          `- Verification 1–7: ${quirk === 'unverified' ? '1–5 passed, 6 failed' : 'all passed'}`,
+          '- Isolation terms kept: none; dropped: none',
+        ].join('\n');
+  emit({ type: 'result', subtype: 'success', total_cost_usd: 0.1, result });
+} else if (mode === 'slow') {
   // Works slowly and never finishes by itself: for tests that stop the agent. Writes a file first, as a
   // real agent would have, so a stopped run has something in the folder.
   mkdirSync('src', { recursive: true });
@@ -210,6 +279,11 @@ if (mode === 'slow') {
 } else {
   assistant(1);
   assistant(0);
+  // FAKE_AGENT_SAVE_PROMPT=1: keep the prompt this coding launch was given, for tests that read it.
+  if (process.env.FAKE_AGENT_SAVE_PROMPT === '1') {
+    mkdirSync(path.join('.incubator', 'state'), { recursive: true });
+    writeFileSync(path.join('.incubator', 'state', 'coding-prompt.txt'), prompt);
+  }
   if (mode === 'edit') {
     mkdirSync('src', { recursive: true });
     writeFileSync(path.join('src', 'agent-work.txt'), 'written by the fake agent\n');

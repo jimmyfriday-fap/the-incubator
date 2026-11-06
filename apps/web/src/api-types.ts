@@ -77,6 +77,15 @@ export interface FinishInfo {
   whatNow: WhatNow | null;
   /** The parts committed as checkpoints since coding last started (plan 036). */
   checkpoints: { part: number; sha: string }[];
+  /** Plan 075: where the new build's memory lives, and the bootstrap report once it exists; null for other runs. */
+  memory: {
+    mode: 'repo' | 'member' | 'none' | 'target';
+    reason: string;
+    scaffolded: boolean;
+    bootstrapped: boolean;
+    report: string | null;
+    note: string | null;
+  } | null;
   progress: {
     turns: number;
     toolCalls: number;
@@ -488,6 +497,8 @@ export interface StartRunBody {
   kind: 'new' | 'adopt' | 'enhance' | 'memory';
   /** kind "memory" (plan 071): the Add memory choices; `dir` is the repository. */
   memory?: MemoryChoices;
+  /** kind "new" with `dir` (plan 074): the Memory toggle, on by default, and the system to join. */
+  buildMemory?: { enabled: boolean; system?: string };
   narrative?: string;
   repo?: string;
   /** adopt and enhance: owner/name when the source is not a GitHub URL. */

@@ -74,6 +74,10 @@ export async function main(
       '--dir <folder>',
       'initialize the new repository in this empty (or missing) folder; the agent codes there and you approve the commit and push',
     )
+    .option(
+      '--no-memory',
+      'do not give the new repository an agent memory store (on by default for a --dir build)',
+    )
     .action(async (opts: NewOptions) => {
       code = await runNew(getDeps(), io, opts);
     });

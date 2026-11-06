@@ -19,6 +19,7 @@ import {
 import { serializeSpec } from '@incubator/spec';
 import type { BackshackDecision } from './backshack.js';
 import type { MemoryRunInput } from './memory.js';
+import type { BuildMemoryChoice } from './memory-destination.js';
 import { Journal } from './journal.js';
 
 export interface RunInput {
@@ -69,6 +70,11 @@ export interface RunInput {
    * agent session that commits the install; the owner then decides the push and the pull request.
    */
   memory?: MemoryRunInput;
+  /**
+   * Plan 074, `new` runs with a folder: the Memory toggle (default on) and the system to join. Absent means
+   * on, and a standalone store. The decision is journaled as `memory.plan`.
+   */
+  buildMemory?: BuildMemoryChoice;
 }
 
 /** `~/.incubator` layout (TDD §2.5): config.json, runs/<id>/{run.json,journal.jsonl,spec/,workspace/,logs/}, cache/. */

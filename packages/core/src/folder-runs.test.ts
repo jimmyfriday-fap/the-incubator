@@ -80,7 +80,12 @@ async function setOwner(dir: string): Promise<void> {
 
 /** Starts a new-solution run in a folder and drives it to the commit request. */
 async function newSolution(h: Harness, dir: string) {
-  const runId = h.engine.startFromSpec(spec(), { kind: 'new', surface: 'test', dir });
+  const runId = h.engine.startFromSpec(spec(), {
+    kind: 'new',
+    surface: 'test',
+    dir,
+    buildMemory: { enabled: false },
+  });
   const s = await h.engine.advance(runId, new DefaultsPrompter());
   return { runId, s };
 }
@@ -332,7 +337,12 @@ describe('new solution in a chosen folder', () => {
     const h = harness();
     const dir = freshFolder();
     h.gitFaults.failAt = { method: 'init', when: 'before' };
-    const runId = h.engine.startFromSpec(spec(), { kind: 'new', surface: 'test', dir });
+    const runId = h.engine.startFromSpec(spec(), {
+      kind: 'new',
+      surface: 'test',
+      dir,
+      buildMemory: { enabled: false },
+    });
     await expect(h.engine.advance(runId, new DefaultsPrompter())).rejects.toBeInstanceOf(ToolError);
     expect(existsSync(path.join(dir, 'README.md'))).toBe(true);
     const s = await h.engine.resume(runId, new DefaultsPrompter());
@@ -445,7 +455,12 @@ describe('the commit and push survive a crash at any step (ADR-010, ADR-023)', (
     async ({ kind, m, when }) => {
       const h = harness();
       const dir = freshFolder();
-      const runId = h.engine.startFromSpec(spec(), { kind: 'new', surface: 'test', dir });
+      const runId = h.engine.startFromSpec(spec(), {
+        kind: 'new',
+        surface: 'test',
+        dir,
+        buildMemory: { enabled: false },
+      });
       const s = await drive(h, runId, dir, () => {
         if (kind === 'git') h.gitFaults.failAt = { method: m as keyof GitOps, when };
         else h.github.failAt = { method: m as GitHubMethod, when };

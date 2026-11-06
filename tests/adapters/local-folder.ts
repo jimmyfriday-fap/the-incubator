@@ -140,7 +140,12 @@ export const adapter: FeatureAdapter<Record<string, never>, Out> = {
         const prompter = new DefaultsPrompter();
         const runId =
           input.mode === 'new'
-            ? h.engine.startFromSpec(newSpec(), { kind: 'new', surface: 'test', dir })
+            ? h.engine.startFromSpec(newSpec(), {
+                kind: 'new',
+                surface: 'test',
+                dir,
+                buildMemory: { enabled: false },
+              })
             : h.engine.start({
                 kind: 'enhance',
                 repo: dir,

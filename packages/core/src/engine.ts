@@ -211,15 +211,21 @@ import {
   copySeed,
   installedPolicy,
   kebab,
+  memoryBuildLine,
+  memoryBuildPrompt,
   memoryConsumptionLine,
   memoryPrompt,
   parseMemoryReport,
   prefillIsolationTerms,
   seedVersion,
+  MEMORY_BUILD_ALLOWED_TOOLS,
+  type BuildMemoryFacts,
+  type MemoryBuildPhase,
   type MemoryDetail,
   type MemoryDone,
 } from './memory.js';
 import { checksReport, installMemoryProtected, type InstallCheck } from './memory-install.js';
+import { resolveMemoryDestination, type MemoryPlan } from './memory-destination.js';
 
 /**
  * The identity of what the owner asked for. `existingRepo` (the base commit and the scan) is left
@@ -394,8 +400,11 @@ export class Engine {
         });
       input = { ...input, memory: checkMemoryInput(input.memory) };
     }
+    // Plan 074: a new build with a folder decides where its memory lives before any code is generated.
+    const memoryPlan = resolveMemoryDestination(input, this.knownMemorySystems());
     const { runId } = this.deps.store.create(input, { incubator: INCUBATOR_VERSION });
     this.record(runId, 'run.start', { runId, input });
+    if (memoryPlan) this.record(runId, 'memory.plan', { plan: memoryPlan });
     if (input.backshack) {
       // ADR-030: the owner's approval of the Backshack target, durable in the run folder and the journal.
       writeFileSync(
@@ -407,6 +416,11 @@ export class Engine {
     this.enter(runId, 'INTAKE');
     this.writeRevision(runId, { intent: { narrative: input.narrative ?? '' }, decisions: [] });
     return runId;
+  }
+
+  /** The systems whose memory store a new repository can join. None until store mode exists (plan 076). */
+  private knownMemorySystems(): string[] {
+    return [];
   }
 
   /** A run that starts from an existing, complete spec (for `publish <spec>` and scaffold runs). */
@@ -1383,6 +1397,8 @@ export class Engine {
           stack: null,
         });
       }
+      const plan = this.entries(runId).find((en) => en.type === 'memory.plan') as
+        { plan?: MemoryPlan; ts?: string } | undefined;
       pf.attachRun(project.id, {
         runId,
         kind: input.kind,
@@ -1392,6 +1408,13 @@ export class Engine {
         done: s.done,
         outcome: null,
       });
+      if (plan?.plan)
+        pf.update(project.id, (p) => {
+          p.memoryPlan = {
+            ...plan.plan!,
+            decidedAt: plan.ts ?? this.deps.clock.now().toISOString(),
+          };
+        });
     } catch (e) {
       this.deps.log.warn(
         `portfolio: could not link run ${runId}: ${e instanceof Error ? e.message : String(e)}`,
@@ -2078,6 +2101,8 @@ export class Engine {
         });
       }
       ensureLocalExclude(dir);
+      // Plan 075: a new build with memory gets its scaffold committed before the first line of code.
+      if (this.buildMemoryMode(runId) === 'repo') await this.memoryBuild(runId, 'scaffold');
       const checks = this.handoffChecks(runId, dir);
       if (checks.mode === 'none')
         this.record(runId, 'step.warn', {
@@ -2216,6 +2241,9 @@ export class Engine {
         this.record(runId, 'code.part', { ...done });
         earlier.push(done);
       }
+      // Plan 075: the bootstrap reads the code that now exists; a stopped run is not bootstrapped.
+      if (!out.stopped && this.buildMemoryMode(runId) === 'repo')
+        await this.memoryBuild(runId, 'bootstrap');
       const report = agentReport(out);
       // The verdict of an update run counts every request and the Incubator's own checks (plan 042).
       const verdict =
@@ -2374,6 +2402,7 @@ export class Engine {
       pr: pr ?? null,
       setup,
       checkpoints: this.codeParts(runId).map(({ part, sha }) => ({ part, sha })),
+      memory: this.buildMemoryDetail(runId),
       progress:
         stage === 'coding' && progress
           ? {
@@ -2832,6 +2861,254 @@ export class Engine {
     });
     if (!p) throw new PolicyError(`no project ${projectId}`, { code: 'not_found' });
     return p;
+  }
+
+  /** The mode the build's `memory.plan` chose, or null (no plan: the run has no coding session). */
+  private buildMemoryMode(runId: string): MemoryPlan['mode'] | null {
+    const e = this.entries(runId).find((x) => x.type === 'memory.plan') as
+      { plan?: MemoryPlan } | undefined;
+    return e?.plan?.mode ?? null;
+  }
+
+  /** What the scaffold session seeds `decisions.md` from: the owner's words and the approved spec's choices. */
+  private buildMemoryFacts(runId: string): BuildMemoryFacts {
+    const spec = this.approvedSpec(runId);
+    const chosen = [
+      `Project: ${spec.project.name} (${spec.project.slug})`,
+      `Stack: ${spec.stack.pack}${spec.stack.framework ? `, framework ${spec.stack.framework}` : ''}${spec.stack.database ? `, database ${spec.stack.database}` : ''}`,
+      `Deploy target: ${spec.deploy.target}`,
+      `Tests live: ${spec.testing.home}`,
+    ];
+    return { narrative: this.state(runId).input.narrative ?? spec.intent.narrative, chosen };
+  }
+
+  /**
+   * Plan 075: one of the two memory sessions of a new build. The scaffold runs before the first coding part and
+   * commits the store on the build branch; the bootstrap runs after the last part and commits the filled store.
+   * The Incubator checks each result itself; a broken rule parks the run and nothing is pushed.
+   */
+  private async memoryBuild(runId: string, phase: MemoryBuildPhase): Promise<void> {
+    const done = `memory.${phase}`;
+    if (this.state(runId).steps[done]?.status === 'ok') return;
+    const earlier = this.state(runId).steps['memory.scaffold']?.data as
+      { skipped?: boolean } | undefined;
+    if (phase === 'bootstrap' && earlier?.skipped) {
+      this.record(runId, 'step.ok', { step: done, data: { skipped: true } });
+      return;
+    }
+    const git = this.deps.publish!.git;
+    if (!this.deps.handoff) throw new ToolError('a build with memory needs a coding agent CLI');
+    const dir = this.runDir(this.state(runId));
+    const start = `${done}.start`;
+    if (this.state(runId).steps[start]?.status !== 'ok') {
+      if (!(await git.identity(dir))) {
+        // why: the memory commits need an author; the commit request later says what to set. The build goes on.
+        this.record(runId, 'step.warn', {
+          step: `${done}.skipped`,
+          message:
+            'git does not know who you are, so the memory store was not made: set user.name and user.email, then run Add memory on this repository',
+        });
+        this.record(runId, 'step.ok', {
+          step: done,
+          data: {
+            skipped: true,
+            reason:
+              'git does not know who you are, so the memory store was not made: set user.name and user.email, then run Add memory on this repository',
+          },
+        });
+        return;
+      }
+      const seed = path.join(this.deps.store.runDir(runId), 'memory-seed');
+      const version = existsSync(path.join(seed, 'VERSION')) ? seedVersion(seed) : copySeed(seed);
+      this.record(runId, 'step.ok', {
+        step: start,
+        data: {
+          seed,
+          seedVersion: version,
+          base: await git.headSha(dir),
+          branch: await git.currentBranch(dir),
+        },
+      });
+    }
+    if (this.state(runId).steps[`${done}.agent`]?.status !== 'ok') {
+      const unsupported = await this.runMemoryBuildAgent(runId, phase);
+      if (unsupported) {
+        // why: a build that worked without memory must not stop because its agent CLI cannot make the store.
+        this.record(runId, 'step.warn', { step: `${done}.skipped`, message: unsupported });
+        this.record(runId, 'step.ok', { step: done, data: { skipped: true, reason: unsupported } });
+        return;
+      }
+    }
+    const result = await this.checkMemoryBuild(runId, phase);
+    this.record(runId, 'step.ok', { step: done, data: result });
+    // why: from here on the portfolio says the solution has memory, so later update runs read it.
+    const spec = this.approvedSpec(runId);
+    this.record(runId, 'memory.installed', {
+      record: {
+        mode: 'repo',
+        system: spec.project.slug,
+        store: REPO_STORE,
+        seedVersion: result.seedVersion,
+        commitPolicy: 'direct',
+        installedAt: this.deps.clock.now().toISOString().slice(0, 10),
+        report:
+          phase === 'bootstrap'
+            ? result.report
+            : 'scaffold only; the bootstrap runs after the code',
+      },
+    });
+  }
+
+  /** Runs one memory session; returns why it cannot run with this agent CLI, or null when it ran. */
+  private async runMemoryBuildAgent(
+    runId: string,
+    phase: MemoryBuildPhase,
+  ): Promise<string | null> {
+    const s = this.state(runId);
+    const dir = this.runDir(s);
+    const start = s.steps[`memory.${phase}.start`]!.data as { seed: string };
+    const agent = this.cfg().agents?.primary ?? 'claude';
+    const caps = await this.deps.handoff!.probe(AGENT_ADAPTERS[agent]);
+    if (!caps.installed || !caps.path)
+      throw new PolicyError(`${AGENT_ADAPTERS[agent]} is not installed`, { code: 'agent_missing' });
+    if (!caps.flags.allowedTools || !caps.flags.addDir || !caps.flags.model)
+      return `${AGENT_ADAPTERS[agent]} cannot restrict its commands, read the memory seed and choose a model, so the memory store was not made: run Add memory with another agent CLI`;
+    if (!caps.flags.effort)
+      this.record(runId, 'step.warn', {
+        step: `memory.${phase}.effort`,
+        message: `${AGENT_ADAPTERS[agent]} has no flag for reasoning effort, so "${MEMORY_DEFAULT_EFFORT}" was not applied`,
+      });
+    const ceilings = { ...DEFAULT_RUN_CEILINGS };
+    const plan: HandoffPlan = {
+      agent,
+      bin: caps.path,
+      argv: buildHandoffArgv(caps, ceilings, MEMORY_BUILD_ALLOWED_TOOLS, MEMORY_DEFAULT_MODEL, {
+        addDirs: [start.seed],
+        effort: MEMORY_DEFAULT_EFFORT,
+      }),
+      model: MEMORY_DEFAULT_MODEL,
+      cwd: dir,
+      planPath: path.join(start.seed, 'playbooks', 'deploy-repo.md'),
+      ceilings,
+      unenforceable: [],
+    };
+    const prompt = memoryBuildPrompt({
+      phase,
+      target: dir,
+      seed: start.seed,
+      terms: prefillIsolationTerms(this.portfolioList(), [], ''),
+      today: this.deps.clock.now().toISOString().slice(0, 10),
+      facts: this.buildMemoryFacts(runId),
+    });
+    let last = 0;
+    const out = await this.runHandoff(
+      runId,
+      plan,
+      prompt,
+      null,
+      { mode: 'none', commands: [] },
+      {
+        onProgress: (p) => {
+          if (last && Date.now() - last < 1000) return;
+          last = Date.now();
+          this.record(runId, 'handoff.progress', { ...p });
+        },
+        summaryMax: 20_000,
+      },
+    );
+    if (out.stopped) throw new InterruptedError(`run ${runId} was stopped`);
+    this.record(runId, 'step.ok', {
+      step: `memory.${phase}.agent`,
+      data: { ...agentReport(out), effortApplied: Boolean(caps.flags.effort) },
+    });
+    return null;
+  }
+
+  /** The Incubator's own checks of one memory session of a build, run after the agent stops and on every resume. */
+  private async checkMemoryBuild(
+    runId: string,
+    phase: MemoryBuildPhase,
+  ): Promise<{ seedVersion: string; head: string; report: string }> {
+    const s = this.state(runId);
+    const git = this.deps.publish!.git;
+    const dir = this.runDir(s);
+    const start = s.steps[`memory.${phase}.start`]!.data as {
+      seedVersion: string;
+      base: string;
+      branch: string | null;
+    };
+    const agent = s.steps[`memory.${phase}.agent`]!.data as AgentReport;
+    const report = phase === 'bootstrap' ? parseMemoryReport(agent.summary) : null;
+    const problems: string[] = [];
+    if (agent.tripped) problems.push(`the agent stopped at a run limit (${agent.tripped})`);
+    else if (agent.exitCode !== 0) problems.push(`the agent exited with code ${agent.exitCode}`);
+    if (phase === 'bootstrap' && !report)
+      problems.push("the agent did not end with the playbook's report");
+    // why: the owner's build work stays uncommitted during the bootstrap; only memory paths must be committed.
+    const left = (await git.status(dir)).filter((e) => allowedMemoryPath(e.path));
+    if (left.length)
+      problems.push(
+        `memory files were left uncommitted: ${left
+          .slice(0, 8)
+          .map((e) => e.path)
+          .join(', ')}`,
+      );
+    const head = await git.headSha(dir);
+    const branch = await git.currentBranch(dir);
+    if (branch !== start.branch)
+      problems.push(
+        `the build is on ${start.branch ?? 'a detached HEAD'}, but the folder is on ${branch ?? 'a detached HEAD'}`,
+      );
+    const changed =
+      head && head !== start.base
+        ? (await git.diffNameStatus(dir, start.base, head)).map(([, p]) => p)
+        : [];
+    if (changed.length === 0) problems.push('nothing was committed');
+    if (changed.includes('AGENTS.md')) problems.push('AGENTS.md was changed (it never may be)');
+    const outside = changed.filter((p) => !allowedMemoryPath(p));
+    if (outside.length)
+      problems.push(`files outside the memory store changed: ${outside.slice(0, 8).join(', ')}`);
+    if (phase === 'scaffold' && !existsSync(path.join(dir, '.memory', 'INDEX.md')))
+      problems.push('.memory/INDEX.md does not exist');
+    const policy = installedPolicy(dir);
+    if (policy !== 'direct')
+      problems.push(
+        `.memory/memory.conf should name the direct commit policy, not ${policy ?? 'none'}`,
+      );
+    const text = report?.text ?? agent.summary ?? '';
+    this.record(runId, 'memory.result', { phase, problems, report: text });
+    if (problems.length)
+      throw new ParkError(
+        'memory_rules_broken',
+        `the ${phase} of the memory store broke a rule: ${problems.join('; ')}. Fix the folder and resume, or cancel the run.`,
+        { problems },
+      );
+    if (phase === 'bootstrap' && !report!.verificationPassed)
+      throw new ParkError(
+        'memory_verify_failed',
+        "the playbook's own verification did not all pass (see its report). Fix the store and resume, or cancel the run.",
+      );
+    return { seedVersion: start.seedVersion, head: head!, report: text };
+  }
+
+  /** What the owner is shown about a build's memory: the plan, and the bootstrap report once it exists. */
+  private buildMemoryDetail(runId: string): FinishDetail['memory'] {
+    const e = this.entries(runId).find((x) => x.type === 'memory.plan') as
+      { plan?: MemoryPlan } | undefined;
+    if (!e?.plan) return null;
+    const steps = this.state(runId).steps;
+    const scaffold = steps['memory.scaffold'];
+    const boot = steps['memory.bootstrap'];
+    const skipped = (scaffold?.data as { skipped?: boolean } | undefined)?.skipped === true;
+    return {
+      mode: e.plan.mode,
+      reason: e.plan.reason,
+      scaffolded: scaffold?.status === 'ok' && !skipped,
+      bootstrapped:
+        boot?.status === 'ok' && (boot.data as { skipped?: boolean } | undefined)?.skipped !== true,
+      report: (boot?.data as { report?: string } | undefined)?.report ?? null,
+      note: skipped ? ((scaffold?.data as { reason?: string } | undefined)?.reason ?? null) : null,
+    };
   }
 
   /**
@@ -3310,11 +3587,17 @@ export class Engine {
     };
     // Plan 071 (spec §6): a solution with memory reads it first and writes back to it at the end.
     const memory = this.deps.portfolio?.forRun(runId)?.memory;
+    const built = this.state(runId).steps['memory.scaffold']?.status === 'ok';
+    const memoryLine = built
+      ? memoryBuildLine(REPO_STORE)
+      : memory
+        ? memoryConsumptionLine(memory.store)
+        : '';
     return {
       plan,
       prompt:
-        (memory
-          ? `${memoryConsumptionLine(memory.store)}
+        (memoryLine
+          ? `${memoryLine}
 
 `
           : '') +
