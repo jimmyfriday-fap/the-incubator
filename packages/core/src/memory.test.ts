@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   MEMORY_ALLOWED_TOOLS,
+  MEMORY_AVAILABLE_TOOLS,
   allowedMemoryPath,
   checkMemoryInput,
   checkTerms,
@@ -133,12 +134,23 @@ describe('the memory session (plan 071)', () => {
     );
     expect(MEMORY_ALLOWED_TOOLS).toContain('Bash(git checkout -b memory/bootstrap)');
     expect(MEMORY_ALLOWED_TOOLS).toContain('Bash(git commit:*)');
+    // The playbook's step D3 reads core.hooksPath; that read-only form must be allowed (AC1, 2026-11-06).
+    expect(MEMORY_ALLOWED_TOOLS).toContain('Bash(git config core.hooksPath)');
+  });
+
+  it('leaves the session no PowerShell and no tool the allow list does not name', () => {
+    // --allowedTools only pre-approves; the Windows PowerShell tool is gone only if --tools excludes it.
+    expect(MEMORY_AVAILABLE_TOOLS).toEqual(['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash']);
+    expect(MEMORY_AVAILABLE_TOOLS.some((t) => /powershell/i.test(t))).toBe(false);
+    const named = new Set(MEMORY_ALLOWED_TOOLS.map((t) => t.replace(/\(.*$/, '')));
+    for (const t of named) expect(MEMORY_AVAILABLE_TOOLS as readonly string[]).toContain(t);
   });
 
   it('builds the prompt from the wrapper and the playbook inputs, with forward slashes', () => {
     const prompt = memoryPrompt({
       target: 'work\\shop',
       seed: 'runs\\r1\\memory-seed',
+      stubs: 'runs\\r1\\memory-stubs',
       terms: [],
       policy: 'pr',
       today: '2026-11-03',
@@ -147,11 +159,19 @@ describe('the memory session (plan 071)', () => {
     expect(prompt).toContain('Follow `runs/r1/memory-seed/playbooks/deploy-repo.md`');
     expect(prompt).toContain('TARGET: work/shop');
     expect(prompt).toContain('SEED: runs/r1/memory-seed');
+    expect(prompt).toContain('STUBS: runs/r1/memory-stubs');
     expect(prompt).toContain('ISOLATION_TERMS: (none)');
     expect(prompt).toContain('COMMIT_POLICY: pr');
     expect(prompt).toContain('TODAY: 2026-11-03');
     expect(
-      memoryPrompt({ target: 't', seed: 's', terms: ['a', 'b'], policy: 'direct', today: 'x' }),
+      memoryPrompt({
+        target: 't',
+        seed: 's',
+        stubs: 'u',
+        terms: ['a', 'b'],
+        policy: 'direct',
+        today: 'x',
+      }),
     ).toContain('ISOLATION_TERMS: a, b');
   });
 

@@ -21,11 +21,13 @@ const git = (args: string[], cwd: string) => nodeExec.run('git', args, { cwd, ti
 const out = async (args: string[], cwd: string) => (await git(args, cwd)).stdout.trim();
 
 type Harness = ReturnType<typeof fakePublishEngine>;
-const harness = (): Harness =>
+// why: steps 4 to 6 run the seed's bash scripts and a real git hook, which is slow on Windows, so only the tests about them run them.
+const harness = (selfTests = false): Harness =>
   fakePublishEngine({
     handoff: fakeAgentHandoff(),
     portfolio: true,
     llm: { dir: enhanceFixtureDir('export-orders') },
+    ...(selfTests ? {} : { memorySelfTests: false }),
   });
 
 beforeEach(() => {
@@ -70,9 +72,10 @@ const start = (
     memory: { system: 'shop', isolationTerms: ['other-app'], commitPolicy: extra.policy ?? 'pr' },
   });
 
-describe('Add memory runs (plan 071)', () => {
+// why: each run drives the seed's own bash scripts and a real git hook, which is slow on Windows.
+describe('Add memory runs (plan 071)', { timeout: 300_000 }, () => {
   it('installs memory locally when the folder has no GitHub origin, and records it on the project', async () => {
-    const h = harness();
+    const h = harness(true);
     const { dir } = await seeded(h);
     const runId = start(h, dir);
     const s = await h.engine.advance(runId, new DefaultsPrompter());
@@ -98,6 +101,39 @@ describe('Add memory runs (plan 071)', () => {
       store: '.memory/',
       commitPolicy: 'pr',
     });
+    // The files Claude Code will not let the agent write are the Incubator's work (ADR-031 amendment).
+    for (const name of ['write-memory', 'dream', 'memory-bootstrap', 'ship-release'])
+      expect(existsSync(path.join(dir, '.claude', 'skills', name, 'SKILL.md'))).toBe(true);
+    const settings = JSON.parse(
+      readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8'),
+    ) as { hooks: { SessionEnd: unknown[] } };
+    expect(settings.hooks.SessionEnd).toHaveLength(1);
+    expect(readFileSync(path.join(dir, '.git', 'hooks', 'pre-commit'), 'utf8')).toContain(
+      '.memory/hooks/pre-commit',
+    );
+    expect(await out(['log', '-1', '--format=%s'], dir)).toBe(
+      'mem(platform): install memory skills and hooks (Incubator)',
+    );
+    expect(m.report).toContain('## Incubator checks');
+    expect(m.report).toContain('- E4: passed');
+    expect(m.report).toContain('- E5: passed');
+    expect(h.github.repos.get('octo/shop')!.prs).toHaveLength(0);
+  });
+
+  it('parks memory_verify_failed when the pre-commit hook lets a bad line through, and pushes nothing', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'memory-weak-hook');
+    const h = harness(true);
+    const { ref, dir } = await seeded(h);
+    const runId = start(h, dir, { repoRef: ref });
+    const s = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(s.parked).toMatchObject({ reason: 'memory_verify_failed' });
+    expect(s.parked?.message).toContain('E4');
+    // The test commit is undone and the tree is clean, so the owner can fix the hook and resume.
+    expect(await out(['status', '--porcelain'], dir)).toBe('');
+    expect(await out(['log', '-1', '--format=%s'], dir)).toBe(
+      'mem(platform): install memory skills and hooks (Incubator)',
+    );
+    expect(h.engine.memoryDetail(runId)?.pushed).toBe(false);
     expect(h.github.repos.get('octo/shop')!.prs).toHaveLength(0);
   });
 

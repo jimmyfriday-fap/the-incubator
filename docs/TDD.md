@@ -1162,7 +1162,10 @@ about the push. Repo mode only (one solution, store `.memory/`).
   solution that already has memory (`memory_installed`, `memory_present`) and a folder without a git identity
   (`no_git_identity`), copies the seed into the run folder, and launches the agent with the copy as an extra
   directory (`--add-dir`), the effort (`--effort`, when the CLI has it) and `MEMORY_ALLOWED_TOOLS`: edits, the
-  playbook's scripts, read-only git and the git that commits; never a push, `gh` or the network.
+  playbook's scripts, read-only git and the git that commits; never a push, `gh` or the network. The session has
+  only the file tools and Bash (`--tools`, no PowerShell). Claude Code refuses a headless write under `.claude/` or
+  `.git/`, so after the agent stops the Incubator installs the skills, the SessionEnd hook and the pre-commit hook
+  itself and runs the playbook's verification steps 4 to 6 (ADR-031 amendment).
 - **The Incubator's checks.** After the agent stops: its report (`## Memory bootstrap report`) is present, the
   tree is clean, something was committed, `AGENTS.md` is untouched, only `.memory/`, `.claude/skills/`,
   `.claude/settings.json` and `CLAUDE.md` changed, and the branch matches the policy (`memory/bootstrap` for

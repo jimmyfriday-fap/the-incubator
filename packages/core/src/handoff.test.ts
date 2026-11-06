@@ -106,6 +106,43 @@ describe('handoff', () => {
     );
   });
 
+  it('fixes which tools the agent has when the CLI has the flag, and leaves the flag out when it has none', () => {
+    const flags = {
+      printMode: ['-p'],
+      streamJson: ['--output-format', 'stream-json'],
+      acceptEdits: ['--permission-mode', 'acceptEdits'],
+      allowedTools: '--allowedTools',
+      addDir: '--add-dir',
+    };
+    const ceilings = { turns: 30, toolCalls: 100, minutes: 20, usd: 5 };
+    const extra = { addDirs: ['/seed', '/stubs'], available: ['Read', 'Bash'] };
+    const withFlag = buildHandoffArgv(
+      caps({ ...flags, availableTools: '--tools' }),
+      ceilings,
+      ['Read'],
+      undefined,
+      extra,
+    );
+    // The list sits after the variadic --add-dir values and before the permission flags.
+    expect(withFlag.slice(withFlag.indexOf('--add-dir'))).toEqual([
+      '--add-dir',
+      '/seed',
+      '/stubs',
+      '--tools',
+      'Read,Bash',
+      '--permission-mode',
+      'acceptEdits',
+      '--allowedTools',
+      'Read',
+    ]);
+    expect(buildHandoffArgv(caps(flags), ceilings, ['Read'], undefined, extra)).not.toContain(
+      '--tools',
+    );
+    expect(
+      buildHandoffArgv(caps({ ...flags, availableTools: '--tools' }), ceilings, ['Read']),
+    ).not.toContain('--tools');
+  });
+
   it('asks the agent for the chosen model when its CLI has a flag, and parks when it has none', () => {
     const flags = {
       printMode: ['-p'],

@@ -154,6 +154,7 @@ export const MEMORY_ALLOWED_TOOLS = [
   'Bash(git ls-files:*)',
   'Bash(git rev-parse:*)',
   'Bash(git config --get:*)',
+  'Bash(git config core.hooksPath)',
   'Bash(git branch --show-current)',
   `Bash(git checkout -b ${MEMORY_BRANCH})`,
   'Bash(git add:*)',
@@ -178,6 +179,13 @@ export const MEMORY_ALLOWED_TOOLS = [
   'Bash(rm -rf .memory/transcripts/:*)',
 ];
 
+/**
+ * The only tools that exist in the memory session. `MEMORY_ALLOWED_TOOLS` merely pre-approves commands; without this
+ * list a Windows session also gets the PowerShell tool, which no allow rule covers, so the agent fell back to it and
+ * its git calls were refused (AC1, 2026-11-06).
+ */
+export const MEMORY_AVAILABLE_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash'] as const;
+
 /** A path as the agent's bash sees it: forward slashes. */
 function slashes(p: string): string {
   return p.replace(/\\/g, '/');
@@ -187,6 +195,8 @@ function slashes(p: string): string {
 export function memoryPrompt(i: {
   target: string;
   seed: string;
+  /** Where the agent writes skill stubs: outside the repo, because Claude Code refuses writes under `.claude/`. */
+  stubs: string;
   terms: readonly string[];
   policy: MemoryCommitPolicy;
   today: string;
@@ -200,6 +210,7 @@ export function memoryPrompt(i: {
     '```',
     `TARGET: ${slashes(i.target)}`,
     `SEED: ${seed}`,
+    `STUBS: ${slashes(i.stubs)}`,
     `ISOLATION_TERMS: ${i.terms.length ? i.terms.join(', ') : '(none)'}`,
     `COMMIT_POLICY: ${i.policy}`,
     `TODAY: ${i.today}`,

@@ -46,8 +46,8 @@ describe('scenario contract layer', () => {
           expect(failures, `${s.file} stage ${stage.name}`).toEqual([]);
         }
       },
-      // why: live scenarios wait on real model rounds.
-      scenario.tags.includes('live') ? 300_000 : undefined,
+      // why: live scenarios wait on real model rounds; add-memory runs the seed's own bash scripts and a real git hook, which are slow on Windows.
+      scenario.tags.includes('live') || scenario.feature === 'add-memory' ? 300_000 : undefined,
     );
   }
 });

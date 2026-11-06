@@ -50,3 +50,40 @@ read-only, so the playbook cannot be changed to leave its work uncommitted.
 - The allowed-command list is the safety boundary; widening it needs a reason in this ADR's terms (no push,
   no `gh`, no network).
 - The checks run again on every resume, so an owner who fixes the folder by hand can continue the run.
+
+## Amendment (2026-11-06): the Incubator installs what the agent cannot write
+
+The first live run (AC1, on a throwaway repository, Windows) parked `memory_rules_broken`: nothing was committed. Three
+things the decision above assumed were not true of a headless Claude Code session.
+
+- **Protected paths.** Claude Code treats `.claude/` and `.git/` as protected: in `acceptEdits` mode a write there
+  needs an answer, a headless run has nobody to give it, and an allow rule does not pre-approve it. The agent could not
+  write the skills, `.claude/settings.json` or the git pre-commit hook.
+- **PowerShell.** `--allowedTools` only pre-approves commands. On Windows the session also had the PowerShell tool,
+  which no entry in `MEMORY_ALLOWED_TOOLS` covers, so the agent's git calls through it were refused.
+- **Compound commands.** Claude Code checks each part of `a && b`, a loop or a pipe against the allow list on its own.
+
+Decision, replacing the parts of points 3 and 4 above that these facts break:
+
+1. **The session has only the tools it needs.** The agent is launched with `--tools` set to `MEMORY_AVAILABLE_TOOLS`
+   (the file tools and Bash; no PowerShell) and with `CLAUDE_CODE_USE_POWERSHELL_TOOL=0`. `MEMORY_ALLOWED_TOOLS` is
+   still the list of commands it may run, and still holds no push, `gh` or network command. The prompt tells it to
+   run one command per call and to leave the repository's build and test commands alone.
+2. **The Incubator installs the protected files itself, after the agent stops.** The agent writes its skill stubs to a
+   folder outside the repository; the Incubator copies the seed's three skills and the stubs into `.claude/skills/`,
+   merges the SessionEnd hook into `.claude/settings.json`, installs the pre-commit hook (appending to an existing one),
+   regenerates `.memory/INDEX.md` and commits these as one commit, `mem(platform): install memory skills and hooks
+(Incubator)`. It touches only the paths `allowedMemoryPath` already allows, plus the hook under `.git/`. A hook path
+   that lives inside the repository (`core.hooksPath`) is left to the owner, and the report says so.
+3. **The Incubator runs the playbook's verification steps 4, 5 and 6.** They need the parts it installs: the hook
+   rejects an undated line (a real `git commit`, undone if it is accepted), the hook is wired for the chosen policy,
+   and the SessionEnd hook captures a transcript that git ignores. The agent reports `Verification 1–7: all passed
+(4–6 left to the Incubator)`. Any failed check parks `memory_verify_failed`; the report the owner reads includes the
+   Incubator's check lines.
+
+Consequences: the agent no longer needs, and is not given, any path under `.claude/` or `.git/`. The seed is still
+never edited; one defect found in it is for its owner: on Windows with python3 installed, `hooks/session-end` reads the
+transcript path with a trailing carriage return and captures nothing. The hook exits 0 on any problem by design, so step 6
+reports a **warning**, not a failure, when it runs but captures nothing (owner decision, 2026-11-06); it fails only when
+the hook itself errors or the captured transcript is not ignored by git. Transcripts are not captured on such a machine
+until the seed strips the `\r`.

@@ -125,6 +125,7 @@ export function fakeAgentHandoff(): NonNullable<EngineDeps['handoff']> {
           effort: '--effort',
           // As the real claude CLI: the allowed-tool list is how approved checks are enforced.
           allowedTools: '--allowedTools',
+          availableTools: '--tools',
         },
         stdinPrompt: true,
         eligible: { discovery: true, analysis: true, handoff: true },
@@ -261,6 +262,8 @@ export function fakePublishEngine(
     config?: EngineDeps['config'];
     /** The portfolio (ADR-028): off unless a test asks for it, so no marker file appears in a delivery. */
     portfolio?: boolean;
+    /** Add memory: run the playbook's verification steps 4 to 6 (default true; they run bash scripts and a real git hook, which is slow on Windows). */
+    memorySelfTests?: boolean;
     /** Discovery turns for greenfield runs (default: no LLM). */
     llm?: LlmAdapter | FixtureTurn[] | { dir: string };
   } = {},
@@ -288,6 +291,7 @@ export function fakePublishEngine(
     ...(opts.handoff ? { handoff: opts.handoff } : {}),
     ...(opts.tools ? { tools: opts.tools } : {}),
     ...(opts.config ? { config: opts.config } : {}),
+    ...(opts.memorySelfTests === false ? { memorySelfTests: false } : {}),
     ...(opts.portfolio ? { portfolio: new Portfolio(home, () => clock.now().toISOString()) } : {}),
     publish: {
       resolveToken: () =>

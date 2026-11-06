@@ -200,6 +200,7 @@ import {
 } from './backshack.js';
 import {
   MEMORY_ALLOWED_TOOLS,
+  MEMORY_AVAILABLE_TOOLS,
   MEMORY_BRANCH,
   MEMORY_DEFAULT_EFFORT,
   MEMORY_DEFAULT_MODEL,
@@ -218,6 +219,7 @@ import {
   type MemoryDetail,
   type MemoryDone,
 } from './memory.js';
+import { checksReport, installMemoryProtected, type InstallCheck } from './memory-install.js';
 
 /**
  * The identity of what the owner asked for. `existingRepo` (the base commit and the scan) is left
@@ -260,6 +262,8 @@ export interface EngineDeps {
   tools?: ToolsDeps;
   /** The portfolio of projects the Incubator has worked on (ADR-028). */
   portfolio?: Portfolio;
+  /** Add memory: run the playbook's verification steps 4 to 6 after the install (default true). Only tests turn it off. */
+  memorySelfTests?: boolean;
 }
 
 /** The journal entries that change what the portfolio shows about a run or its project. */
@@ -2874,6 +2878,7 @@ export class Engine {
       }
       if (this.state(runId).steps['memory.agent']?.status !== 'ok')
         await this.runMemoryAgent(runId);
+      await this.installMemoryProtected(runId);
       const done = await this.checkMemoryInstall(runId);
       this.record(runId, 'step.ok', { step: 'memory.done', data: done });
     });
@@ -2902,13 +2907,21 @@ export class Engine {
         message: `${AGENT_ADAPTERS[agent]} has no flag for reasoning effort, so "${effort}" was not applied`,
       });
     const ceilings = { ...DEFAULT_RUN_CEILINGS };
+    // Skill stubs go outside the repo (Claude Code refuses writes under `.claude/`); the Incubator copies them in afterwards.
+    const stubs = path.join(this.deps.store.runDir(runId), 'memory-stubs');
+    mkdirSync(stubs, { recursive: true });
+    // The seed's index script fails when `.claude/skills/` is missing, and the agent may not create it. An empty folder is not a change.
+    mkdirSync(path.join(dir, '.claude', 'skills'), { recursive: true });
     const plan: HandoffPlan = {
       agent,
       bin: caps.path,
       argv: buildHandoffArgv(caps, ceilings, MEMORY_ALLOWED_TOOLS, model, {
-        addDirs: [start.seed],
+        addDirs: [start.seed, stubs],
         effort,
+        available: MEMORY_AVAILABLE_TOOLS,
       }),
+      // Without `--tools` a Windows session still has the PowerShell tool, which no allow rule covers.
+      env: { CLAUDE_CODE_USE_POWERSHELL_TOOL: '0' },
       model,
       cwd: dir,
       planPath: path.join(start.seed, 'playbooks', 'deploy-repo.md'),
@@ -2918,6 +2931,7 @@ export class Engine {
     const prompt = memoryPrompt({
       target: dir,
       seed: start.seed,
+      stubs,
       // Spec rule 5: the only thing another system contributes is this list of terms.
       terms: m.isolationTerms,
       policy: m.commitPolicy,
@@ -2944,6 +2958,47 @@ export class Engine {
       step: 'memory.agent',
       data: { ...agentReport(out), effortApplied: Boolean(caps.flags.effort) },
     });
+  }
+
+  /**
+   * After the agent: the parts Claude Code will not let it write (`.claude/`, the git hook), then the playbook's
+   * verification steps that need them. Skipped when the agent already broke a rule; `checkMemoryInstall` then parks
+   * with the reason. Safe to run again on resume.
+   */
+  private async installMemoryProtected(runId: string): Promise<void> {
+    const s = this.state(runId);
+    if (s.steps['memory.protected']?.status === 'ok') return;
+    const git = this.deps.publish!.git;
+    const dir = this.runDir(s);
+    const agent = s.steps['memory.agent']!.data as AgentReport;
+    const start = s.steps['memory.start']!.data as { seed: string; base: string };
+    const report = parseMemoryReport(agent.summary);
+    // Nothing is installed on a run that is already parked: the agent's own verification failed, or it broke a rule.
+    if (agent.tripped || agent.exitCode !== 0 || !report?.verificationPassed) return;
+    if ((await git.status(dir)).length) return;
+    const head = await git.headSha(dir);
+    if (!head || head === start.base) return;
+    const changed = (await git.diffNameStatus(dir, start.base, head)).map(([, p]) => p);
+    if (changed.includes('AGENTS.md') || changed.some((p) => !allowedMemoryPath(p))) return;
+    const result = await installMemoryProtected({
+      exec: this.deps.handoff!.exec,
+      git,
+      dir,
+      seed: start.seed,
+      stubs: path.join(this.deps.store.runDir(runId), 'memory-stubs'),
+      selfTests: this.deps.memorySelfTests !== false,
+      ...(this.sig(runId).signal ? { signal: this.sig(runId).signal } : {}),
+    });
+    const failed = result.checks.filter((c) => c.status === 'failed');
+    if (failed.length)
+      throw new ParkError(
+        'memory_verify_failed',
+        `the Incubator's own checks of the install failed, so nothing was pushed: ${failed
+          .map((c) => `${c.step} (${c.detail})`)
+          .join('; ')}. Fix the install and resume, or cancel the run.`,
+        { problems: failed.map((c) => `${c.step}: ${c.detail}`) },
+      );
+    this.record(runId, 'step.ok', { step: 'memory.protected', data: result });
   }
 
   /**
@@ -2997,8 +3052,11 @@ export class Engine {
       problems.push(
         `the direct policy commits to ${start.branch ?? 'the branch it started on'}, but the folder is on ${branch ?? 'a detached HEAD'}`,
       );
+    const protectedChecks = (
+      s.steps['memory.protected']?.data as { checks?: InstallCheck[] } | undefined
+    )?.checks;
     const result = {
-      report: report?.text ?? agent.summary,
+      report: `${report?.text ?? agent.summary ?? ''}${protectedChecks?.length ? `\n\n${checksReport(protectedChecks)}` : ''}`,
       policy,
       branch,
       head,

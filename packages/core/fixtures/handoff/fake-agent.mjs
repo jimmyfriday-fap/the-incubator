@@ -5,7 +5,7 @@
 // run; idle stops without touching a file; runaway keeps calling tools until it is killed; spend
 // reports a large cost; steps works like an update run's agent (plan 043).
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const mode = process.env.FAKE_AGENT_MODE ?? 'complete';
@@ -112,13 +112,20 @@ if (mode === 'slow') {
     assistant(1);
     emit({ type: 'result', subtype: 'success', total_cost_usd: 0.42, result: `Finished step ${n}.` });
   }
-} else if (mode === 'memory' || mode === 'memory-agents' || mode === 'memory-unverified') {
+} else if (mode === 'memory' || mode === 'memory-agents' || mode === 'memory-unverified' || mode === 'memory-weak-hook') {
   // An Add memory run's agent (plan 071): installs a minimal store as the seed's playbook would, commits it
   // (on memory/bootstrap under the pr policy) and ends with the playbook's report. memory-agents also edits
-  // AGENTS.md (a broken rule); memory-unverified reports a failed verification step. It refuses to run
-  // without the seed directory and the effort, so a test proves the engine passed both.
-  if (!process.argv.includes('--add-dir') || !process.argv.includes('--effort')) {
-    process.stderr.write('memory mode needs --add-dir and --effort\n');
+  // AGENTS.md (a broken rule); memory-unverified reports a failed verification step; memory-weak-hook leaves a pre-commit hook that accepts anything. It refuses to run
+  // without the seed directory, the effort and a tool list without PowerShell, so a test proves the engine passed all.
+  const toolsAt = process.argv.indexOf('--tools');
+  if (
+    !process.argv.includes('--add-dir') ||
+    !process.argv.includes('--effort') ||
+    toolsAt < 0 ||
+    /PowerShell/i.test(process.argv[toolsAt + 1] ?? '') ||
+    process.env.CLAUDE_CODE_USE_POWERSHELL_TOOL !== '0'
+  ) {
+    process.stderr.write('memory mode needs --add-dir, --effort and --tools without PowerShell\n');
     process.exit(3);
   }
   // As in the parts mode: git hook variables would pin git to the REAL repository; drop them.
@@ -138,8 +145,43 @@ if (mode === 'slow') {
   const policy = /COMMIT_POLICY: direct/.test(prompt) ? 'direct' : 'pr';
   if (policy === 'pr') git('checkout', '-q', '-b', 'memory/bootstrap');
   mkdirSync('.memory', { recursive: true });
-  writeFileSync(path.join('.memory', 'INDEX.md'), '# Memory index\n');
+  // A real (small) store: the seed's own scripts, so the Incubator's checks of steps 4 to 6 have something to run.
+  const seed = /^SEED: (.+)$/m.exec(prompt)?.[1]?.trim();
+  const stubs = /^STUBS: (.+)$/m.exec(prompt)?.[1]?.trim();
+  if (!seed || !stubs) {
+    process.stderr.write('memory mode needs SEED and STUBS in the prompt\n');
+    process.exit(3);
+  }
+  mkdirSync(path.join('.memory', 'bin'), { recursive: true });
+  mkdirSync(path.join('.memory', 'hooks'), { recursive: true });
+  copyFileSync(path.join(seed, 'bin', 'memory'), path.join('.memory', 'bin', 'memory'));
+  if (mode === 'memory-weak-hook')
+    writeFileSync(path.join('.memory', 'hooks', 'pre-commit'), '#!/usr/bin/env bash\nexit 0\n');
+  else copyFileSync(path.join(seed, 'hooks', 'pre-commit'), path.join('.memory', 'hooks', 'pre-commit'));
+  // The seed's session-end hook, with the carriage return Windows python3 adds to the transcript path stripped
+  // (the unpatched hook captures nothing there; a seed defect its owner fixes).
+  const guard = '[ -n "${sid:-}" ] && [ -f "${src:-}" ] || exit 0';
+  writeFileSync(
+    path.join('.memory', 'hooks', 'session-end'),
+    readFileSync(path.join(seed, 'hooks', 'session-end'), 'utf8').replace(guard, () => `src="\${src%$'\\r'}"\n${guard}`),
+  );
+  copyFileSync(path.join(seed, 'templates', 'gitignore'), path.join('.memory', '.gitignore'));
+  const page = (name, tier, desc) =>
+    `---\nname: ${name}\ntier: ${tier}\ndescription: ${desc}\nlast_verified: 2026-11-03\n---\n- [2026-11-03] [bootstrap] A fact the fake agent found (src: README.md)\n`;
+  mkdirSync(path.join('.memory', 'context', 'platform'), { recursive: true });
+  writeFileSync(path.join('.memory', 'context', 'platform', 'conventions.md'), page('conventions', 'platform', 'How code is written here'));
+  mkdirSync(path.join('.memory', 'context', 'projects', 'shop'), { recursive: true });
+  writeFileSync(path.join('.memory', 'context', 'projects', 'shop', 'failures.md'), page('shop-failures', 'project', 'What went wrong in shop'));
   writeFileSync(path.join('.memory', 'memory.conf'), `store = .memory/\ncommit_policy = ${policy}\n`);
+  // A skill stub goes outside the repo; the Incubator copies it into .claude/skills/.
+  mkdirSync(path.join(stubs, 'ship-release'), { recursive: true });
+  writeFileSync(
+    path.join(stubs, 'ship-release', 'SKILL.md'),
+    '---\nname: ship-release\ndescription: Ships a release. Use when asked to release.\n---\nStatus: stub from bootstrap; confirm with the owner on first real use.\n',
+  );
+  // The playbook's step C regenerates the index with the seed's bash script. That is slow on Windows, and the
+  // Incubator regenerates it after installing the skills, so this stand-in writes a plain placeholder.
+  writeFileSync(path.join('.memory', 'INDEX.md'), '# Memory index\n');
   writeFileSync('CLAUDE.md', 'Read .memory/INDEX.md before starting.\n');
   if (mode === 'memory-agents') writeFileSync('AGENTS.md', 'changed by the fake memory agent\n');
   git('add', '-A');
@@ -155,7 +197,7 @@ if (mode === 'slow') {
       '## Memory bootstrap report',
       '',
       `- Commit policy: \`${policy}\``,
-      `- Verification 1–7: ${mode === 'memory-unverified' ? '1–5 passed, 6 failed (a refused command)' : 'all passed'}`,
+      `- Verification 1–7: ${mode === 'memory-unverified' ? '1–5 passed, 6 failed (a refused command)' : 'all passed (4–6 left to the Incubator)'}`,
       '- Isolation terms kept: none; dropped: none',
     ].join('\n'),
   });

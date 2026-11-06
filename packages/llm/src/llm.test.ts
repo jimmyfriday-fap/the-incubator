@@ -193,6 +193,7 @@ describe('capability probing', () => {
       jsonOutput: ['--output-format', 'json'],
       streamJson: ['--output-format', 'stream-json'],
       disableTools: ['--tools', ''],
+      availableTools: '--tools',
       maxTurns: '--max-turns',
       model: '--model',
       systemPrompt: '--append-system-prompt',
@@ -627,6 +628,16 @@ describe('capability probing for Add memory (plan 071)', () => {
     const caps = capabilitiesFromHelp('2.1.0 (Claude Code)\n', help, '/bin/claude');
     expect(caps.flags.addDir).toBe('--add-dir');
     expect(caps.flags.effort).toBe('--effort');
+  });
+
+  it('finds the flag that fixes which tools exist, apart from the one that only approves them', () => {
+    const help = `${CLAUDE_HELP}\n  --allowedTools <tools...>  Tools that run without asking\n`;
+    const caps = capabilitiesFromHelp('2.1.0 (Claude Code)\n', help, '/bin/claude');
+    expect(caps.flags.availableTools).toBe('--tools');
+    expect(caps.flags.allowedTools).toBe('--allowedTools');
+    expect(
+      capabilitiesFromHelp('1\n', COPILOT_HELP, '/bin/copilot').flags.availableTools,
+    ).toBeUndefined();
   });
 
   it('leaves them out when the CLI does not offer them', () => {

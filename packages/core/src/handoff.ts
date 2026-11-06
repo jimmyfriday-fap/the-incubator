@@ -64,7 +64,7 @@ export function buildHandoffArgv(
   ceilings: Ceilings,
   tools: readonly string[] = HANDOFF_ALLOWED_TOOLS,
   model?: string,
-  extra: { addDirs?: readonly string[]; effort?: string } = {},
+  extra: { addDirs?: readonly string[]; effort?: string; available?: readonly string[] } = {},
 ): string[] {
   const f = caps.flags;
   if (extra.addDirs?.length && !f.addDir)
@@ -98,6 +98,10 @@ export function buildHandoffArgv(
     ...(extra.effort !== undefined && f.effort ? [f.effort, extra.effort] : []),
     // why: `--add-dir` takes several values, so it is always followed by another flag.
     ...(extra.addDirs?.length && f.addDir ? [f.addDir, ...extra.addDirs] : []),
+    // why: `--allowedTools` only pre-approves; an unlisted tool (PowerShell on Windows) still exists. `--tools` removes it.
+    ...(extra.available?.length && f.availableTools
+      ? [f.availableTools, extra.available.join(',')]
+      : []),
     ...(f.acceptEdits ?? []),
     ...(f.allowedTools ? [f.allowedTools, tools.join(',')] : []),
   ];
