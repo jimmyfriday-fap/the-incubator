@@ -24,6 +24,8 @@ type Intent = '' | 'new' | 'update';
 export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void> }) {
   const [intent, setIntent] = useState<Intent>('');
   const [canBrowse, setCanBrowse] = useState(false);
+  // Plan 074: a new build gets an agent memory store unless the owner turns this off.
+  const [buildMemory, setBuildMemory] = useState(true);
   const [folder, setFolder] = useState('');
   const [check, setCheck] = useState<FolderCheck | null>(null);
   const [narrative, setNarrative] = useState('');
@@ -209,6 +211,18 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
             onBackshackProbe={setBsProbe}
             onSuggested={setSuggested}
           />
+          {!stack && (
+            <label className="check">
+              <input
+                type="checkbox"
+                data-testid="build-memory"
+                checked={buildMemory}
+                onChange={(e) => setBuildMemory(e.target.checked)}
+              />{' '}
+              Memory: give the new repository an agent memory store (.memory/), so the sessions that
+              build it learn as they go
+            </label>
+          )}
           {createError && (
             <p className="error" role="alert" data-testid="stack-create-error">
               {createError}
@@ -234,7 +248,14 @@ export function Wizard({ start }: { start: (body: StartRunBody) => Promise<void>
             <button
               data-testid="start-new"
               disabled={!usable || !narrative.trim() || starting}
-              onClick={() => go({ kind: 'new', narrative, dir: check!.path })}
+              onClick={() =>
+                go({
+                  kind: 'new',
+                  narrative,
+                  dir: check!.path,
+                  ...(buildMemory ? {} : { buildMemory: { enabled: false } }),
+                })
+              }
             >
               Start discovery
             </button>

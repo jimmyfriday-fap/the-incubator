@@ -1032,6 +1032,10 @@ describe('publish, handoff, auth, gc', () => {
       expect(
         await main(['new', '--prompt', 'x', '--dir', full, '--spec-only'], io().io, factory),
       ).toBe(2);
+      // Plan 074: --no-memory only means something for a --dir build.
+      const noDir = io();
+      expect(await main(['new', '--prompt', 'x', '--no-memory'], noDir.io, factory)).toBe(2);
+      expect(noDir.err.join('')).toContain('--no-memory');
     });
   });
 

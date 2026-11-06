@@ -661,6 +661,32 @@ describe('folders, coding, and the commit and push requests over the API', () =>
     expect((await api.post('/api/folders/inspect', { path: fresh })).status).toBe(400);
   });
 
+  it('records the Memory toggle of a new build before any code is generated (plan 074)', async () => {
+    const { api, h } = await boot();
+    const dir = tmpDir('web new memory');
+    expect(
+      (
+        await api.post('/api/runs', {
+          kind: 'new',
+          narrative: 'Stockroom: stock tracking for cafés.',
+          dir,
+          buildMemory: { enabled: 'yes' },
+        })
+      ).status,
+    ).toBe(400);
+    const { runId } = (
+      await api.post<{ runId: string }>('/api/runs', {
+        kind: 'new',
+        narrative: 'Stockroom: stock tracking for cafés.',
+        dir,
+        buildMemory: { enabled: false },
+      })
+    ).body;
+    const plan = h.engine.entries(runId).find((e) => e.type === 'memory.plan') as
+      { plan: { mode: string } } | undefined;
+    expect(plan?.plan.mode).toBe('none');
+  });
+
   it('a new solution in a chosen folder: discovery, review, publish, coding, then the owner commits and pushes', async () => {
     const { api, h } = await boot();
     const dir = tmpDir('web new');

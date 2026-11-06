@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import type { MemoryPlan } from './memory-destination.js';
 
 /**
  * The portfolio (ADR-028): one entry per project the Incubator has worked on, with the runs that worked on
@@ -55,6 +56,8 @@ export interface PortfolioProject {
   identifiers?: string[];
   /** The agent memory installed into the project (plan 071); absent when there is none. */
   memory?: MemoryRecord;
+  /** Where a new build's memory lives and why (plan 074); `mode: 'none'` when the owner turned it off. */
+  memoryPlan?: MemoryPlan & { decidedAt: string };
 }
 
 /** What a memory install left on a project (docs/incubator-memory-feature.md §4). */

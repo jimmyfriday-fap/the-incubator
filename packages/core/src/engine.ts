@@ -218,6 +218,7 @@ import {
   type MemoryDetail,
   type MemoryDone,
 } from './memory.js';
+import { resolveMemoryDestination, type MemoryPlan } from './memory-destination.js';
 
 /**
  * The identity of what the owner asked for. `existingRepo` (the base commit and the scan) is left
@@ -390,8 +391,11 @@ export class Engine {
         });
       input = { ...input, memory: checkMemoryInput(input.memory) };
     }
+    // Plan 074: a new build with a folder decides where its memory lives before any code is generated.
+    const memoryPlan = resolveMemoryDestination(input, this.knownMemorySystems());
     const { runId } = this.deps.store.create(input, { incubator: INCUBATOR_VERSION });
     this.record(runId, 'run.start', { runId, input });
+    if (memoryPlan) this.record(runId, 'memory.plan', { plan: memoryPlan });
     if (input.backshack) {
       // ADR-030: the owner's approval of the Backshack target, durable in the run folder and the journal.
       writeFileSync(
@@ -403,6 +407,11 @@ export class Engine {
     this.enter(runId, 'INTAKE');
     this.writeRevision(runId, { intent: { narrative: input.narrative ?? '' }, decisions: [] });
     return runId;
+  }
+
+  /** The systems whose memory store a new repository can join. None until store mode exists (plan 076). */
+  private knownMemorySystems(): string[] {
+    return [];
   }
 
   /** A run that starts from an existing, complete spec (for `publish <spec>` and scaffold runs). */
@@ -1379,6 +1388,8 @@ export class Engine {
           stack: null,
         });
       }
+      const plan = this.entries(runId).find((en) => en.type === 'memory.plan') as
+        { plan?: MemoryPlan; ts?: string } | undefined;
       pf.attachRun(project.id, {
         runId,
         kind: input.kind,
@@ -1388,6 +1399,13 @@ export class Engine {
         done: s.done,
         outcome: null,
       });
+      if (plan?.plan)
+        pf.update(project.id, (p) => {
+          p.memoryPlan = {
+            ...plan.plan!,
+            decidedAt: plan.ts ?? this.deps.clock.now().toISOString(),
+          };
+        });
     } catch (e) {
       this.deps.log.warn(
         `portfolio: could not link run ${runId}: ${e instanceof Error ? e.message : String(e)}`,

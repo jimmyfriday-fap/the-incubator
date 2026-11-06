@@ -27,6 +27,8 @@ export interface NewOptions {
   keep?: boolean;
   /** Initialize the repository in this folder (empty or missing); the agent then codes in it. */
   dir?: string;
+  /** `--no-memory` sets this to false: no memory store for the new repository (plan 074). Default on. */
+  memory?: boolean;
 }
 
 export function choosePrompter(io: Io, yes: boolean | undefined): Prompter {
@@ -181,6 +183,8 @@ export async function runNew(deps: CliDeps, io: Io, opts: NewOptions): Promise<n
     });
   if (opts.adapter && !isLlmAdapterId(opts.adapter))
     throw new PolicyError(`unknown adapter ${opts.adapter}`, { code: 'usage' });
+  if (opts.memory === false && !opts.dir)
+    throw new PolicyError('--no-memory applies to a --dir build', { code: 'usage' });
   if (opts.dir && (opts.specOnly || opts.scaffoldTo))
     throw new PolicyError('--dir cannot be combined with --spec-only or --scaffold-to', {
       code: 'usage',
@@ -198,6 +202,7 @@ export async function runNew(deps: CliDeps, io: Io, opts: NewOptions): Promise<n
     ...(opts.scaffoldTo ? { out: path.resolve(opts.scaffoldTo) } : {}),
     ...(dir ? { dir } : {}),
     ...(opts.keep ? { keep: true } : {}),
+    ...(dir && opts.memory === false ? { buildMemory: { enabled: false } } : {}),
     yes: Boolean(opts.yes),
     ...(opts.adapter ? { adapter: opts.adapter } : {}),
     surface: 'cli',
