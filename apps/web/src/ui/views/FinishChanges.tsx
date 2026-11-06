@@ -52,6 +52,16 @@ export function CommitRequest({
           {finish.agent?.tripped ? ` (${finish.agent.tripped})` : ''}
         </p>
       )}
+      {finish.memory && (
+        <details data-testid="build-memory-detail" open={finish.memory.bootstrapped}>
+          <summary>
+            Memory: {finish.memory.mode === 'none' ? 'off' : finish.memory.mode} (
+            {finish.memory.reason})
+          </summary>
+          {finish.memory.note && <p className="warn">{finish.memory.note}</p>}
+          {finish.memory.report && <pre>{finish.memory.report}</pre>}
+        </details>
+      )}
       {finish.checkpoints.length > 0 && (
         <p className="muted" data-testid="agent-parts">
           The agent worked in {finish.checkpoints.length + 1} parts. Parts 1 to{' '}
