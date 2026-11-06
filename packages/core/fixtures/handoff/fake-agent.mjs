@@ -5,7 +5,7 @@
 // run; idle stops without touching a file; runaway keeps calling tools until it is killed; spend
 // reports a large cost; steps works like an update run's agent (plan 043).
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const mode = process.env.FAKE_AGENT_MODE ?? 'complete';
@@ -228,6 +228,78 @@ if (phase) {
       '- Isolation terms kept: none; dropped: none',
     ].join('\n'),
   });
+} else if (mode === 'memory-store') {
+  // A store-mode Add memory run's agent (plan 076). discover proposes a system.yaml from the sibling git
+  // repositories; install builds the store and links the members as the playbook's phases B and D would, and
+  // ends with the store-mode report. FAKE_MEMORY_STORE: agents (also edits a member's AGENTS.md), unverified
+  // (a failed verification step). FAKE_MEMORY_STORE_MEMBERS=pr links on memory/link; default is direct.
+  if (!process.argv.includes('--add-dir') || !process.argv.includes('--effort')) {
+    process.stderr.write('memory store mode needs --add-dir and --effort\n');
+    process.exit(3);
+  }
+  const env = { ...process.env };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_IMPLICIT_WORK_TREE']) delete env[k];
+  const ident = ['-c', 'user.name=Fake Agent', '-c', 'user.email=fake@example.invalid'];
+  const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...ident, ...args], { env, stdio: 'pipe' });
+  const input = (k) => new RegExp('^' + k + ': (.+)$', 'm').exec(prompt)?.[1]?.trim() ?? '';
+  const workspace = input('WORKSPACE');
+  const system = input('SYSTEM');
+  const storePolicy = input('STORE_COMMIT_POLICY') || 'pr';
+  const quirk = process.env.FAKE_MEMORY_STORE ?? '';
+  const yamlOf = (names) =>
+    ['system: ' + system, 'seed_version: 1.0.1', 'store_repo: ' + system + '-memory', 'members:', ...names.flatMap((n) => ['  - repo: ' + n, '    path: ../' + n, '    role: member'])].join('\n');
+  assistant(1);
+  if (/^PHASE: discover$/m.test(prompt)) {
+    const names = readdirSync(workspace, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && existsSync(path.join(workspace, e.name, '.git')) && !e.name.endsWith('-memory'))
+      .map((e) => e.name)
+      .sort();
+    emit({
+      type: 'result',
+      subtype: 'success',
+      total_cost_usd: 0.1,
+      result: ['Proposed manifest:', '', '```yaml', yamlOf(names), '```', '', '| repo | evidence |', '| --- | --- |', ...names.map((n) => '| ' + n + ' | shares a prefix (src: ' + n + ':README.md) |')].join('\n'),
+    });
+  } else {
+    const manifest = /```yaml\n([\s\S]*?)\n```/.exec(prompt)?.[1] ?? '';
+    const names = [...manifest.matchAll(/^\s*-\s*repo:\s*(\S+)/gm)].map((m) => m[1]);
+    const store = path.join(workspace, system + '-memory');
+    mkdirSync(store, { recursive: true });
+    git(store, 'init', '-q', '-b', 'main');
+    writeFileSync(path.join(store, 'README.md'), '# ' + system + ' memory\n');
+    git(store, 'add', '-A');
+    git(store, 'commit', '-q', '-m', 'mem(platform): initialize store');
+    if (storePolicy === 'pr') git(store, 'checkout', '-q', '-b', 'memory/bootstrap');
+    writeFileSync(path.join(store, 'system.yaml'), manifest + '\n');
+    writeFileSync(path.join(store, 'memory.conf'), 'commit_policy=' + storePolicy + '\n');
+    writeFileSync(path.join(store, 'INDEX.md'), '# Memory index\n');
+    git(store, 'add', '-A');
+    git(store, 'commit', '-q', '-m', 'mem(platform): bootstrap ' + system + ' memory\n\nActor: bootstrap');
+    for (const n of names) {
+      const dir = path.join(workspace, n);
+      if (process.env.FAKE_MEMORY_STORE_MEMBERS === 'pr') git(dir, 'checkout', '-q', '-b', 'memory/link');
+      writeFileSync(path.join(dir, '.memory-link'), 'system=' + system + '\nrepo=' + n + '\npath=../' + system + '-memory\nurl=\n');
+      writeFileSync(path.join(dir, 'CLAUDE.md'), 'Memory lives in ../' + system + '-memory.\n');
+      if (quirk === 'agents' && n === names[0]) writeFileSync(path.join(dir, 'AGENTS.md'), 'changed by the fake memory agent\n');
+      git(dir, 'add', '-A');
+      git(dir, 'commit', '-q', '-m', 'mem(link): connect ' + n + ' to ' + system + '-memory\n\nActor: bootstrap');
+    }
+    emit({
+      type: 'result',
+      subtype: 'success',
+      total_cost_usd: 0.42,
+      result: [
+        'Installed the store.',
+        '',
+        '## Memory bootstrap report (store mode): ' + system,
+        '',
+        '- Members: ' + names.join(', '),
+        '- Store commit policy: `' + storePolicy + '`',
+        '- Verification 1–8: ' + (quirk === 'unverified' ? '1–5 passed, 6 failed (a refused command)' : 'all passed'),
+        '- Isolation terms kept: none; dropped: none',
+      ].join('\n'),
+    });
+  }
 } else if (mode === 'runaway') {
   const tick = () => {
     assistant(5);

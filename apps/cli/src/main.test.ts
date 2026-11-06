@@ -538,6 +538,35 @@ describe('publish, handoff, auth, gc', () => {
       expect(effort.err.join('')).toContain('--effort is one of');
     });
 
+    it('refuses store-mode misuse with exit 2 (plan 076)', async () => {
+      const d = publishDeps(undefined, { portfolio: true });
+      const { dir } = await seedExistingRepo(d.h.github, 'memory-api', bareNode);
+      const { dir: other } = await seedExistingRepo(d.h.github, 'memory-web', bareNode);
+      const noSystem = io();
+      expect(await main(['memory', dir, other, '--yes'], noSystem.io, d.factory)).toBe(2);
+      expect(noSystem.err.join('')).toContain('needs --system');
+      const single = io();
+      expect(
+        await main(
+          ['memory', dir, '--store-remote', 'https://x.invalid/a.git', '--yes'],
+          single.io,
+          d.factory,
+        ),
+      ).toBe(2);
+      expect(single.err.join('')).toContain('store mode');
+      const policy = io();
+      expect(
+        await main(
+          ['memory', dir, other, '--system', 'shop', '--store-policy', 'merge', '--yes'],
+          policy.io,
+          d.factory,
+        ),
+      ).toBe(2);
+      expect(policy.err.join('')).toContain('--store-policy is pr or direct');
+      const manifest = io();
+      expect(await main(['memory-manifest', 'no-such-run'], manifest.io, d.factory)).not.toBe(0);
+    });
+
     it('sets a project code identifiers, and refuses a bad one or a missing project (plan 071)', async () => {
       const d = publishDeps({ dir: enhanceFixtureDir('export-orders') }, { portfolio: true });
       const { dir } = await seedExistingRepo(d.h.github, 'order-desk', bareNode);

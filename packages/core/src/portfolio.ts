@@ -74,9 +74,26 @@ export interface MemoryRecord {
   report: string;
 }
 
+/** A system whose repositories share one memory store (plan 076, store mode). */
+export interface MemorySystem {
+  name: string;
+  /** The store repository's folder (absolute); it sits beside the members. */
+  store: string;
+  /** The store's git remote, or null while it is local only. */
+  remote: string | null;
+  seedVersion: string;
+  storeCommitPolicy: 'pr' | 'direct';
+  /** The confirmed `system.yaml`, verbatim. */
+  manifest: string;
+  members: { name: string; dir: string; projectId: string | null }[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface PortfolioFile {
   version: 1;
   projects: PortfolioProject[];
+  systems?: MemorySystem[];
 }
 
 export const MARKER_PATH = '.incubator/project.json';
@@ -145,7 +162,11 @@ export class Portfolio {
     if (!existsSync(this.file)) return { version: 1, projects: [] };
     try {
       const v = JSON.parse(readFileSync(this.file, 'utf8')) as Partial<PortfolioFile>;
-      return { version: 1, projects: Array.isArray(v.projects) ? v.projects : [] };
+      return {
+        version: 1,
+        projects: Array.isArray(v.projects) ? v.projects : [],
+        ...(Array.isArray(v.systems) ? { systems: v.systems } : {}),
+      };
     } catch {
       // why: a damaged file must not lose the owner's history silently, nor stop a run.
       renameSync(this.file, `${this.file}.damaged-${Date.now()}`);
@@ -164,6 +185,33 @@ export class Portfolio {
     return this.read()
       .projects.slice()
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
+  }
+
+  /** The systems that have a memory store, oldest first. */
+  systems(): MemorySystem[] {
+    return (this.read().systems ?? []).slice();
+  }
+
+  system(name: string): MemorySystem | undefined {
+    return (this.read().systems ?? []).find((s) => s.name === name);
+  }
+
+  /** Adds a system, or replaces the one of that name (a member added later). */
+  saveSystem(system: Omit<MemorySystem, 'createdAt' | 'updatedAt'>): MemorySystem {
+    const data = this.read();
+    const at = this.now();
+    const list = data.systems ?? [];
+    const i = list.findIndex((s) => s.name === system.name);
+    const saved: MemorySystem = {
+      ...system,
+      createdAt: i >= 0 ? list[i]!.createdAt : at,
+      updatedAt: at,
+    };
+    if (i >= 0) list[i] = saved;
+    else list.push(saved);
+    data.systems = list;
+    this.write(data);
+    return saved;
   }
 
   get(id: string): PortfolioProject | undefined {

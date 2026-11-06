@@ -15,6 +15,14 @@ export function reportMemory(deps: CliDeps, io: Io, state: RunState): number {
     io.stderr(
       `isolation terms dropped because the repository uses them: ${m.dropped.join(', ')}\n`,
     );
+  if (state.state === 'PARKED' && state.parked?.reason === 'memory_manifest' && m?.store) {
+    if (m.store.proposed) io.stdout(`${m.store.proposed}\n`);
+    if (m.store.evidence) io.stderr(`\n${m.store.evidence}\n`);
+    io.stderr(
+      `⏸ run ${id} waits for your manifest. Nothing has been written.\n  confirm it as proposed: incubator memory-manifest ${id}\n  or edit it first:       incubator memory-manifest ${id} <file>\n`,
+    );
+    return ExitCode.Policy;
+  }
   if (state.state === 'PARKED') {
     for (const p of m?.problems ?? []) io.stderr(`  ✖ ${p}\n`);
     io.stderr(

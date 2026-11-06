@@ -8,15 +8,19 @@ import type { MemoryInfo } from '../../api-types.js';
 export function MemoryRun({
   memory,
   busy,
+  onManifest,
   onPush,
   onSkip,
 }: {
   memory: MemoryInfo;
   busy: boolean;
+  onManifest: (yaml: string) => Promise<unknown>;
   onPush: () => Promise<unknown>;
   onSkip: () => Promise<unknown>;
 }) {
   const [sending, setSending] = useState(false);
+  const [manifest, setManifest] = useState(memory.store?.proposed ?? '');
+  const [manifestError, setManifestError] = useState<string | null>(null);
   const send = (p: Promise<unknown>) => {
     setSending(true);
     void p.finally(() => setSending(false));
@@ -38,6 +42,53 @@ export function MemoryRun({
           </>
         )}
       </p>
+      {memory.store?.awaitingManifest && (
+        <div className="actions" data-testid="memory-manifest">
+          <h3>Confirm the system manifest</h3>
+          <p>
+            The discovery looked at the repositories and proposed this <code>system.yaml</code>. It
+            decides which repositories share one memory store, so read it and edit it if it is
+            wrong. Nothing has been written, and nothing is written until you confirm.
+          </p>
+          <textarea
+            data-testid="memory-manifest-text"
+            rows={14}
+            value={manifest}
+            onChange={(e) => setManifest(e.target.value)}
+          />
+          {memory.store.evidence && (
+            <details>
+              <summary>The evidence</summary>
+              <pre className="memory-report">{memory.store.evidence}</pre>
+            </details>
+          )}
+          {manifestError && (
+            <p className="error" role="alert">
+              {manifestError}
+            </p>
+          )}
+          <button
+            data-testid="confirm-manifest"
+            disabled={sending || !manifest.trim()}
+            onClick={() => {
+              setManifestError(null);
+              setSending(true);
+              void onManifest(manifest)
+                .catch((e: Error) => setManifestError(e.message))
+                .finally(() => setSending(false));
+            }}
+          >
+            Confirm the manifest and install
+          </button>
+        </div>
+      )}
+      {memory.store && !memory.store.awaitingManifest && memory.store.confirmed && (
+        <p className="muted" data-testid="memory-store-line">
+          Shared store <code>{memory.store.storeDir ?? ''}</code> for{' '}
+          {memory.store.members.join(', ')}
+          {memory.store.remote ? '' : '; it has no remote, so it stays on this computer'}.
+        </p>
+      )}
       {memory.stage === 'running' && (
         <p className="muted" data-testid="memory-progress">
           {busy ? 'The agent is installing memory. ' : ''}
