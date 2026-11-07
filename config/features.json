@@ -18,7 +18,7 @@
     },
     {
       "id": "add-memory",
-      "summary": "Agent memory is installed into one solution by running the memory seed's playbook; the agent commits, the Incubator checks the install, and the owner decides the push."
+      "summary": "Agent memory is installed into one solution by running the memory seed's playbook; the agent commits, the Incubator checks the install, and the owner decides the push. Covers store mode and Add member, memory on by default for new builds, and the offer on update runs."
     }
   ]
 }

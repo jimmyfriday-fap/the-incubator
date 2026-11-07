@@ -1,0 +1,43 @@
+{
+  "$schema": "../../../schemas/scenario.schema.json",
+  "id": "happy-update-offers-memory",
+  "feature": "add-memory",
+  "title": "An update run in a repository without memory records target mode and offers Add memory, installing nothing",
+  "tags": ["happy"],
+  "seed": {},
+  "context": {},
+  "mocks": {
+    "ai": []
+  },
+  "stages": [
+    {
+      "name": "update",
+      "input": {
+        "agent": "edit",
+        "update": true
+      },
+      "assertions": [
+        {
+          "path": "memoryMode",
+          "op": "eq",
+          "value": "target"
+        },
+        {
+          "path": "memoryOffered",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "path": "memoryInstalled",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "path": "prs",
+          "op": "eq",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

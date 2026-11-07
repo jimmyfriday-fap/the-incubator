@@ -70,6 +70,15 @@ describe('the WHAT-NOW guide (plan 057)', () => {
     expect(whatNow(facts({ platform: 'web' })).install[0]).toContain('open it in a browser');
   });
 
+  it('offers Add memory in the next steps only when asked to (plan 078), never silently installs it', () => {
+    expect(whatNow(facts()).next.some((n) => n.includes('Add memory'))).toBe(false);
+    const w = whatNow(facts({ memoryOffer: true }));
+    const line = w.next.find((n) => n.includes('Add memory'));
+    expect(line).toContain('has no agent memory');
+    expect(line).toContain('nothing was installed');
+    expect(whatNowMarkdown(w)).toContain('Add memory');
+  });
+
   it('reads the Getting started steps from the README block the stack pack writes', () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'what now readme '));
     writeFileSync(

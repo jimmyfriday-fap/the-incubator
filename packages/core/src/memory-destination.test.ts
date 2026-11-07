@@ -44,8 +44,30 @@ describe('resolveMemoryDestination (plan 074)', () => {
 
   it('plans nothing for runs that have no coding session or are not new builds', () => {
     expect(resolveMemoryDestination({ kind: 'new' }, [])).toBeNull();
-    expect(resolveMemoryDestination({ kind: 'enhance', dir }, [])).toBeNull();
     expect(resolveMemoryDestination({ kind: 'memory', dir }, [])).toBeNull();
+    expect(resolveMemoryDestination({ kind: 'enhance' }, [])).toBeNull();
+  });
+
+  it('records target mode, with a reason, for code inside an existing repository (row 3)', () => {
+    const plan = resolveMemoryDestination({ kind: 'enhance', dir }, []);
+    expect(plan).toMatchObject({ mode: 'target' });
+    expect(plan?.reason).toContain('existing repository');
+    expect(plan?.reason).toContain('no new store');
+  });
+
+  it('records target mode for a Backshack tool build, which has its own memory (row 3)', () => {
+    const plan = resolveMemoryDestination(
+      { kind: 'enhance', dir, stack: 'backshack-tool', buildMemory: { enabled: true } },
+      ['backshack'],
+    );
+    expect(plan).toMatchObject({ mode: 'target' });
+    expect(plan?.reason).toContain('Backshack');
+  });
+
+  it('keeps target mode even when the owner turned the new-build toggle off', () => {
+    expect(
+      resolveMemoryDestination({ kind: 'enhance', dir, buildMemory: { enabled: false } }, []),
+    ).toMatchObject({ mode: 'target' });
   });
 });
 

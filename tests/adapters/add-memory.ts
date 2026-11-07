@@ -1,20 +1,29 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DefaultsPrompter } from '@incubator/core';
-import { fakeAgentHandoff, fakePublishEngine, seedExistingRepo } from '@incubator/core/testing';
+import {
+  enhanceFixtureDir,
+  fakeAgentHandoff,
+  fakePublishEngine,
+  seedExistingRepo,
+} from '@incubator/core/testing';
 import { exitCodeFor, nodeExec } from '@incubator/runtime';
 import type { FeatureAdapter } from './types.js';
 
 interface Input {
   /** The fake agent's mode (packages/core/fixtures/handoff/fake-agent.mjs). */
-  agent?: 'memory' | 'memory-agents' | 'memory-unverified' | 'idle';
+  agent?: 'memory' | 'memory-agents' | 'memory-unverified' | 'idle' | 'edit';
   system?: string;
   policy?: 'auto' | 'pr' | 'direct';
   /** Leave uncommitted work in the folder before the run. */
   dirty?: boolean;
   /** Name the GitHub repository, so a passing install asks about the push. */
   github?: boolean;
+  /** An update (enhance) run in the folder instead of an Add memory run: it records target mode (ADR-032). */
+  update?: boolean;
+  /** `update` only: the repository already keeps its memory (committed), so no offer is made. */
+  hasMemory?: boolean;
 }
 interface Out {
   state: string;
@@ -25,6 +34,9 @@ interface Out {
   agentsUntouched: boolean;
   prs: number;
   problems: string[];
+  /** `update` only: the destination the run recorded, and whether it offered Add memory. */
+  memoryMode: string | null;
+  memoryOffered: boolean;
 }
 
 const bareNode = path.resolve(import.meta.dirname, '../../packages/analyzer/fixtures/bare-node');
@@ -58,7 +70,11 @@ export const adapter: FeatureAdapter<Record<string, never>, Out> = {
         FAKE_AGENT_MODE: input.agent ?? 'memory',
       },
       async () => {
-        const h = fakePublishEngine({ handoff: fakeAgentHandoff(), portfolio: true });
+        const h = fakePublishEngine({
+          handoff: fakeAgentHandoff(),
+          portfolio: true,
+          ...(input.update ? { llm: { dir: enhanceFixtureDir('export-orders') } } : {}),
+        });
         const { ref, dir } = await seedExistingRepo(h.github, 'shop', (d) => {
           cpSync(bareNode, d, {
             recursive: true,
@@ -67,26 +83,45 @@ export const adapter: FeatureAdapter<Record<string, never>, Out> = {
           writeFileSync(path.join(d, 'AGENTS.md'), AGENTS);
           return Promise.resolve();
         });
+        if (input.hasMemory) {
+          mkdirSync(path.join(dir, '.memory'), { recursive: true });
+          writeFileSync(path.join(dir, '.memory', 'INDEX.md'), '# Index\n');
+          await git(['add', '.memory/INDEX.md'], dir);
+          await git(['commit', '-m', 'mem: add memory'], dir);
+        }
         if (input.dirty) writeFileSync(path.join(dir, 'half-done.txt'), 'work in progress\n');
         const installed = () => existsSync(path.join(dir, '.memory', 'memory.conf'));
         const agentsUntouched = () => readFileSync(path.join(dir, 'AGENTS.md'), 'utf8') === AGENTS;
         const prs = () => h.github.repos.get('octo/shop')!.prs.length;
         try {
-          const runId = h.engine.start({
-            kind: 'memory',
-            dir,
-            repo: dir,
-            ...(input.github ? { repoRef: ref } : {}),
-            surface: 'test',
-            yes: true,
-            memory: {
-              system: input.system ?? 'shop',
-              isolationTerms: ['other-app'],
-              commitPolicy: input.policy ?? 'pr',
-            },
-          });
+          const runId = input.update
+            ? h.engine.start({
+                kind: 'enhance',
+                repo: dir,
+                repoRef: ref,
+                dir,
+                request: 'Kitchen staff need to export the orders list as a CSV file.',
+                yes: true,
+                surface: 'test',
+              })
+            : h.engine.start({
+                kind: 'memory',
+                dir,
+                repo: dir,
+                ...(input.github ? { repoRef: ref } : {}),
+                surface: 'test',
+                yes: true,
+                memory: {
+                  system: input.system ?? 'shop',
+                  isolationTerms: ['other-app'],
+                  commitPolicy: input.policy ?? 'pr',
+                },
+              });
           const s = await h.engine.advance(runId, new DefaultsPrompter());
+          const finish = input.update ? await h.engine.finishDetail(runId) : null;
           return {
+            memoryMode: finish?.memory?.mode ?? null,
+            memoryOffered: (finish?.memory?.note ?? '').includes('Add memory'),
             state: s.state,
             exitCode: s.state === 'PARKED' ? 2 : 0,
             parkedReason: s.parked?.reason ?? null,
@@ -106,6 +141,8 @@ export const adapter: FeatureAdapter<Record<string, never>, Out> = {
             agentsUntouched: agentsUntouched(),
             prs: prs(),
             problems: [],
+            memoryMode: null,
+            memoryOffered: false,
           };
         }
       },

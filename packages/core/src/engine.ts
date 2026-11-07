@@ -109,6 +109,7 @@ import { INCUBATOR_VERSION } from './version.js';
 import { Publisher, type PublishDeps, type PublishSummary, type StepContext } from './publish.js';
 import type { InstallRun } from './verify.js';
 import {
+  MEMORY_OFFER,
   readGettingStarted,
   readTickets,
   WHAT_NOW_FILE,
@@ -2484,6 +2485,7 @@ export class Engine {
       warnings: [...new Set(warnings)],
       ...(d.commit !== undefined ? { commit: d.commit } : {}),
       pr: d.pr ?? this.latestPr(runId),
+      ...(this.memoryOffered(runId, s) ? { memoryOffer: true } : {}),
     });
   }
 
@@ -3118,12 +3120,28 @@ export class Engine {
     return { seedVersion: start.seedVersion, head: head!, report: text };
   }
 
+  /** Plan 078: an update run on a project with no memory offers Add memory; it never installs it silently. */
+  private memoryOffered(runId: string, s: RunState): boolean {
+    if (s.input.kind !== 'enhance' || this.buildMemoryMode(runId) !== 'target') return false;
+    const dir = this.runDir(s);
+    return !existsSync(path.join(dir, '.memory')) && !existsSync(path.join(dir, '.memory-link'));
+  }
+
   /** What the owner is shown about a build's memory: the plan, and the bootstrap report once it exists. */
   private buildMemoryDetail(runId: string): FinishDetail['memory'] {
     const e = this.entries(runId).find((x) => x.type === 'memory.plan') as
       { plan?: MemoryPlan } | undefined;
     if (!e?.plan) return null;
     const steps = this.state(runId).steps;
+    if (e.plan.mode === 'target')
+      return {
+        mode: 'target',
+        reason: e.plan.reason,
+        scaffolded: false,
+        bootstrapped: false,
+        report: null,
+        note: this.memoryOffered(runId, this.state(runId)) ? MEMORY_OFFER : null,
+      };
     const member = e.plan.mode === 'member';
     const scaffold = steps[member ? 'memory.member.link' : 'memory.scaffold'];
     const boot = steps[member ? 'memory.member.bootstrap' : 'memory.bootstrap'];

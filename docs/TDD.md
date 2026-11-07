@@ -1177,7 +1177,23 @@ about the push. Repo mode only (one solution, store `.memory/`).
   `PUT /api/portfolio/:id/identifiers`, `RunDetail.memory`; `incubator memory <path>` and
   `incubator portfolio <project> --identifiers a,b`. The desktop app ships the seed unpacked as `memory-seed/`
   and points `INCUBATOR_MEMORY_SEED_DIR` at it.
-- **Not yet.** Store mode (several repositories, one store), Add member, Upgrade and Dream.
+- **Not yet.** Upgrade and Dream.
+
+#### 7.7.1 Memory by default (ADR-032)
+
+- **New builds.** A new build with a folder records where its memory lives before any code is generated:
+  `memory.plan` in the journal, `memoryPlan` on the project. The Memory toggle on the new-build form is on
+  by default. Order of the rules: toggle off is `none`; a known system picked is `member`; code inside an
+  existing repository (an update run) or a Backshack tool is `target` (no new store, with a reason); otherwise
+  `repo`.
+- **Scaffold first, bootstrap last.** For `repo` and `member` the store is scaffolded before the coding session
+  and bootstrapped after it; the bootstrap report goes into the build report.
+- **Store mode and Add member** are built: `incubator memory <paths...>` with a confirmed manifest, and
+  `incubator memory --join <system>`. They keep everything local; the Incubator makes the store's commits and
+  pushes nothing.
+- **Update runs** on a project with no `.memory/` and no `.memory-link` offer Add memory in the finish detail
+  (`FinishDetail.memory.note`), the run's guide and `WHAT-NOW.md`. Nothing is installed without the owner
+  starting an Add memory run.
 
 ---
 
@@ -1503,3 +1519,4 @@ flowchart LR
 | [029](adr/029-stop-cancel-and-settings.md)              | Stop and cancel a run, settings the owner can change, and which model did each job |
 | [030](adr/030-backshack-tool-stack.md)                  | The Backshack tool stack is built in a backshack-dev worktree, under its contract  |
 | [031](adr/031-add-memory-runs.md)                       | Add memory runs: the agent commits, the owner decides the push                     |
+| [032](adr/032-memory-by-default.md)                     | Memory by default for new builds, and where memory goes for everything else        |

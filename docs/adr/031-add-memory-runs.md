@@ -1,6 +1,6 @@
 # ADR-031: Add memory runs, where the agent commits and the owner decides the push
 
-- **Status:** Accepted
+- **Status:** Accepted (points 1 and 6 amended by [ADR-032](032-memory-by-default.md))
 - **Date:** 2026-11-03
 - **Context doc:** [`docs/TDD.md`](../TDD.md) §7.7; [`docs/incubator-memory-feature.md`](../incubator-memory-feature.md);
   amends [ADR-023](023-local-folder-workflow.md) points 3 and 4 for Add memory runs only
