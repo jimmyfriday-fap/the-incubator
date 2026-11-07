@@ -462,6 +462,18 @@ export function createApp(opts: ServerOptions): WebApp {
     },
   );
 
+  // Store mode (plan 076): the systems the portfolio knows, and the owner's confirmation of a proposed manifest.
+  app.get('/api/memory/systems', () =>
+    engine.memorySystems().map((x) => ({
+      name: x.name,
+      store: x.store,
+      remote: x.remote,
+      seedVersion: x.seedVersion,
+      storeCommitPolicy: x.storeCommitPolicy,
+      members: x.members,
+    })),
+  );
+
   // Custom App requests: read a build-request ticket from the configured Leantime project (numeric id only).
   app.get<{ Params: { id: string } }>(
     '/api/intake/tickets/:id',
@@ -606,6 +618,23 @@ export function createApp(opts: ServerOptions): WebApp {
                 commitPolicy: { enum: ['auto', 'pr', 'direct'] },
                 model: { type: 'string', maxLength: 80 },
                 effort: { enum: [...MEMORY_EFFORTS] },
+                members: {
+                  type: 'array',
+                  minItems: 2,
+                  maxItems: 30,
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['dir', 'name'],
+                    properties: {
+                      dir: { type: 'string', minLength: 1, maxLength: 2000 },
+                      name: { type: 'string', minLength: 1, maxLength: 60 },
+                    },
+                  },
+                },
+                storeCommitPolicy: { enum: ['pr', 'direct'] },
+                joinSystem: { type: 'string', minLength: 1, maxLength: 60 },
+                storeRemote: { type: 'string', maxLength: 300 },
               },
             },
             buildMemory: {
@@ -714,6 +743,20 @@ export function createApp(opts: ServerOptions): WebApp {
         const project = await engine.portfolioFor(v.path);
         if (project?.memory)
           return reply.code(409).send({ error: `${project.name} already has memory` });
+        // Plan 076, store mode: every other member is checked like the first; the engine re-checks them at start.
+        const members: { dir: string; name: string }[] = [];
+        for (const m of b.memory.members ?? []) {
+          const mv = await engine.inspectFolder(m.dir, 'existing');
+          if (!mv.ok)
+            return reply
+              .code(422)
+              .send({ error: `${m.name}: ${mv.problems.join(' ')}`, evidence: mv });
+          members.push({ dir: mv.path, name: m.name });
+        }
+        if (members.length && members[0]!.dir !== v.path)
+          return reply
+            .code(400)
+            .send({ error: 'the first repository of a system is the run folder' });
         try {
           const runId = driver.start({
             kind: 'memory',
@@ -725,6 +768,12 @@ export function createApp(opts: ServerOptions): WebApp {
               commitPolicy: b.memory.commitPolicy,
               ...(b.memory.model ? { model: b.memory.model } : {}),
               ...(b.memory.effort ? { effort: b.memory.effort } : {}),
+              ...(members.length ? { members } : {}),
+              ...(b.memory.storeCommitPolicy
+                ? { storeCommitPolicy: b.memory.storeCommitPolicy }
+                : {}),
+              ...(b.memory.storeRemote ? { storeRemote: b.memory.storeRemote } : {}),
+              ...(b.memory.joinSystem ? { joinSystem: b.memory.joinSystem } : {}),
             },
           });
           return reply.code(202).send({ runId });
@@ -1070,6 +1119,25 @@ export function createApp(opts: ServerOptions): WebApp {
     },
     withRun((runId, req: { body: { action: 'push' | 'skip' } }) => {
       driver.push(runId, req.body.action);
+      return { accepted: true };
+    }),
+  );
+
+  app.post<{ Params: { id: string }; Body: { yaml: string } }>(
+    '/api/runs/:id/memory-manifest',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['yaml'],
+          properties: { yaml: { type: 'string', minLength: 1, maxLength: 20000 } },
+        },
+      },
+    },
+    withRun(async (runId, req: { body: { yaml: string } }) => {
+      await engine.confirmMemoryManifest(runId, req.body.yaml);
+      driver.resume(runId);
       return { accepted: true };
     }),
   );

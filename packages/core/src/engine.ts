@@ -93,6 +93,7 @@ import {
   type PortfolioProject,
   type PortfolioRun,
   type MemoryRecord,
+  type MemorySystem,
 } from './portfolio.js';
 import { planReverseOut, type LeftBehind, type ReversePlan } from './reverse-out.js';
 import type { Prompter } from './prompter.js';
@@ -219,10 +220,22 @@ import {
   prefillIsolationTerms,
   seedVersion,
   MEMORY_BUILD_ALLOWED_TOOLS,
+  allowedMemberPath,
+  manifestMembers,
+  memoryStoreAllowedTools,
+  memoryMemberPrompt,
+  proposeMemberManifest,
+  type MemberFacts,
+  type MemoryMemberPhase,
+  memoryStoreFor,
+  memoryStorePrompt,
+  parseProposedManifest,
   type BuildMemoryFacts,
+  type MemoryStoreDone,
   type MemoryBuildPhase,
   type MemoryDetail,
   type MemoryDone,
+  type MemoryRunInput,
 } from './memory.js';
 import { checksReport, installMemoryProtected, type InstallCheck } from './memory-install.js';
 import { resolveMemoryDestination, type MemoryPlan } from './memory-destination.js';
@@ -399,6 +412,13 @@ export class Engine {
           code: 'bad_memory_input',
         });
       input = { ...input, memory: checkMemoryInput(input.memory) };
+      if (input.memory?.joinSystem && !this.knownMemorySystems().includes(input.memory.joinSystem))
+        throw new PolicyError(
+          `no memory store is known for the system "${input.memory.joinSystem}"`,
+          {
+            code: 'unknown_memory_system',
+          },
+        );
     }
     // Plan 074: a new build with a folder decides where its memory lives before any code is generated.
     const memoryPlan = resolveMemoryDestination(input, this.knownMemorySystems());
@@ -418,9 +438,16 @@ export class Engine {
     return runId;
   }
 
-  /** The systems whose memory store a new repository can join. None until store mode exists (plan 076). */
+  /** The systems whose memory store a new repository can join: those the portfolio knows, with a store on disk. */
   private knownMemorySystems(): string[] {
-    return [];
+    return (this.deps.portfolio?.systems() ?? [])
+      .filter((x) => existsSync(x.store))
+      .map((x) => x.name);
+  }
+
+  /** The systems the portfolio knows, for the Add memory and new-build forms (plan 076). */
+  memorySystems(): MemorySystem[] {
+    return this.deps.portfolio?.systems() ?? [];
   }
 
   /** A run that starts from an existing, complete spec (for `publish <spec>` and scaffold runs). */
@@ -2103,6 +2130,8 @@ export class Engine {
       ensureLocalExclude(dir);
       // Plan 075: a new build with memory gets its scaffold committed before the first line of code.
       if (this.buildMemoryMode(runId) === 'repo') await this.memoryBuild(runId, 'scaffold');
+      else if (this.buildMemoryMode(runId) === 'member')
+        await this.memoryMemberSession(runId, 'link');
       const checks = this.handoffChecks(runId, dir);
       if (checks.mode === 'none')
         this.record(runId, 'step.warn', {
@@ -2244,6 +2273,8 @@ export class Engine {
       // Plan 075: the bootstrap reads the code that now exists; a stopped run is not bootstrapped.
       if (!out.stopped && this.buildMemoryMode(runId) === 'repo')
         await this.memoryBuild(runId, 'bootstrap');
+      else if (!out.stopped && this.buildMemoryMode(runId) === 'member')
+        await this.memoryMemberSession(runId, 'bootstrap');
       const report = agentReport(out);
       // The verdict of an update run counts every request and the Incubator's own checks (plan 042).
       const verdict =
@@ -3097,8 +3128,9 @@ export class Engine {
       { plan?: MemoryPlan } | undefined;
     if (!e?.plan) return null;
     const steps = this.state(runId).steps;
-    const scaffold = steps['memory.scaffold'];
-    const boot = steps['memory.bootstrap'];
+    const member = e.plan.mode === 'member';
+    const scaffold = steps[member ? 'memory.member.link' : 'memory.scaffold'];
+    const boot = steps[member ? 'memory.member.bootstrap' : 'memory.bootstrap'];
     const skipped = (scaffold?.data as { skipped?: boolean } | undefined)?.skipped === true;
     return {
       mode: e.plan.mode,
@@ -3117,6 +3149,8 @@ export class Engine {
    * playbook's commits; it never pushes (ADR-031).
    */
   private async memoryRunStep(runId: string, s: RunState): Promise<void> {
+    if (s.input.memory?.members) return this.memoryStoreStep(runId, s);
+    if (s.input.memory?.joinSystem) return this.memoryMemberRun(runId, s);
     if (s.steps['memory.done']?.status === 'ok') return this.enter(runId, 'PUSH');
     const git = this.deps.publish?.git;
     if (!git || !this.deps.handoff)
@@ -3371,6 +3405,8 @@ export class Engine {
    * push (and, for `pr`, the pull request); without one the install stays local. The Incubator never merges.
    */
   private async memoryPushStep(runId: string, s: RunState): Promise<void> {
+    if (s.input.memory?.members) return this.memoryStorePushStep(runId, s);
+    if (s.input.memory?.joinSystem) return this.memoryMemberPushStep(runId, s);
     const done = s.steps['memory.done']!.data as MemoryDone;
     const dir = this.runDir(s);
     const target = this.pushTarget(runId, s);
@@ -3434,10 +3470,872 @@ export class Engine {
     });
   }
 
+  // --- Store mode (plan 076): several repositories, one `<system>-memory` store ----------------------------
+
+  /**
+   * CODE for a store-mode Add memory run. Run 1 is the playbook's discovery: it proposes a `system.yaml` and the
+   * run parks `memory_manifest`. Nothing is written until the owner confirms the manifest (`confirmMemoryManifest`,
+   * never automatic). Run 2 builds the store and links every member; the Incubator then checks both.
+   */
+  private async memoryStoreStep(runId: string, s: RunState): Promise<void> {
+    if (s.steps['memory.done']?.status === 'ok') return this.enter(runId, 'PUSH');
+    if (!this.deps.publish?.git || !this.deps.handoff)
+      throw new ToolError('Add memory needs git and a coding agent CLI');
+    await this.effect(runId, async () => {
+      const m = this.state(runId).input.memory!;
+      if (this.state(runId).steps['memory.start']?.status !== 'ok')
+        await this.memoryStoreStart(runId, m);
+      const confirmed = this.entries(runId).findLast((e) => e.type === 'memory.manifest');
+      if (!confirmed) {
+        if (this.state(runId).steps['memory.discover']?.status !== 'ok')
+          await this.runMemoryStoreAgent(runId, 'discover');
+        const found = this.state(runId).steps['memory.discover']!.data as {
+          proposed: string | null;
+        };
+        throw new ParkError(
+          'memory_manifest',
+          found.proposed
+            ? 'the discovery proposed a system.yaml: confirm or edit it, then resume. Nothing is written before you do.'
+            : 'the discovery did not propose a system.yaml: write one, then resume. Nothing is written before you do.',
+          { proposed: found.proposed },
+        );
+      }
+      if (this.state(runId).steps['memory.agent']?.status !== 'ok')
+        await this.runMemoryStoreAgent(runId, 'install');
+      const done = await this.checkMemoryStore(runId);
+      this.record(runId, 'step.ok', { step: 'memory.done', data: done });
+    });
+    this.enter(runId, 'PUSH');
+  }
+
+  /** The owner's confirmed (or edited) manifest for a parked store-mode run. Checks it, then journals it. */
+  async confirmMemoryManifest(runId: string, yaml: string): Promise<void> {
+    const s = this.state(runId);
+    const m = s.input.memory;
+    const joining = this.joiningMember(runId);
+    if (!joining && (s.input.kind !== 'memory' || !m?.members))
+      throw new PolicyError('this run has no manifest to confirm', { code: 'no_manifest' });
+    if (s.parked?.reason !== 'memory_manifest')
+      throw new PolicyError('this run is not waiting for a manifest', { code: 'not_waiting' });
+    if (joining) return this.confirmMemberManifest(runId, yaml, joining);
+    if (!m?.members) return;
+    const text = yaml.replace(/\r\n?/g, '\n').trim();
+    if (text.length > 20_000)
+      throw new PolicyError('the manifest is too long', { code: 'bad_manifest' });
+    const names = manifestMembers(text);
+    if (new Set(names).size !== names.length || names.length < 2)
+      throw new PolicyError('the manifest needs two or more different members', {
+        code: 'bad_manifest',
+      });
+    if (!new RegExp(`^system:\\s*${m.system}\\s*$`, 'm').test(text))
+      throw new PolicyError(`the manifest must name the system "${m.system}"`, {
+        code: 'bad_manifest',
+      });
+    const start = s.steps['memory.start']!.data as { workspace: string };
+    const git = this.deps.publish!.git;
+    const chosen = new Set(m.members.map((x) => x.name));
+    for (const n of names) {
+      if (!/^[a-z0-9][a-z0-9._-]*$/i.test(n))
+        throw new PolicyError(`"${n}" is not a repository folder name`, { code: 'bad_manifest' });
+      if (chosen.has(n)) continue;
+      // why: a repository the discovery found is an addition the owner chose; it gets the same checks.
+      const dir = path.join(start.workspace, n);
+      const v = await inspectFolder(git, dir, 'existing');
+      if (!v.ok) throw new PolicyError(`${n}: ${v.problems.join(' ')}`, { code: 'bad_manifest' });
+      if (existsSync(path.join(dir, '.memory')) || existsSync(path.join(dir, '.memory-link')))
+        throw new PolicyError(`${n} already has memory`, { code: 'bad_manifest' });
+    }
+    this.record(runId, 'memory.manifest', { yaml: text, members: names, by: 'owner' });
+  }
+
+  /** The system a run adds a member to (an Add member run, or a new build that joins one), or null. */
+  private joiningMember(runId: string): MemberFacts | null {
+    const s = this.state(runId);
+    const build = s.input.kind === 'new' && this.buildMemoryMode(runId) === 'member';
+    if (!build && !(s.input.kind === 'memory' && s.input.memory?.joinSystem)) return null;
+    return this.memberFacts(runId);
+  }
+
+  /** The owner's confirmed manifest for an Add member run: the store's members, plus exactly the new one. */
+  private confirmMemberManifest(runId: string, yaml: string, f: MemberFacts): void {
+    const text = yaml.replace(/\r\n?/g, '\n').trim();
+    if (text.length > 20_000)
+      throw new PolicyError('the manifest is too long', { code: 'bad_manifest' });
+    if (!new RegExp(`^system:\\s*${f.system}\\s*$`, 'm').test(text))
+      throw new PolicyError(`the manifest must name the system "${f.system}"`, {
+        code: 'bad_manifest',
+      });
+    const names = manifestMembers(text);
+    const want = [...f.members, f.name].sort();
+    if (names.length !== want.length || [...names].sort().join('\n') !== want.join('\n'))
+      throw new PolicyError(
+        `the manifest must list exactly the system's members and the new one (${want.join(', ')})`,
+        { code: 'bad_manifest' },
+      );
+    this.record(runId, 'memory.manifest', { yaml: text, members: names, by: 'owner' });
+  }
+
+  private async memoryStoreStart(runId: string, m: MemoryRunInput): Promise<void> {
+    const git = this.deps.publish!.git;
+    const members = m.members!;
+    const workspace = path.dirname(path.resolve(members[0]!.dir));
+    const storeDir = path.join(workspace, `${m.system}-memory`);
+    if (existsSync(storeDir))
+      throw new ParkError(
+        'memory_store_exists',
+        `${storeDir} already exists: store mode is a first install. Move it away or choose another system name, then resume.`,
+      );
+    const bases: Record<string, { head: string | null; branch: string | null }> = {};
+    for (const mem of members) {
+      if (!path.isAbsolute(mem.dir))
+        throw new PolicyError(`${mem.name}: the folder must be an absolute path`, {
+          code: 'bad_members',
+        });
+      const v = await inspectFolder(git, mem.dir, 'existing');
+      // Spec rule 2: any member with uncommitted changes parks before anything runs.
+      if (!v.ok)
+        throw new ParkError(
+          v.git && !v.git.clean ? 'dirty_tree' : 'folder_invalid',
+          `${mem.name}: ${v.problems.join(' ')}`,
+          { path: v.path, changed: v.git?.changed ?? [] },
+        );
+      if (
+        existsSync(path.join(mem.dir, '.memory')) ||
+        existsSync(path.join(mem.dir, '.memory-link'))
+      )
+        throw new ParkError(
+          'memory_present',
+          `${mem.name} already has .memory/ or .memory-link: store mode is a first install`,
+        );
+      const project = await this.portfolioFor(path.resolve(mem.dir));
+      if (project?.memory)
+        throw new ParkError('memory_installed', `${project.name} already has memory`);
+      if (!(await git.identity(mem.dir)))
+        throw new ParkError(
+          'no_git_identity',
+          `git does not know who you are in ${mem.name}, and the link is committed: set user.name and user.email there, then resume`,
+        );
+      bases[mem.name] = { head: v.git!.head, branch: v.git!.branch };
+    }
+    const seed = path.join(this.deps.store.runDir(runId), 'memory-seed');
+    const version = copySeed(seed);
+    this.record(runId, 'step.ok', {
+      step: 'memory.start',
+      data: { seed, seedVersion: version, workspace, storeDir, bases },
+    });
+  }
+
+  private async runMemoryStoreAgent(runId: string, phase: 'discover' | 'install'): Promise<void> {
+    const s = this.state(runId);
+    const m = s.input.memory!;
+    const start = s.steps['memory.start']!.data as {
+      seed: string;
+      workspace: string;
+      storeDir: string;
+    };
+    const manifest = this.entries(runId).findLast((e) => e.type === 'memory.manifest') as
+      { yaml?: string; members?: string[] } | undefined;
+    const agent = this.cfg().agents?.primary ?? 'claude';
+    const caps = await this.deps.handoff!.probe(AGENT_ADAPTERS[agent]);
+    if (!caps.installed || !caps.path)
+      throw new PolicyError(`${AGENT_ADAPTERS[agent]} is not installed`, { code: 'agent_missing' });
+    if (!caps.flags.allowedTools)
+      throw new ParkError(
+        'checks_unenforceable',
+        `${AGENT_ADAPTERS[agent]} cannot restrict which commands an agent runs, so it cannot install memory`,
+      );
+    const model = m.model ?? MEMORY_DEFAULT_MODEL;
+    const effort = m.effort ?? MEMORY_DEFAULT_EFFORT;
+    if (!caps.flags.effort)
+      this.record(runId, 'step.warn', {
+        step: `memory.${phase}.effort`,
+        message: `${AGENT_ADAPTERS[agent]} has no flag for reasoning effort, so "${effort}" was not applied`,
+      });
+    const dirs = [
+      ...(phase === 'install' ? (manifest?.members ?? []) : m.members!.map((x) => x.name)).map(
+        (n) => path.join(start.workspace, n),
+      ),
+      ...(phase === 'install' ? [start.storeDir] : []),
+    ];
+    const ceilings = { ...DEFAULT_RUN_CEILINGS };
+    const plan: HandoffPlan = {
+      agent,
+      bin: caps.path,
+      argv: buildHandoffArgv(caps, ceilings, memoryStoreAllowedTools(dirs, phase), model, {
+        addDirs: [start.seed],
+        effort,
+      }),
+      model,
+      cwd: start.workspace,
+      planPath: path.join(start.seed, 'playbooks', 'deploy-system.md'),
+      ceilings,
+      unenforceable: [],
+    };
+    const prompt = memoryStorePrompt({
+      phase,
+      workspace: start.workspace,
+      seed: start.seed,
+      system: m.system,
+      entry: m.members![0]!.dir,
+      terms: m.isolationTerms,
+      today: this.deps.clock.now().toISOString().slice(0, 10),
+      storeCommitPolicy: m.storeCommitPolicy ?? 'pr',
+      ...(m.storeRemote ? { storeRemote: m.storeRemote } : {}),
+      ...(phase === 'install' && manifest?.yaml ? { manifest: manifest.yaml } : {}),
+    });
+    let last = 0;
+    const out = await this.runHandoff(
+      runId,
+      plan,
+      prompt,
+      null,
+      { mode: 'none', commands: [] },
+      {
+        onProgress: (p) => {
+          if (last && Date.now() - last < 1000) return;
+          last = Date.now();
+          this.record(runId, 'handoff.progress', { ...p });
+        },
+        summaryMax: 20_000,
+      },
+    );
+    if (out.stopped) throw new InterruptedError(`run ${runId} was stopped`);
+    const report = agentReport(out);
+    if (phase === 'discover') {
+      if (report.tripped || report.exitCode !== 0)
+        throw new ParkError(
+          'memory_rules_broken',
+          `the discovery did not finish (${report.tripped ? `run limit ${report.tripped}` : `exit code ${report.exitCode}`}). Resume to run it again, or cancel the run.`,
+          { problems: ['the discovery did not finish'] },
+        );
+      this.record(runId, 'step.ok', {
+        step: 'memory.discover',
+        data: {
+          proposed: parseProposedManifest(report.summary),
+          evidence: report.summary,
+          effortApplied: Boolean(caps.flags.effort),
+        },
+      });
+      return;
+    }
+    this.record(runId, 'step.ok', {
+      step: 'memory.agent',
+      data: { ...report, effortApplied: Boolean(caps.flags.effort) },
+    });
+  }
+
+  /** The Incubator's own checks of a store-mode install (spec rules 2 and 4a, ground rules 2 and 3). */
+  private async checkMemoryStore(runId: string): Promise<MemoryStoreDone> {
+    const s = this.state(runId);
+    const git = this.deps.publish!.git;
+    const m = s.input.memory!;
+    const start = s.steps['memory.start']!.data as {
+      seedVersion: string;
+      workspace: string;
+      storeDir: string;
+      bases: Record<string, { head: string | null; branch: string | null }>;
+    };
+    const manifest = this.entries(runId).findLast(
+      (e) => e.type === 'memory.manifest',
+    ) as unknown as { yaml: string; members: string[] };
+    const agent = s.steps['memory.agent']!.data as AgentReport;
+    const report = parseMemoryReport(agent.summary);
+    const problems: string[] = [];
+    if (agent.tripped) problems.push(`the agent stopped at a run limit (${agent.tripped})`);
+    else if (agent.exitCode !== 0) problems.push(`the agent exited with code ${agent.exitCode}`);
+    if (!report) problems.push("the agent did not end with the playbook's report");
+    const storePolicy = m.storeCommitPolicy ?? 'pr';
+    const store = start.storeDir;
+    for (const f of ['system.yaml', 'memory.conf', 'INDEX.md'])
+      if (!existsSync(path.join(store, f))) problems.push(`the store has no ${f}`);
+    const conf = existsSync(path.join(store, 'memory.conf'))
+      ? readFileSync(path.join(store, 'memory.conf'), 'utf8')
+      : '';
+    const confPolicy = /^\s*commit_policy\s*=\s*(pr|direct)\s*$/m.exec(conf)?.[1];
+    if (confPolicy !== storePolicy)
+      problems.push(
+        `the store's memory.conf names the ${confPolicy ?? 'no'} policy, but ${storePolicy} was chosen`,
+      );
+    const storeLeft = existsSync(path.join(store, '.git')) ? await git.status(store) : [];
+    if (storeLeft.length)
+      problems.push(
+        `the store has uncommitted changes: ${storeLeft
+          .slice(0, 8)
+          .map((e) => e.path)
+          .join(', ')}`,
+      );
+    const storeBranch = existsSync(path.join(store, '.git'))
+      ? await git.currentBranch(store)
+      : null;
+    const storeHead = existsSync(path.join(store, '.git')) ? await git.headSha(store) : null;
+    const wantBranch = storePolicy === 'pr' ? MEMORY_BRANCH : 'main';
+    if (storeBranch !== wantBranch)
+      problems.push(
+        `the ${storePolicy} policy leaves the store on ${wantBranch}, but it is on ${storeBranch ?? 'no branch'}`,
+      );
+    const members: MemoryStoreDone['members'] = [];
+    for (const name of manifest.members) {
+      const dir = path.join(start.workspace, name);
+      const base = start.bases[name] ?? {
+        head: await git.headSha(dir),
+        branch: await git.currentBranch(dir),
+      };
+      const left = (await git.status(dir)).filter((e) => e.path !== '.claude/settings.local.json');
+      if (left.length)
+        problems.push(
+          `${name}: uncommitted changes were left: ${left
+            .slice(0, 8)
+            .map((e) => e.path)
+            .join(', ')}`,
+        );
+      const head = await git.headSha(dir);
+      const branch = await git.currentBranch(dir);
+      const changed =
+        head && base.head && head !== base.head
+          ? (await git.diffNameStatus(dir, base.head, head)).map(([, p]) => p)
+          : [];
+      if (changed.length === 0) problems.push(`${name}: nothing was committed`);
+      if (changed.includes('AGENTS.md'))
+        problems.push(`${name}: AGENTS.md was changed (it never may be)`);
+      const outside = changed.filter((p) => !allowedMemberPath(p));
+      if (outside.length)
+        problems.push(`${name}: files outside the link changed: ${outside.slice(0, 8).join(', ')}`);
+      if (!existsSync(path.join(dir, '.memory-link')))
+        problems.push(`${name}: .memory-link does not exist`);
+      const linked = branch === 'memory/link' ? 'pr' : branch === base.branch ? 'direct' : null;
+      if (!linked)
+        problems.push(
+          `${name}: on ${branch ?? 'a detached HEAD'}, expected ${base.branch ?? 'its own branch'} or memory/link`,
+        );
+      members.push({
+        name,
+        dir,
+        branch: branch ?? '',
+        head: head ?? '',
+        policy: linked ?? 'direct',
+      });
+    }
+    this.record(runId, 'memory.result', {
+      problems,
+      report: report?.text ?? agent.summary,
+      policy: storePolicy,
+      branch: storeBranch,
+      verificationPassed: report?.verificationPassed ?? false,
+      kept: report?.kept ?? [],
+      dropped: report?.dropped ?? [],
+    });
+    if (problems.length)
+      throw new ParkError(
+        'memory_rules_broken',
+        `the install broke a rule, so nothing was pushed: ${problems.join('; ')}. Fix the folders and resume, or cancel the run.`,
+        { problems },
+      );
+    if (!report!.verificationPassed)
+      throw new ParkError(
+        'memory_verify_failed',
+        "the playbook's own verification did not all pass (see its report), so nothing was pushed. Fix the install and resume, or cancel the run.",
+      );
+    return {
+      seedVersion: start.seedVersion,
+      policy: storePolicy,
+      branch: storeBranch!,
+      head: storeHead!,
+      report: report!.text,
+      kept: report!.kept,
+      dropped: report!.dropped,
+      storeDir: store,
+      manifest: manifest.yaml,
+      members,
+    };
+  }
+
+  /**
+   * PUSH for a store-mode run: the store and every link stay local commits (the Incubator pushes nothing and
+   * opens no pull request in store mode); the portfolio learns the system and each member's record.
+   */
+  private async memoryStorePushStep(runId: string, s: RunState): Promise<void> {
+    const done = s.steps['memory.done']!.data as MemoryStoreDone;
+    const m = s.input.memory!;
+    const pf = this.deps.portfolio;
+    const today = this.deps.clock.now().toISOString().slice(0, 10);
+    if (pf) {
+      const linked: { name: string; dir: string; projectId: string | null }[] = [];
+      for (const mem of done.members) {
+        let project = await this.portfolioFor(path.resolve(mem.dir));
+        if (!project)
+          project = pf.create({
+            name: mem.name,
+            summary: '',
+            origin: 'existing',
+            repo: { dir: mem.dir, remote: await this.remoteOf(mem.dir), ref: null, url: null },
+            stack: null,
+          });
+        const record: NonNullable<PortfolioProject['memory']> = {
+          mode: 'member',
+          system: m.system,
+          store: done.storeDir,
+          seedVersion: done.seedVersion,
+          commitPolicy: mem.policy,
+          installedAt: today,
+          report: done.report,
+        };
+        pf.update(project.id, (p) => {
+          p.memory = record;
+        });
+        linked.push({ name: mem.name, dir: mem.dir, projectId: project.id });
+      }
+      pf.saveSystem({
+        name: m.system,
+        store: done.storeDir,
+        remote: m.storeRemote ?? null,
+        seedVersion: done.seedVersion,
+        storeCommitPolicy: done.policy,
+        manifest: done.manifest,
+        members: linked,
+      });
+    }
+    this.record(runId, 'memory.system', {
+      system: m.system,
+      store: done.storeDir,
+      members: done.members.map((x) => x.name),
+    });
+    this.record(runId, 'run.done', { committedLocally: true, local: done.storeDir });
+  }
+
+  private memoryStoreDetail(runId: string, s: RunState): NonNullable<MemoryDetail['store']> {
+    const m = s.input.memory!;
+    const joinName = m.joinSystem ? path.basename(this.runDir(s)) : null;
+    const discover = s.steps['memory.discover']?.data as
+      { proposed?: string | null; evidence?: string } | undefined;
+    const confirmed = this.entries(runId).findLast((e) => e.type === 'memory.manifest') as
+      { yaml?: string } | undefined;
+    const start = s.steps['memory.start']?.data as { storeDir?: string } | undefined;
+    const joinStore = m.joinSystem ? this.deps.portfolio?.system(m.joinSystem)?.store : undefined;
+    return {
+      members: m.members ? m.members.map((x) => x.name) : [joinName ?? ''],
+      proposed: discover?.proposed ?? null,
+      evidence: discover?.evidence ?? null,
+      confirmed: confirmed?.yaml ?? null,
+      awaitingManifest: s.parked?.reason === 'memory_manifest',
+      storeDir: start?.storeDir ?? joinStore ?? null,
+      remote: m.storeRemote ?? null,
+    };
+  }
+
+  // --- Add member (plan 077): one more repository joins a system that already has a store --------------------
+
+  /** The repository, the system and the store of an Add member run (an existing repo, or a new build joining). */
+  private memberFacts(runId: string): MemberFacts {
+    const s = this.state(runId);
+    const build = s.input.kind === 'new';
+    const system = build
+      ? ((
+          this.entries(runId).find((e) => e.type === 'memory.plan') as
+            { plan?: MemoryPlan } | undefined
+        )?.plan?.system ?? '')
+      : (s.input.memory?.joinSystem ?? '');
+    const known = this.deps.portfolio?.system(system);
+    if (!known || !existsSync(known.store))
+      throw new ParkError(
+        'memory_system_missing',
+        `the memory store of the system "${system}" is not on this computer any more, so the repository cannot join it`,
+      );
+    const dir = this.runDir(s);
+    return {
+      dir,
+      name: path.basename(dir),
+      system,
+      store: known.store,
+      storePolicy: known.storeCommitPolicy,
+      members: known.members.map((x) => x.name),
+      build,
+    };
+  }
+
+  /** CODE for an Add member run on an existing repository (plan 077): the whole "Adding a member later". */
+  private async memoryMemberRun(runId: string, s: RunState): Promise<void> {
+    if (s.steps['memory.member.full']?.status === 'ok') return this.enter(runId, 'PUSH');
+    if (!this.deps.publish?.git || !this.deps.handoff)
+      throw new ToolError('Add memory needs git and a coding agent CLI');
+    await this.effect(runId, () => this.memoryMemberSession(runId, 'full'));
+    this.enter(runId, 'PUSH');
+  }
+
+  /** PUSH for an Add member run: the store and the link stay local commits; the portfolio already knows the member. */
+  private memoryMemberPushStep(runId: string, s: RunState): void {
+    const done = s.steps['memory.member.full']!.data as { store: string };
+    this.record(runId, 'run.done', { committedLocally: true, local: done.store });
+  }
+
+  /**
+   * One Add member session, with the Incubator's checks. Always parks `memory_manifest` first, showing the
+   * store's `system.yaml` with the new member added: the owner confirms it before anything is written.
+   */
+  private async memoryMemberSession(runId: string, phase: MemoryMemberPhase): Promise<void> {
+    const key = `memory.member.${phase}`;
+    if (this.state(runId).steps[key]?.status === 'ok') return;
+    const git = this.deps.publish!.git;
+    if (!this.deps.handoff) throw new ToolError('a build with memory needs a coding agent CLI');
+    const f = this.memberFacts(runId);
+    if (
+      phase === 'bootstrap' &&
+      (this.state(runId).steps['memory.member.link']?.data as { skipped?: boolean } | undefined)
+        ?.skipped
+    ) {
+      this.record(runId, 'step.ok', { step: key, data: { skipped: true } });
+      return;
+    }
+    if (this.state(runId).steps[`${key}.start`]?.status !== 'ok') {
+      if (phase !== 'bootstrap') {
+        const v = await inspectFolder(git, f.dir, 'existing');
+        if (!f.build && !v.ok)
+          throw new ParkError(
+            v.git && !v.git.clean ? 'dirty_tree' : 'folder_invalid',
+            `${f.name}: ${v.problems.join(' ')}`,
+            { path: v.path, changed: v.git?.changed ?? [] },
+          );
+        if (f.members.includes(f.name))
+          throw new ParkError('memory_installed', `${f.name} is already a member of ${f.system}`);
+        if (existsSync(path.join(f.dir, '.memory')) || existsSync(path.join(f.dir, '.memory-link')))
+          throw new ParkError(
+            'memory_present',
+            `${f.name} already has .memory/ or .memory-link: joining a system is a first install`,
+          );
+        if ((await git.status(f.store)).length)
+          throw new ParkError(
+            'dirty_tree',
+            `the store ${f.store} has uncommitted changes: commit or discard them first`,
+          );
+        if (!(await git.identity(f.dir))) {
+          const why =
+            'git does not know who you are, so the memory link was not made: set user.name and user.email, then run Add memory on this repository';
+          if (!f.build) throw new ParkError('no_git_identity', why);
+          // why: a build that worked without memory must not stop because git has no author.
+          this.record(runId, 'step.warn', { step: `${key}.skipped`, message: why });
+          this.record(runId, 'step.ok', { step: key, data: { skipped: true, reason: why } });
+          return;
+        }
+      }
+      const seed = path.join(this.deps.store.runDir(runId), 'memory-seed');
+      const version = existsSync(path.join(seed, 'VERSION')) ? seedVersion(seed) : copySeed(seed);
+      this.record(runId, 'step.ok', {
+        step: `${key}.start`,
+        data: {
+          seed,
+          seedVersion: version,
+          storeHead: await git.headSha(f.store),
+          storeBranch: await git.currentBranch(f.store),
+          memberHead: await git.headSha(f.dir),
+          memberBranch: await git.currentBranch(f.dir),
+        },
+      });
+    }
+    const confirmed = this.entries(runId).findLast(
+      (e) => e.type === 'memory.manifest',
+    ) as unknown as { yaml: string } | undefined;
+    if (!confirmed && phase !== 'bootstrap') {
+      const proposed = proposeMemberManifest(
+        readFileSync(path.join(f.store, 'system.yaml'), 'utf8'),
+        f.name,
+        path.relative(f.store, f.dir).replace(/\\/g, '/'),
+      );
+      if (this.state(runId).steps['memory.discover']?.status !== 'ok')
+        this.record(runId, 'step.ok', {
+          step: 'memory.discover',
+          data: {
+            proposed,
+            evidence: `Adding ${f.name} to the system ${f.system} (members now: ${f.members.join(', ')}). Only a new entry is added to the store's system.yaml.`,
+          },
+        });
+      throw new ParkError(
+        'memory_manifest',
+        `${f.name} would join the system ${f.system}: confirm or edit the updated system.yaml, then resume. Nothing is written before you do.`,
+        { proposed },
+      );
+    }
+    if (!confirmed) throw new ToolError('the member manifest is missing');
+    if (this.state(runId).steps[`${key}.agent`]?.status !== 'ok')
+      await this.runMemoryMemberAgent(runId, phase, f, confirmed.yaml);
+    const result = await this.checkMemoryMember(runId, phase, f);
+    this.record(runId, 'step.ok', { step: key, data: result });
+    if (phase === 'bootstrap') return;
+    const pf = this.deps.portfolio;
+    const known = pf?.system(f.system);
+    const yaml = (
+      this.entries(runId).findLast((e) => e.type === 'memory.manifest') as unknown as {
+        yaml: string;
+      }
+    ).yaml;
+    if (pf && known)
+      pf.saveSystem({
+        name: known.name,
+        store: known.store,
+        remote: known.remote,
+        seedVersion: known.seedVersion,
+        storeCommitPolicy: known.storeCommitPolicy,
+        manifest: yaml,
+        members: [
+          ...known.members.filter((x) => x.name !== f.name),
+          { name: f.name, dir: f.dir, projectId: pf.forRun(runId)?.id ?? null },
+        ],
+      });
+    // why: from here on the portfolio says the solution has memory, so later update runs read the shared store.
+    this.record(runId, 'memory.installed', {
+      record: {
+        mode: 'member',
+        system: f.system,
+        store: f.store,
+        seedVersion: result.seedVersion,
+        commitPolicy: result.memberPolicy,
+        installedAt: this.deps.clock.now().toISOString().slice(0, 10),
+        report:
+          phase === 'full'
+            ? result.report
+            : 'linked; the store is filled in after the code is written',
+      },
+    });
+  }
+
+  private async runMemoryMemberAgent(
+    runId: string,
+    phase: MemoryMemberPhase,
+    f: MemberFacts,
+    manifest: string,
+  ): Promise<void> {
+    const key = `memory.member.${phase}`;
+    const start = this.state(runId).steps[`${key}.start`]!.data as { seed: string };
+    const agent = this.cfg().agents?.primary ?? 'claude';
+    const caps = await this.deps.handoff!.probe(AGENT_ADAPTERS[agent]);
+    if (!caps.installed || !caps.path)
+      throw new PolicyError(`${AGENT_ADAPTERS[agent]} is not installed`, { code: 'agent_missing' });
+    if (!caps.flags.allowedTools || !caps.flags.addDir || !caps.flags.model)
+      throw new ParkError(
+        'checks_unenforceable',
+        `${AGENT_ADAPTERS[agent]} cannot restrict its commands, read the memory seed and choose a model, so it cannot add a member`,
+      );
+    const m = this.state(runId).input.memory;
+    const model = m?.model ?? MEMORY_DEFAULT_MODEL;
+    const effort = m?.effort ?? MEMORY_DEFAULT_EFFORT;
+    if (!caps.flags.effort)
+      this.record(runId, 'step.warn', {
+        step: `${key}.effort`,
+        message: `${AGENT_ADAPTERS[agent]} has no flag for reasoning effort, so "${effort}" was not applied`,
+      });
+    const ceilings = { ...DEFAULT_RUN_CEILINGS };
+    const plan: HandoffPlan = {
+      agent,
+      bin: caps.path,
+      argv: buildHandoffArgv(
+        caps,
+        ceilings,
+        memoryStoreAllowedTools([f.dir, f.store], 'install'),
+        model,
+        { addDirs: [start.seed], effort },
+      ),
+      model,
+      cwd: path.dirname(f.store),
+      planPath: path.join(start.seed, 'playbooks', 'deploy-system.md'),
+      ceilings,
+      unenforceable: [],
+    };
+    const prompt = memoryMemberPrompt({
+      phase,
+      system: f.system,
+      repo: f.name,
+      repoDir: f.dir,
+      store: f.store,
+      seed: start.seed,
+      terms: m?.isolationTerms ?? prefillIsolationTerms(this.portfolioList(), [], f.system),
+      today: this.deps.clock.now().toISOString().slice(0, 10),
+      storeCommitPolicy: f.storePolicy,
+      manifest,
+    });
+    let last = 0;
+    const out = await this.runHandoff(
+      runId,
+      plan,
+      prompt,
+      null,
+      { mode: 'none', commands: [] },
+      {
+        onProgress: (p) => {
+          if (last && Date.now() - last < 1000) return;
+          last = Date.now();
+          this.record(runId, 'handoff.progress', { ...p });
+        },
+        summaryMax: 20_000,
+      },
+    );
+    if (out.stopped) throw new InterruptedError(`run ${runId} was stopped`);
+    this.record(runId, 'step.ok', {
+      step: `${key}.agent`,
+      data: { ...agentReport(out), effortApplied: Boolean(caps.flags.effort) },
+    });
+  }
+
+  /** The Incubator's own checks of one Add member session: the link only touches the allowed paths, the store only moves forward. */
+  private async checkMemoryMember(
+    runId: string,
+    phase: MemoryMemberPhase,
+    f: MemberFacts,
+  ): Promise<{ seedVersion: string; report: string; memberPolicy: 'pr' | 'direct' }> {
+    const key = `memory.member.${phase}`;
+    const s = this.state(runId);
+    const git = this.deps.publish!.git;
+    const start = s.steps[`${key}.start`]!.data as {
+      seedVersion: string;
+      storeHead: string | null;
+      storeBranch: string | null;
+      memberHead: string | null;
+      memberBranch: string | null;
+    };
+    const agent = s.steps[`${key}.agent`]!.data as AgentReport;
+    const report = phase === 'link' ? null : parseMemoryReport(agent.summary);
+    const problems: string[] = [];
+    if (agent.tripped) problems.push(`the agent stopped at a run limit (${agent.tripped})`);
+    else if (agent.exitCode !== 0) problems.push(`the agent exited with code ${agent.exitCode}`);
+    if (phase !== 'link' && !report)
+      problems.push("the agent did not end with the playbook's report");
+    const storeLeft = await git.status(f.store);
+    if (storeLeft.length)
+      problems.push(
+        `the store has uncommitted changes: ${storeLeft
+          .slice(0, 8)
+          .map((e) => e.path)
+          .join(', ')}`,
+      );
+    const storeHead = await git.headSha(f.store);
+    const storeBranch = await git.currentBranch(f.store);
+    if (!storeHead || storeHead === start.storeHead)
+      problems.push('nothing was committed to the store');
+    if (storeBranch !== start.storeBranch && !storeBranch?.startsWith('memory/'))
+      problems.push(
+        `the store was on ${start.storeBranch ?? 'a detached HEAD'} and is now on ${storeBranch ?? 'a detached HEAD'}`,
+      );
+    if (
+      phase !== 'bootstrap' &&
+      !new RegExp(
+        `^\\s*-\\s*repo:\\s*${f.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`,
+        'm',
+      ).test(
+        existsSync(path.join(f.store, 'system.yaml'))
+          ? readFileSync(path.join(f.store, 'system.yaml'), 'utf8')
+          : '',
+      )
+    )
+      problems.push(`the store's system.yaml does not list ${f.name}`);
+    const left = (await git.status(f.dir)).filter(
+      (e) =>
+        e.path !== '.claude/settings.local.json' &&
+        (phase !== 'bootstrap' || allowedMemberPath(e.path)),
+    );
+    if (left.length && phase !== 'bootstrap')
+      problems.push(
+        `${f.name}: uncommitted changes were left: ${left
+          .slice(0, 8)
+          .map((e) => e.path)
+          .join(', ')}`,
+      );
+    if (left.length && phase === 'bootstrap')
+      problems.push(
+        `${f.name}: memory files were left uncommitted: ${left
+          .slice(0, 8)
+          .map((e) => e.path)
+          .join(', ')}`,
+      );
+    const head = await git.headSha(f.dir);
+    const branch = await git.currentBranch(f.dir);
+    const changed =
+      head && start.memberHead && head !== start.memberHead
+        ? (await git.diffNameStatus(f.dir, start.memberHead, head)).map(([, p]) => p)
+        : [];
+    if (phase !== 'bootstrap' && changed.length === 0)
+      problems.push(`${f.name}: nothing was committed`);
+    if (changed.includes('AGENTS.md'))
+      problems.push(`${f.name}: AGENTS.md was changed (it never may be)`);
+    const outside = changed.filter((p) => !allowedMemberPath(p));
+    if (outside.length)
+      problems.push(`${f.name}: files outside the link changed: ${outside.slice(0, 8).join(', ')}`);
+    if (phase !== 'bootstrap') {
+      const link = path.join(f.dir, '.memory-link');
+      if (
+        !existsSync(link) ||
+        !new RegExp(`^system=${f.system}\\s*$`, 'm').test(readFileSync(link, 'utf8'))
+      )
+        problems.push(`${f.name}: .memory-link does not name the system ${f.system}`);
+    }
+    const memberPolicy: 'pr' | 'direct' = branch === 'memory/link' ? 'pr' : 'direct';
+    if (branch !== start.memberBranch && branch !== 'memory/link')
+      problems.push(
+        `${f.name}: on ${branch ?? 'a detached HEAD'}, expected ${start.memberBranch ?? 'its own branch'} or memory/link`,
+      );
+    const text = report?.text ?? agent.summary ?? '';
+    this.record(runId, 'memory.result', {
+      phase,
+      problems,
+      report: text,
+      policy: f.storePolicy,
+      branch: storeBranch,
+      verificationPassed: report?.verificationPassed ?? true,
+      kept: report?.kept ?? [],
+      dropped: report?.dropped ?? [],
+    });
+    if (problems.length)
+      throw new ParkError(
+        'memory_rules_broken',
+        `adding ${f.name} broke a rule: ${problems.join('; ')}. Fix the folders and resume, or cancel the run.`,
+        { problems },
+      );
+    if (phase !== 'link' && !report!.verificationPassed)
+      throw new ParkError(
+        'memory_verify_failed',
+        "the playbook's own verification did not all pass (see its report). Fix the store and resume, or cancel the run.",
+      );
+    return { seedVersion: start.seedVersion, report: text, memberPolicy };
+  }
+
   /** The run page's view of an Add memory run (plan 071); null for other runs. */
   memoryDetail(runId: string): MemoryDetail | null {
     const s = this.state(runId);
     const m = s.input.memory;
+    // A new build that joins a system parks for the owner's manifest in the middle of its code step (plan 077).
+    if (
+      s.input.kind === 'new' &&
+      s.parked?.reason === 'memory_manifest' &&
+      this.buildMemoryMode(runId) === 'member'
+    ) {
+      const f = this.memberFacts(runId);
+      const found = s.steps['memory.discover']?.data as
+        { proposed?: string | null; evidence?: string } | undefined;
+      return {
+        stage: 'checks',
+        dir: f.dir,
+        system: f.system,
+        isolationTerms: [],
+        seedVersion: null,
+        policy: null,
+        branch: null,
+        report: null,
+        verificationPassed: null,
+        kept: [],
+        dropped: [],
+        problems: [],
+        effortApplied: null,
+        target: { repo: null, reason: null },
+        store: {
+          members: [f.name],
+          proposed: found?.proposed ?? null,
+          evidence: found?.evidence ?? null,
+          confirmed: null,
+          awaitingManifest: true,
+          storeDir: f.store,
+          remote: null,
+        },
+        pr: null,
+        pushed: false,
+        progress: null,
+      };
+    }
     if (s.input.kind !== 'memory' || !m) return null;
     const at = s.state === 'PARKED' ? s.parked?.state : s.state;
     const entries = this.entries(runId);
@@ -3472,7 +4370,11 @@ export class Engine {
       dropped: strings(result?.['dropped']),
       problems: strings(result?.['problems']),
       effortApplied: agent ? agent.effortApplied !== false : null,
-      target: this.pushTarget(runId, s),
+      target:
+        m.members || m.joinSystem
+          ? { repo: null, reason: 'store mode keeps everything local' }
+          : this.pushTarget(runId, s),
+      store: m.members || m.joinSystem ? this.memoryStoreDetail(runId, s) : null,
       pr: pr ?? null,
       pushed: s.steps['memory.push']?.status === 'ok' || s.steps['memory.pr']?.status === 'ok',
       progress:
@@ -3588,11 +4490,19 @@ export class Engine {
     // Plan 071 (spec §6): a solution with memory reads it first and writes back to it at the end.
     const memory = this.deps.portfolio?.forRun(runId)?.memory;
     const built = this.state(runId).steps['memory.scaffold']?.status === 'ok';
+    const linked = this.state(runId).steps['memory.member.link'];
+    const memberBuilt =
+      linked?.status === 'ok' &&
+      (linked.data as { skipped?: boolean } | undefined)?.skipped !== true;
+    // Plan 076: a member of a system reads the shared store its `.memory-link` points to.
+    const store = memory ? memoryStoreFor(repo, memory.store) : null;
     const memoryLine = built
       ? memoryBuildLine(REPO_STORE)
-      : memory
-        ? memoryConsumptionLine(memory.store)
-        : '';
+      : memberBuilt && store
+        ? memoryBuildLine(store)
+        : memory && store
+          ? memoryConsumptionLine(store)
+          : '';
     return {
       plan,
       prompt:

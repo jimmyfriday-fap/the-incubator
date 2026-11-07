@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
-import type { MemoryChoices, MemoryDefaults, StartRunBody } from '../../api-types.js';
+import type {
+  MemoryChoices,
+  MemoryDefaults,
+  MemorySystemInfo,
+  ProjectCard,
+  StartRunBody,
+} from '../../api-types.js';
 import { get, post } from '../api.js';
-import { memoryBody, termsText, validSystem } from '../memoryForm.js';
+import { folderName, memoryBody, parentOf, termsText, validSystem } from '../memoryForm.js';
 import { navigate } from '../nav.js';
 
 /**
@@ -17,6 +23,40 @@ export function AddMemory({ dir, projectId }: { dir: string; projectId?: string 
   const [effort, setEffort] = useState('');
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Store mode (plan 076): other repositories beside this one that have no memory yet can share one store.
+  const [siblings, setSiblings] = useState<{ dir: string; name: string }[]>([]);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [storePolicy, setStorePolicy] = useState<'pr' | 'direct'>('pr');
+  const [storeRemote, setStoreRemote] = useState('');
+  const store = picked.length > 0;
+  // Add member (plan 077): join a system whose store already exists instead of getting one of its own.
+  const [systems, setSystems] = useState<MemorySystemInfo[]>([]);
+  const [join, setJoin] = useState('');
+
+  useEffect(() => {
+    get<MemorySystemInfo[]>('/api/memory/systems')
+      .then(setSystems)
+      .catch(() => setSystems([]));
+  }, []);
+
+  useEffect(() => {
+    const here = parentOf(dir).toLowerCase();
+    get<ProjectCard[]>('/api/portfolio')
+      .then((all) =>
+        setSiblings(
+          all
+            .filter(
+              (p) =>
+                p.repo.dir &&
+                p.repo.dir !== dir &&
+                !p.memory &&
+                parentOf(p.repo.dir).toLowerCase() === here,
+            )
+            .map((p) => ({ dir: p.repo.dir!, name: folderName(p.repo.dir!) })),
+        ),
+      )
+      .catch(() => setSiblings([]));
+  }, [dir]);
 
   useEffect(() => {
     const q = projectId
@@ -42,7 +82,18 @@ export function AddMemory({ dir, projectId }: { dir: string; projectId?: string 
       const body: StartRunBody = {
         kind: 'memory',
         dir,
-        memory: memoryBody({ system, terms, policy, model, effort }),
+        memory: memoryBody({
+          system,
+          terms,
+          policy,
+          model,
+          effort,
+          dir,
+          members: join ? [] : siblings.filter((s) => picked.includes(s.dir)),
+          ...(join ? { joinSystem: join } : {}),
+          storePolicy,
+          storeRemote,
+        }),
       };
       const { runId } = await post<{ runId: string }>('/api/runs', body);
       navigate(`/runs/${runId}`);
@@ -74,6 +125,83 @@ export function AddMemory({ dir, projectId }: { dir: string; projectId?: string 
         <p className="error" data-testid="memory-system-error">
           Use lowercase words joined by hyphens, like rolling-schedule.
         </p>
+      )}
+      {systems.length > 0 && (
+        <label>
+          Join an existing system (optional)
+          <select
+            data-testid="memory-join"
+            value={join}
+            onChange={(e) => {
+              setJoin(e.target.value);
+              if (e.target.value) {
+                setSystem(e.target.value);
+                setPicked([]);
+              }
+            }}
+          >
+            <option value="">No: this repository gets its own memory</option>
+            {systems.map((x) => (
+              <option key={x.name} value={x.name}>
+                {x.name} (shares {x.store})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {join && (
+        <p className="muted" data-testid="memory-join-note">
+          The store&apos;s system.yaml gets one new entry for this repository. You will see the
+          updated file and confirm it before anything is written.
+        </p>
+      )}
+      {!join && siblings.length > 0 && (
+        <fieldset data-testid="memory-members">
+          <legend>Share one memory store with other repositories (optional)</legend>
+          <p className="muted">
+            Tick repositories that belong to the same system as this one. They get one shared
+            <code> {system || 'system'}-memory</code> store and a thin link each, instead of a store
+            of their own. A discovery run proposes the manifest first, and you confirm it.
+          </p>
+          {siblings.map((s) => (
+            <label key={s.dir}>
+              <input
+                type="checkbox"
+                data-testid={`memory-member-${s.name}`}
+                checked={picked.includes(s.dir)}
+                onChange={(e) =>
+                  setPicked(
+                    e.target.checked ? [...picked, s.dir] : picked.filter((x) => x !== s.dir),
+                  )
+                }
+              />{' '}
+              {s.name}
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {store && (
+        <>
+          <label>
+            Store commit policy
+            <select
+              data-testid="memory-store-policy"
+              value={storePolicy}
+              onChange={(e) => setStorePolicy(e.target.value as 'pr' | 'direct')}
+            >
+              <option value="pr">Branch and pull request (recommended)</option>
+              <option value="direct">Commit to main</option>
+            </select>
+          </label>
+          <label>
+            Store remote (optional; without one the store stays on this computer)
+            <input
+              data-testid="memory-store-remote"
+              value={storeRemote}
+              onChange={(e) => setStoreRemote(e.target.value)}
+            />
+          </label>
+        </>
       )}
       <label>
         Isolation terms: other systems&apos; code identifiers to keep out of this memory (one per
@@ -131,7 +259,13 @@ export function AddMemory({ dir, projectId }: { dir: string; projectId?: string 
         disabled={starting || !validSystem(system)}
         onClick={() => void start()}
       >
-        {starting ? 'Starting…' : 'Install memory'}
+        {starting
+          ? 'Starting…'
+          : join
+            ? 'Propose the updated manifest'
+            : store
+              ? 'Find the system and propose a manifest'
+              : 'Install memory'}
       </button>
     </div>
   );

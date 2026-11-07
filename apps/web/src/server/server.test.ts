@@ -1373,6 +1373,34 @@ describe('Add memory over the API (plan 071)', () => {
     }
   });
 
+  it('lists no systems yet, and refuses store mode for repositories that are not side by side (plan 076)', async () => {
+    const { api, h } = await boot();
+    const a = await seedAdoptRepo(h, 'bare-node');
+    const b = await seedAdoptRepo(h, 'python-service');
+    const systems = await api.get<unknown[]>('/api/memory/systems');
+    expect(systems.status).toBe(200);
+    expect(systems.body).toEqual([]);
+    const r = await api.post('/api/runs', {
+      kind: 'memory',
+      dir: a.dir,
+      memory: {
+        system: 'shop',
+        isolationTerms: [],
+        commitPolicy: 'auto',
+        members: [
+          { dir: a.dir, name: 'api' },
+          { dir: b.dir, name: 'web' },
+        ],
+      },
+    });
+    expect(r.status).toBeGreaterThanOrEqual(400);
+    expect(JSON.stringify(r.body)).toContain('side by side');
+    const manifest = await api.post('/api/runs/no-such-run/memory-manifest', {
+      yaml: 'system: shop',
+    });
+    expect(manifest.status).toBeGreaterThanOrEqual(400);
+  });
+
   it('refuses a folder that already has memory', async () => {
     const { api, h } = await boot();
     const { dir } = await seedAdoptRepo(h, 'bare-node');

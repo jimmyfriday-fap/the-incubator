@@ -275,6 +275,16 @@ export interface MemoryInfo {
   target: { repo: { owner: string; name: string } | null; reason: string | null };
   pr: { number: number; url: string } | null;
   pushed: boolean;
+  /** Store mode (plan 076): the manifest to review, and where the store is; null in repo mode. */
+  store: {
+    members: string[];
+    proposed: string | null;
+    evidence: string | null;
+    confirmed: string | null;
+    awaitingManifest: boolean;
+    storeDir: string | null;
+    remote: string | null;
+  } | null;
   progress: {
     turns: number;
     toolCalls: number;
@@ -302,6 +312,22 @@ export interface MemoryChoices {
   commitPolicy: 'auto' | 'pr' | 'direct';
   model?: string;
   effort?: string;
+  /** Store mode (plan 076): the other repositories that share the store; the run's `dir` is the first. */
+  members?: { dir: string; name: string }[];
+  storeCommitPolicy?: 'pr' | 'direct';
+  storeRemote?: string;
+  /** Add member (plan 077): join this existing system instead of getting a store of its own. */
+  joinSystem?: string;
+}
+
+/** A system whose repositories share one memory store (plan 076), from `GET /api/memory/systems`. */
+export interface MemorySystemInfo {
+  name: string;
+  store: string;
+  remote: string | null;
+  seedVersion: string;
+  storeCommitPolicy: 'pr' | 'direct';
+  members: { name: string; dir: string; projectId: string | null }[];
 }
 
 /** A project of the portfolio (ADR-028), as the run page shows it. */

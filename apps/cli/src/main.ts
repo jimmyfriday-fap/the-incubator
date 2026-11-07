@@ -12,7 +12,7 @@ import { collectCheck } from './commands/checks.js';
 import { runGc } from './commands/gc.js';
 import { runAdopt, type AdoptOptions } from './commands/adopt.js';
 import { runEnhance, type EnhanceOptions } from './commands/enhance.js';
-import { runMemory, type MemoryOptions } from './commands/memory.js';
+import { runMemory, runMemoryManifest, type MemoryOptions } from './commands/memory.js';
 import { runConfig } from './commands/config.js';
 import { runPortfolio } from './commands/portfolio.js';
 import { runUi } from './commands/ui.js';
@@ -198,9 +198,9 @@ export async function main(
     });
 
   program
-    .command('memory <path>')
+    .command('memory <paths...>')
     .description(
-      "add agent memory to a local repository: the memory seed's playbook runs in an agent session that commits the install; you decide the push",
+      "add agent memory to a local repository, or one shared store to several repositories that sit side by side (store mode): the memory seed's playbook runs in an agent session that commits the install; you decide the push",
     )
     .option('--system <name>', "kebab-case system name (default: the solution's name)")
     .option(
@@ -211,11 +211,29 @@ export async function main(
       '--policy <auto|pr|direct>',
       'commit policy (default: auto, detected from the repository)',
     )
+    .option('--join <system>', 'add this one repository to an existing system (Add member)')
+    .option(
+      '--store-policy <pr|direct>',
+      "store mode: the store repository's own policy (default: pr)",
+    )
+    .option(
+      '--store-remote <url>',
+      "store mode: the store's git remote (default: none, the store stays local)",
+    )
     .option('--model <id>', 'agent model (default: claude-opus-5-5)')
     .option('--effort <level>', 'agent effort: low | medium | high | xhigh | max (default: high)')
-    .option('-y, --yes', 'accept every default without prompting')
-    .action(async (source: string, opts: MemoryOptions) => {
-      code = await runMemory(getDeps(), io, source, opts);
+    .option('-y, --yes', 'accept every default without prompting (never the store-mode manifest)')
+    .action(async (paths: string[], opts: MemoryOptions) => {
+      code = await runMemory(getDeps(), io, paths, opts);
+    });
+
+  program
+    .command('memory-manifest <runId> [file]')
+    .description(
+      'store mode: confirm the proposed system.yaml of a parked run (or the edited one in <file>), then continue the install',
+    )
+    .action(async (runId: string, file: string | undefined) => {
+      code = await runMemoryManifest(getDeps(), io, runId, file);
     });
 
   program

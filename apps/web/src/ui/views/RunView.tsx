@@ -335,6 +335,7 @@ export function RunView({ runId }: { runId: string }) {
           <MemoryRun
             memory={run.memory}
             busy={run.busy}
+            onManifest={(yaml) => act(post(`/api/runs/${runId}/memory-manifest`, { yaml }))}
             onPush={() => act(post(`/api/runs/${runId}/push`, { action: 'push' }))}
             onSkip={() => act(post(`/api/runs/${runId}/push`, { action: 'skip' }))}
           />
