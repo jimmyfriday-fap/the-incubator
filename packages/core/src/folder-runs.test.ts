@@ -498,6 +498,41 @@ describe("update an existing solution in the owner's folder", () => {
       surface: 'test',
     });
 
+  it('records target mode and offers Add memory when the repository has none, installing nothing (plan 078)', async () => {
+    const { h, ref, dir } = await seeded();
+    const runId = start(h, dir, ref);
+    const s = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(s.parked).toMatchObject({ state: 'COMMIT' });
+    const plan = h.engine.entries(runId).find((e) => e.type === 'memory.plan') as
+      { plan?: { mode: string; reason: string } } | undefined;
+    expect(plan?.plan?.mode).toBe('target');
+    const d = (await h.engine.finishDetail(runId))!;
+    expect(d.memory).toMatchObject({ mode: 'target', scaffolded: false, bootstrapped: false });
+    expect(d.memory?.note).toContain('Add memory');
+    expect(existsSync(path.join(dir, '.memory'))).toBe(false);
+    h.engine.submitCommit(runId, { action: 'commit' });
+    await h.engine.resume(runId, new DefaultsPrompter());
+    h.engine.submitPush(runId, 'push');
+    await h.engine.resume(runId, new DefaultsPrompter());
+    const w = (await h.engine.finishDetail(runId))!.whatNow!;
+    expect(w.next.some((n) => n.includes('Add memory'))).toBe(true);
+    expect(readFileSync(path.join(dir, 'WHAT-NOW.md'), 'utf8')).toContain('Add memory');
+    expect(existsSync(path.join(dir, '.memory'))).toBe(false);
+  });
+
+  it('does not offer Add memory when the repository already has memory (plan 078)', async () => {
+    const { h, ref, dir } = await seeded();
+    mkdirSync(path.join(dir, '.memory'), { recursive: true });
+    writeFileSync(path.join(dir, '.memory', 'INDEX.md'), '# index\n');
+    await git(['add', '.memory/INDEX.md'], dir);
+    await git(['commit', '-m', 'mem: add memory'], dir);
+    const runId = start(h, dir, ref);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    const d = (await h.engine.finishDetail(runId))!;
+    expect(d.memory?.mode).toBe('target');
+    expect(d.memory?.note ?? '').not.toContain('Add memory');
+  });
+
   it('delivers the plan onto a new branch in the folder, codes there, and never writes to the original branch', async () => {
     const { h, ref, dir } = await seeded();
     const mainBefore = await out(['rev-parse', 'main'], dir);

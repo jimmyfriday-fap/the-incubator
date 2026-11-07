@@ -1,4 +1,5 @@
 import { PolicyError } from '@incubator/runtime';
+import { BACKSHACK_STACK } from '@incubator/spec';
 import type { RunInput } from './store.js';
 
 /**
@@ -31,9 +32,22 @@ export interface MemoryPlan {
 
 /** The plan a new build with a folder gets; null for runs that have no coding session or are not new builds. */
 export function resolveMemoryDestination(
-  input: Pick<RunInput, 'kind' | 'dir' | 'buildMemory'>,
+  input: Pick<RunInput, 'kind' | 'dir' | 'buildMemory' | 'stack'>,
   knownSystems: readonly string[],
 ): MemoryPlan | null {
+  // Row 3 (ADR-032): code that goes into an existing repository, or a Backshack tool, makes no new store.
+  if (input.kind === 'enhance' && (input.dir || input.stack === BACKSHACK_STACK))
+    return input.stack === BACKSHACK_STACK
+      ? {
+          mode: 'target',
+          reason:
+            'the code goes into a Backshack tool, whose memory belongs to the Backshack repository; no new store is made',
+        }
+      : {
+          mode: 'target',
+          reason:
+            'the code goes into an existing repository, so its memory stays where that repository keeps it; no new store is made',
+        };
   if (input.kind !== 'new' || !input.dir) return null;
   const choice = input.buildMemory ?? { enabled: true };
   if (!choice.enabled)

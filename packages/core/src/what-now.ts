@@ -32,6 +32,8 @@ export interface WhatNowFacts {
   /** Absent in the file written just before the commit: the commit and push lines are left out. */
   commit?: FinishDetail['commit'];
   pr: { number: number; url: string } | null;
+  /** Update runs: the project has no agent memory, so the guide offers Add memory (never installs it). */
+  memoryOffer?: boolean;
 }
 
 /** The guide: shown on the run page, and written as WHAT-NOW.md. */
@@ -90,6 +92,10 @@ function installSteps(platform: IncubatorSpec['platform'], name: string, slug: s
       return ['DEPLOY.md describes how this project is deployed.'];
   }
 }
+
+/** The one sentence an update run says when the project has no agent memory (plan 078). */
+export const MEMORY_OFFER =
+  'This project has no agent memory yet, and nothing was installed. Use Add memory on the project page (or `incubator memory <folder>`) when you want coding agents to keep what they learn.';
 
 const DEPLOY: Record<IncubatorSpec['deploy']['target'], string> = {
   'vps-tailscale': 'a server on your Tailscale network',
@@ -227,6 +233,7 @@ export function whatNow(f: WhatNowFacts): WhatNow {
     next.push(
       'Push the branch from the Incubator, then review the pull request and merge it into main: every push to main deploys to staging.',
     );
+  if (f.memoryOffer) next.push(MEMORY_OFFER);
   next.push(
     'Before the first deploy, add the secrets and hosts DEPLOY.md lists; production only deploys through the promote workflow.',
   );

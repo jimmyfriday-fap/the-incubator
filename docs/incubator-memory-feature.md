@@ -100,8 +100,10 @@ When the incubator runs "Update an existing solution" on a solution that has `me
 - Creating GitHub repos on the user's behalf.
 - Tenant-scoped memory. The seed deliberately keeps tenant data out of every store.
 - Editing memory content from the incubator UI. Memory is edited through PRs.
-- Store mode (two or more solutions sharing one store), Add member, Upgrade and Dream. The first version
-  (plan 071, ADR-031) is repo mode only; the store-mode rows and steps above describe the later version.
+- Upgrade and Dream. Repo mode (plan 071, ADR-031), store mode and Add member (Part 2, ADR-032) are built.
+  Store mode keeps everything local: the Incubator makes the store's commits and pushes nothing; the owner
+  decides what to push. Memory is also on by default for a new build, and update runs on a project with no
+  memory offer Add memory (they never install it).
 
 ## Doing it without code changes (works today)
 
