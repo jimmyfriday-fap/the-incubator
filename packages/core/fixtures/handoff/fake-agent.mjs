@@ -5,7 +5,7 @@
 // run; idle stops without touching a file; runaway keeps calling tools until it is killed; spend
 // reports a large cost; steps works like an update run's agent (plan 043).
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const mode = process.env.FAKE_AGENT_MODE ?? 'complete';
@@ -286,6 +286,9 @@ if (phase) {
     path.join('.memory', 'hooks', 'session-end'),
     readFileSync(path.join(seed, 'hooks', 'session-end'), 'utf8').replace(guard, () => `src="\${src%$'\\r'}"\n${guard}`),
   );
+  // The playbook has the real agent run `chmod +x` on these three; Linux and macOS refuse to run them without it.
+  for (const script of [['bin', 'memory'], ['hooks', 'pre-commit'], ['hooks', 'session-end']])
+    chmodSync(path.join('.memory', ...script), 0o755);
   copyFileSync(path.join(seed, 'templates', 'gitignore'), path.join('.memory', '.gitignore'));
   const page = (name, tier, desc) =>
     `---\nname: ${name}\ntier: ${tier}\ndescription: ${desc}\nlast_verified: 2026-11-03\n---\n- [2026-11-03] [bootstrap] A fact the fake agent found (src: README.md)\n`;

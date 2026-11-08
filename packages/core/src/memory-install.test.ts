@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -189,6 +190,13 @@ describe('installMemoryProtected', () => {
     copyFileSync(path.join(SEED, 'bin', 'memory'), path.join(mem, 'bin', 'memory'));
     copyFileSync(path.join(SEED, 'hooks', 'pre-commit'), path.join(mem, 'hooks', 'pre-commit'));
     writeFileSync(path.join(mem, 'hooks', 'session-end'), sessionEndHook());
+    // The playbook has the real agent run `chmod +x` on these three; Linux and macOS refuse to run them without it.
+    for (const script of [
+      ['bin', 'memory'],
+      ['hooks', 'pre-commit'],
+      ['hooks', 'session-end'],
+    ])
+      chmodSync(path.join(mem, ...(script as [string, string])), 0o755);
     copyFileSync(path.join(SEED, 'templates', 'gitignore'), path.join(mem, '.gitignore'));
     const page = (name: string, tier: string) =>
       `---\nname: ${name}\ntier: ${tier}\ndescription: ${name}\nlast_verified: 2026-11-03\n---\n- [2026-11-03] [bootstrap] A fact (src: README.md)\n`;
