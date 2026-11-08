@@ -51,6 +51,9 @@ export async function startFakeServer(
     handoff: fakeAgentHandoff(),
     tools: stacks.tools,
     portfolio: true,
+    // why: a new build also builds a memory store, whose self-tests run the seed's bash scripts and a real git hook;
+    // the fake agent's stand-in store has neither, and these tests are about the owner's flow.
+    memorySelfTests: false,
     config: () => live.store?.get() ?? {},
     llm: turnsWithReviewSummary(
       opts.fixtureDir ??
