@@ -7,7 +7,7 @@ You are giving a brand-new solution its agent memory, as one of two sessions of 
 
 1. The seed folder named under the inputs is a copy made for this session. Read from it; never change it.
 2. The repository is new and the owner has not committed anything yet. You are on the build branch: stay on it, never switch branches, and never use the playbook's `memory/bootstrap` branch. The commit policy is `direct`, so commit on the branch you are on. Do **not** run `git push` and do **not** open a pull request.
-3. Only the commands this session allows will run. If one is refused, do not work around it: try the equivalent the playbook's own scripts offer, and if there is none, say so in your last message.
+3. Only the commands this session allows will run, and you have only the file tools and Bash (no PowerShell). Run **one command per Bash call**: you are already in the target folder, so no `cd`; no loops, pipes, `;`, `&&`, `||`, subshells or `bash -x`. Several reads are several calls. If a command is still refused, do not work around it: try the equivalent the playbook's own scripts offer, and if there is none, say so in your last message. Do not run the repository's own build, test, lint or format commands; record them from the files that name them.
 4. On Windows, `chmod +x` does not reach git. Also run `git update-index --chmod=+x` on each script you made executable, once it is staged.
 5. Never edit `AGENTS.md` and never change application code. Stage only the paths the playbook allows (`.memory`, `.claude/skills`, `.claude/settings.json`, `CLAUDE.md`), by name, never with `git add -A` or `git add .`.
 6. If the playbook tells you to stop (an existing `.memory/`), stop, change nothing, and say why as the first line of your last message.

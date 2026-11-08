@@ -3020,6 +3020,7 @@ export class Engine {
       bin: caps.path,
       argv: buildHandoffArgv(caps, ceilings, MEMORY_BUILD_ALLOWED_TOOLS, MEMORY_DEFAULT_MODEL, {
         addDirs: [start.seed, stubs],
+        available: MEMORY_AVAILABLE_TOOLS,
         effort: MEMORY_DEFAULT_EFFORT,
       }),
       model: MEMORY_DEFAULT_MODEL,
