@@ -41,6 +41,8 @@ async function build(buildMemory?: { enabled: boolean }) {
   const h = fakePublishEngine({
     portfolio: true,
     handoff: fakeAgentHandoff(),
+    // why: the self-tests run the seed's bash scripts and a real git hook, which the fake store does not have.
+    memorySelfTests: false,
   });
   const dir = path.join(mkdtempSync(path.join(os.tmpdir(), 'memory build ')), 'my solution');
   const s0 = spec();
@@ -57,6 +59,22 @@ async function build(buildMemory?: { enabled: boolean }) {
 }
 
 describe('memory on a new build (plan 075)', () => {
+  it('installs the skills, the session hook and the git hook itself, because the agent cannot write .claude/ or .git/', async () => {
+    const { dir } = await build();
+    for (const skill of ['write-memory', 'dream', 'memory-bootstrap'])
+      expect(existsSync(path.join(dir, '.claude', 'skills', skill, 'SKILL.md'))).toBe(true);
+    const settings = readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8');
+    expect(settings).toContain('SessionEnd');
+    expect(settings).toContain('.memory/hooks/session-end');
+    // Committed on the build branch, not left for the owner.
+    const tracked = await out(['ls-files', '.claude'], dir);
+    expect(tracked).toContain('.claude/settings.json');
+    expect(tracked).toContain('.claude/skills/write-memory/SKILL.md');
+    expect(await out(['status', '--porcelain', '--', '.claude'], dir)).toBe('');
+    const hook = readFileSync(path.join(dir, '.git', 'hooks', 'pre-commit'), 'utf8');
+    expect(hook).toContain('.memory/hooks/pre-commit');
+  });
+
   it('commits the scaffold before the code and the bootstrap after it, and reports both', async () => {
     const { h, runId, dir, state } = await build();
     expect(state.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });

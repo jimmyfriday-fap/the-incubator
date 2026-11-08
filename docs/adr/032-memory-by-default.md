@@ -57,5 +57,9 @@ already exists, and a Backshack tool is built inside the Backshack repository, w
 - A new build's first commit on the build branch contains `.memory/` and the `CLAUDE.md` block, unless the
   toggle was off.
 - `target` is a recorded decision, not an install: there is nothing to check or roll back.
+- A new build's two memory sessions are headless too, so Claude Code refuses their writes under `.claude/` and `.git/`
+  (acceptance build 1, 2026-11-07; allow rules do not lift it). As in ADR-031's amendment for Add memory, the Incubator
+  installs the skills, the `SessionEnd` hook and the git hook after each session stops, with the same code, and the
+  bootstrap writes its skill stubs outside the repository. The seed and its playbook are unchanged.
 - The finish detail for an update run now carries a `memory` entry, so the UI shows the destination for those
   runs too.

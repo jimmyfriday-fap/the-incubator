@@ -424,6 +424,8 @@ export function memoryBuildPrompt(i: {
   phase: MemoryBuildPhase;
   target: string;
   seed: string;
+  /** Where the bootstrap writes skill stubs: outside the repo, because Claude Code refuses writes under `.claude/`. */
+  stubs: string;
   terms: readonly string[];
   today: string;
   facts: BuildMemoryFacts;
@@ -442,6 +444,7 @@ export function memoryBuildPrompt(i: {
     '```',
     `TARGET: ${slashes(i.target)}`,
     `SEED: ${seed}`,
+    `STUBS: ${slashes(i.stubs)}`,
     `ISOLATION_TERMS: ${i.terms.length ? i.terms.join(', ') : '(none)'}`,
     'COMMIT_POLICY: direct',
     `TODAY: ${i.today}`,

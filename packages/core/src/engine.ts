@@ -3011,12 +3011,15 @@ export class Engine {
         step: `memory.${phase}.effort`,
         message: `${AGENT_ADAPTERS[agent]} has no flag for reasoning effort, so "${MEMORY_DEFAULT_EFFORT}" was not applied`,
       });
+    // Skill stubs go outside the repo (Claude Code refuses writes under `.claude/`); the Incubator copies them in afterwards.
+    const stubs = path.join(this.deps.store.runDir(runId), 'memory-stubs');
+    mkdirSync(stubs, { recursive: true });
     const ceilings = { ...DEFAULT_RUN_CEILINGS };
     const plan: HandoffPlan = {
       agent,
       bin: caps.path,
       argv: buildHandoffArgv(caps, ceilings, MEMORY_BUILD_ALLOWED_TOOLS, MEMORY_DEFAULT_MODEL, {
-        addDirs: [start.seed],
+        addDirs: [start.seed, stubs],
         effort: MEMORY_DEFAULT_EFFORT,
       }),
       model: MEMORY_DEFAULT_MODEL,
@@ -3029,6 +3032,7 @@ export class Engine {
       phase,
       target: dir,
       seed: start.seed,
+      stubs,
       terms: prefillIsolationTerms(this.portfolioList(), [], ''),
       today: this.deps.clock.now().toISOString().slice(0, 10),
       facts: this.buildMemoryFacts(runId),
@@ -3050,11 +3054,49 @@ export class Engine {
       },
     );
     if (out.stopped) throw new InterruptedError(`run ${runId} was stopped`);
+    await this.installBuildMemoryProtected(runId, phase, start.seed, stubs, out);
     this.record(runId, 'step.ok', {
       step: `memory.${phase}.agent`,
       data: { ...agentReport(out), effortApplied: Boolean(caps.flags.effort) },
     });
     return null;
+  }
+
+  /**
+   * The parts of a build's memory that Claude Code refuses an agent to write (`.claude/` and `.git/`): the skills,
+   * the SessionEnd hook, the git pre-commit hook. The Incubator makes and commits them after the session stops
+   * (acceptance build 1, 2026-11-07). The scaffold has no content to self-test yet; the bootstrap does.
+   */
+  private async installBuildMemoryProtected(
+    runId: string,
+    phase: MemoryBuildPhase,
+    seed: string,
+    stubs: string,
+    out: Parameters<typeof agentReport>[0],
+  ): Promise<void> {
+    const dir = this.runDir(this.state(runId));
+    const rep = agentReport(out);
+    if (rep.tripped || rep.exitCode !== 0 || !existsSync(path.join(dir, '.memory', 'INDEX.md')))
+      return;
+    const result = await installMemoryProtected({
+      exec: this.deps.handoff!.exec,
+      git: this.deps.publish!.git,
+      dir,
+      seed,
+      stubs,
+      selfTests: phase === 'bootstrap' && this.deps.memorySelfTests !== false,
+      ...(this.sig(runId).signal ? { signal: this.sig(runId).signal } : {}),
+    });
+    const failed = result.checks.filter((c) => c.status === 'failed');
+    if (failed.length)
+      throw new ParkError(
+        'memory_verify_failed',
+        `the Incubator's own checks of the ${phase} failed: ${failed
+          .map((c) => `${c.step} (${c.detail})`)
+          .join('; ')}. Fix the install and resume, or cancel the run.`,
+        { problems: failed.map((c) => `${c.step}: ${c.detail}`) },
+      );
+    this.record(runId, 'step.ok', { step: `memory.${phase}.protected`, data: result });
   }
 
   /** The Incubator's own checks of one memory session of a build, run after the agent stops and on every resume. */

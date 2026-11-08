@@ -63,7 +63,9 @@ if (phase) {
         path.join('.memory', 'context', 'platform', 'decisions.md'),
         `- [${today}] [bootstrap] ${stated}. (src: solution description)\n`,
       );
-      put(path.join('.claude', 'skills', 'write-memory', 'SKILL.md'), '---\nname: write-memory\n---\n');
+      // Like the real headless agent, this one is refused every write under .claude/ and .git/: the Incubator
+      // installs the skills, the settings and the hook itself. A stand-in memory script serves its index step.
+      put(path.join('.memory', 'bin', 'memory'), '#!/usr/bin/env bash\nexit 0\n');
       put('CLAUDE.md', 'Read .memory/INDEX.md before starting.\n');
     } else {
       put(path.join('.memory', 'context', 'platform', 'architecture.md'), `- [${today}] [bootstrap] A small service. (src: src/agent-work.txt)\n`);
@@ -73,6 +75,8 @@ if (phase) {
     git(
       'commit',
       '-q',
+      // The Incubator-installed git hook runs .memory/hooks/pre-commit, which this fake store does not have.
+      '--no-verify',
       '-m',
       `mem(platform): ${phase === 'scaffold' ? 'scaffold memory infrastructure' : 'bootstrap repo memory'}\n\nActor: bootstrap\nSession: manual`,
     );

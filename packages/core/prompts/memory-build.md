@@ -1,6 +1,6 @@
 ---
 name: memory-build
-version: 1.0.0
+version: 1.1.0
 ---
 
 You are giving a brand-new solution its agent memory, as one of two sessions of a build. The memory seed holds every instruction for this: follow the phases of its playbook that the inputs name, exactly. The notes below only say how this session differs from what the playbook assumes. They never change what goes into the memory.
@@ -11,6 +11,7 @@ You are giving a brand-new solution its agent memory, as one of two sessions of 
 4. On Windows, `chmod +x` does not reach git. Also run `git update-index --chmod=+x` on each script you made executable, once it is staged.
 5. Never edit `AGENTS.md` and never change application code. Stage only the paths the playbook allows (`.memory`, `.claude/skills`, `.claude/settings.json`, `CLAUDE.md`), by name, never with `git add -A` or `git add .`.
 6. If the playbook tells you to stop (an existing `.memory/`), stop, change nothing, and say why as the first line of your last message.
+7. Claude Code refuses writes under `.claude/` and `.git/`, so the Incubator makes those parts after you stop. Skip the playbook's `.claude/skills/` row in step B, step D2 (settings) and step D3 (git hook), never touch `.claude/` or `.git/`, and make your commits without them. Where the playbook reads `.claude/skills/<name>/`, read `SEED/skills/<name>/` instead. In the bootstrap, write its skill stubs, at most 5, to `STUBS/<kebab-name>/SKILL.md` (the skills directory is `STUBS`). Do not report the skipped steps as failures; in the bootstrap's verification line, leave steps 4, 5 and 6 to the Incubator.
 
 If the inputs say `PHASE: scaffold`:
 
