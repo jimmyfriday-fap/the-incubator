@@ -25,7 +25,13 @@ export function fakeWiring() {
       agent.exec.run(bin, args, { ...opts, env: { ...opts.env, ELECTRON_RUN_AS_NODE: '1' } }),
     which: (n) => agent.exec.which(n),
   };
-  const h = fakePublishEngine({ handoff: { ...agent, exec }, llm: { dir } });
+  // why: a new build also builds a memory store, whose self-tests run the seed's bash scripts and a real git hook;
+  // the fake agent's stand-in store has neither, and this smoke test is about the owner's flow.
+  const h = fakePublishEngine({
+    handoff: { ...agent, exec },
+    llm: { dir },
+    memorySelfTests: false,
+  });
   const picked = process.env['INCUBATOR_TEST_PICK_FOLDER'];
   return {
     engine: h.engine,

@@ -66,6 +66,8 @@ if (phase) {
       // Like the real headless agent, this one is refused every write under .claude/ and .git/: the Incubator
       // installs the skills, the settings and the hook itself. A stand-in memory script serves its index step.
       put(path.join('.memory', 'bin', 'memory'), '#!/usr/bin/env bash\nexit 0\n');
+      // POSIX refuses to run a script without the execute bit (Windows has none).
+      if (process.platform !== 'win32') execFileSync('chmod', ['+x', path.join('.memory', 'bin', 'memory')]);
       put('CLAUDE.md', 'Read .memory/INDEX.md before starting.\n');
     } else {
       put(path.join('.memory', 'context', 'platform', 'architecture.md'), `- [${today}] [bootstrap] A small service. (src: src/agent-work.txt)\n`);
