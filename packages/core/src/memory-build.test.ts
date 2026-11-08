@@ -111,6 +111,18 @@ describe('memory on a new build (plan 075)', () => {
     expect(prompt).toContain('Do not commit: the owner commits.');
   }, 240_000);
 
+  it('does not park when the coding session left its own memory note uncommitted for the owner', async () => {
+    vi.stubEnv('FAKE_CODING_MEMORY_NOTE', '1');
+    const { runId, dir, state } = await build();
+    expect(state.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    // The note is the owner's to commit: still uncommitted, and the bootstrap was not blamed for it.
+    expect(await out(['status', '--porcelain', '--', '.memory'], dir)).toContain('decisions.md');
+    expect(
+      readFileSync(path.join(dir, '.memory', 'context', 'platform', 'decisions.md'), 'utf8'),
+    ).toContain('Kept the stand-in store');
+    expect(runId).toBeTruthy();
+  }, 240_000);
+
   it('makes no .memory/ and records mode none when the toggle is off', async () => {
     const { h, runId, dir, state } = await build({ enabled: false });
     expect(state.parked).toMatchObject({ state: 'COMMIT' });

@@ -2965,6 +2965,11 @@ export class Engine {
           seedVersion: version,
           base: await git.headSha(dir),
           branch: await git.currentBranch(dir),
+          // why: the coding session follows the store's own rules and writes its notes there; they stay uncommitted
+          // for the owner's commit, so the bootstrap is only answerable for the memory files it leaves dirty itself.
+          dirtyMemory: (await git.status(dir))
+            .filter((e) => allowedMemoryPath(e.path))
+            .map((e) => e.path),
         },
       });
     }
@@ -3120,6 +3125,7 @@ export class Engine {
       seedVersion: string;
       base: string;
       branch: string | null;
+      dirtyMemory?: string[];
     };
     const agent = s.steps[`memory.${phase}.agent`]!.data as AgentReport;
     const report = phase === 'bootstrap' ? parseMemoryReport(agent.summary) : null;
@@ -3129,7 +3135,10 @@ export class Engine {
     if (phase === 'bootstrap' && !report)
       problems.push("the agent did not end with the playbook's report");
     // why: the owner's build work stays uncommitted during the bootstrap; only memory paths must be committed.
-    const left = (await git.status(dir)).filter((e) => allowedMemoryPath(e.path));
+    const before = new Set(start.dirtyMemory ?? []);
+    const left = (await git.status(dir)).filter(
+      (e) => allowedMemoryPath(e.path) && !before.has(e.path),
+    );
     if (left.length)
       problems.push(
         `memory files were left uncommitted: ${left

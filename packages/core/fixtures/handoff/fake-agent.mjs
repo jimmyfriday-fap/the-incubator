@@ -438,6 +438,10 @@ if (phase) {
   if (mode === 'edit') {
     mkdirSync('src', { recursive: true });
     writeFileSync(path.join('src', 'agent-work.txt'), 'written by the fake agent\n');
+    // Like a real coding session that follows the store's rules: a note, left uncommitted for the owner.
+    const notes = path.join('.memory', 'context', 'platform', 'decisions.md');
+    if (process.env.FAKE_CODING_MEMORY_NOTE === '1' && existsSync(notes))
+      writeFileSync(notes, `${readFileSync(notes, 'utf8')}- [2026-11-08] [claude-code] Kept the stand-in store. (src: src/agent-work.txt)\n`);
   }
   if (mode === 'complete' || mode === 'edit') {
     const id = readFileSync(path.join('.incubator', 'state', 'active-ticket'), 'utf8').trim();
