@@ -64,7 +64,12 @@ export function buildHandoffArgv(
   ceilings: Ceilings,
   tools: readonly string[] = HANDOFF_ALLOWED_TOOLS,
   model?: string,
-  extra: { addDirs?: readonly string[]; effort?: string; available?: readonly string[] } = {},
+  extra: {
+    addDirs?: readonly string[];
+    effort?: string;
+    available?: readonly string[];
+    isolateSettings?: boolean;
+  } = {},
 ): string[] {
   const f = caps.flags;
   if (extra.addDirs?.length && !f.addDir)
@@ -102,6 +107,9 @@ export function buildHandoffArgv(
     ...(extra.available?.length && f.availableTools
       ? [f.availableTools, extra.available.join(',')]
       : []),
+    // why: the owner's user-level hooks (a PreToolUse hook that wraps Bash commands) make every allow-listed command
+    // unverifiable, so a memory session reads only the project's and the local settings (acceptance build 3).
+    ...(extra.isolateSettings && f.settingSources ? [f.settingSources, 'project,local'] : []),
     ...(f.acceptEdits ?? []),
     ...(f.allowedTools ? [f.allowedTools, tools.join(',')] : []),
   ];

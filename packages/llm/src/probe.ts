@@ -17,6 +17,7 @@ export const CANDIDATES = {
   acceptEdits: [['--permission-mode', 'acceptEdits']],
   allowedTools: ['--allowedTools', '--allowed-tools'],
   availableTools: ['--tools'],
+  settingSources: ['--setting-sources'],
   addDir: ['--add-dir'],
   effort: ['--effort', '--reasoning-effort'],
 } as const;
@@ -61,6 +62,7 @@ export function capabilitiesFromHelp(version: string, help: string, path?: strin
   set('acceptEdits', pickArgs(help, CANDIDATES.acceptEdits));
   set('allowedTools', pickFlag(help, CANDIDATES.allowedTools));
   set('availableTools', pickFlag(help, CANDIDATES.availableTools));
+  set('settingSources', pickFlag(help, CANDIDATES.settingSources));
   set('addDir', pickFlag(help, CANDIDATES.addDir));
   set('effort', pickFlag(help, CANDIDATES.effort));
   const stdinPrompt = /stdin|standard input|piped/i.test(help);

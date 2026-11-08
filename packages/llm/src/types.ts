@@ -56,6 +56,8 @@ export interface Capabilities {
     allowedTools?: string;
     /** Flag fixing which tools exist at all in a headless session (e.g. `--tools Read,Edit,Bash`), so an unlisted tool such as PowerShell is gone, not just unapproved. */
     availableTools?: string;
+    /** Flag choosing which settings files a headless session reads (e.g. `--setting-sources project,local`), so the owner's own user-level hooks cannot rewrite the session's commands. */
+    settingSources?: string;
     /** Flag giving the agent another directory it may read (plan 071: the memory seed copy). */
     addDir?: string;
     /** Flag choosing the agent's reasoning effort (plan 071). */

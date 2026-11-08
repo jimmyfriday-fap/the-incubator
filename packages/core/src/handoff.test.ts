@@ -143,6 +143,28 @@ describe('handoff', () => {
     ).not.toContain('--tools');
   });
 
+  it('keeps the owner’s user-level hooks out of a memory session, only when asked and the CLI has the flag', () => {
+    const flags = {
+      printMode: ['-p'],
+      streamJson: ['--output-format', 'stream-json'],
+      acceptEdits: ['--permission-mode', 'acceptEdits'],
+      allowedTools: '--allowedTools',
+      settingSources: '--setting-sources',
+    };
+    const ceilings = { turns: 30, toolCalls: 100, minutes: 20, usd: 5 };
+    const asked = buildHandoffArgv(caps(flags), ceilings, ['Read'], undefined, {
+      isolateSettings: true,
+    });
+    expect(
+      asked.slice(asked.indexOf('--setting-sources'), asked.indexOf('--setting-sources') + 2),
+    ).toEqual(['--setting-sources', 'project,local']);
+    expect(buildHandoffArgv(caps(flags), ceilings, ['Read'])).not.toContain('--setting-sources');
+    const { settingSources: _unused, ...without } = flags;
+    expect(
+      buildHandoffArgv(caps(without), ceilings, ['Read'], undefined, { isolateSettings: true }),
+    ).not.toContain('--setting-sources');
+  });
+
   it('asks the agent for the chosen model when its CLI has a flag, and parks when it has none', () => {
     const flags = {
       printMode: ['-p'],

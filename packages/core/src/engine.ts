@@ -3021,6 +3021,7 @@ export class Engine {
       argv: buildHandoffArgv(caps, ceilings, MEMORY_BUILD_ALLOWED_TOOLS, MEMORY_DEFAULT_MODEL, {
         addDirs: [start.seed, stubs],
         available: MEMORY_AVAILABLE_TOOLS,
+        isolateSettings: true,
         effort: MEMORY_DEFAULT_EFFORT,
       }),
       model: MEMORY_DEFAULT_MODEL,
@@ -3291,6 +3292,7 @@ export class Engine {
         addDirs: [start.seed, stubs],
         effort,
         available: MEMORY_AVAILABLE_TOOLS,
+        isolateSettings: true,
       }),
       // Without `--tools` a Windows session still has the PowerShell tool, which no allow rule covers.
       env: { CLAUDE_CODE_USE_POWERSHELL_TOOL: '0' },
