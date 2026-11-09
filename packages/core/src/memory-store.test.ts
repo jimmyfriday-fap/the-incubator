@@ -10,6 +10,7 @@ import {
   memoryStoreFor,
   parseProposedManifest,
 } from './memory.js';
+import { HOOKS_GITATTRIBUTES, STORE_HOOK_LINE } from './memory-install.js';
 import { DefaultsPrompter } from './prompter.js';
 import { enhanceFixtureDir, fakeAgentHandoff, fakePublishEngine } from './testing.js';
 
@@ -24,6 +25,7 @@ const harness = (): Harness =>
   fakePublishEngine({
     handoff: fakeAgentHandoff(),
     portfolio: true,
+    memorySelfTests: false,
     llm: { dir: enhanceFixtureDir('export-orders') },
   });
 
@@ -182,6 +184,38 @@ describe('store mode runs (plan 076)', () => {
       problems: [],
     });
   });
+
+  it('installs each member hook, its settings and the store git hook after the agent (plan 079 WI-1)', async () => {
+    const h = harness();
+    const { workspace, dirs } = await workspaceWith(['api', 'web']);
+    const runId = start(h, dirs);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    await h.engine.confirmMemoryManifest(runId, h.engine.memoryDetail(runId)!.store!.proposed!);
+    const s = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(s.state).toBe('DONE');
+    const store = path.join(workspace, 'shop-memory');
+    expect(readFileSync(path.join(store, '.git', 'hooks', 'pre-commit'), 'utf8')).toContain(
+      STORE_HOOK_LINE,
+    );
+    for (const d of dirs) {
+      expect(readFileSync(path.join(d, '.claude', 'hooks', '.gitattributes'), 'utf8')).toBe(
+        HOOKS_GITATTRIBUTES,
+      );
+      expect(
+        (await out(['ls-files', '-s', '.claude/hooks/memory-session-end'], d)).startsWith('100755'),
+      ).toBe(true);
+      expect(await out(['ls-files', '.claude/settings.local.json'], d)).toBe('');
+      const local = JSON.parse(
+        readFileSync(path.join(d, '.claude', 'settings.local.json'), 'utf8'),
+      ) as { env: { MEMORY_STORE_DIR: string } };
+      expect(local.env.MEMORY_STORE_DIR).toMatch(/\/shop-memory$/);
+      expect(existsSync(path.join(local.env.MEMORY_STORE_DIR, 'system.yaml'))).toBe(true);
+      expect(await out(['log', '-1', '--format=%s'], d)).toBe(
+        'mem(link): install memory hook and settings (Incubator)',
+      );
+      expect(await out(['status', '--porcelain'], d)).toBe('');
+    }
+  }, 240_000);
 
   it('links members on memory/link when they take pull requests', async () => {
     vi.stubEnv('FAKE_MEMORY_STORE_MEMBERS', 'pr');

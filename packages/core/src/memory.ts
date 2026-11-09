@@ -605,6 +605,8 @@ export function allowedMemberPath(p: string): boolean {
     f === 'CLAUDE.md' ||
     f === '.memory-link' ||
     f === '.claude/hooks/memory-session-end' ||
+    // plan 079 WI-1: LF for the hook
+    f === '.claude/hooks/.gitattributes' ||
     f === '.claude/settings.json' ||
     f === '.gitignore'
   );

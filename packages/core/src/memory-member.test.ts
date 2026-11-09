@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nodeExec } from '@incubator/runtime';
 import { completeSpec, type IncubatorSpec } from '@incubator/spec';
+import { HOOKS_GITATTRIBUTES } from './memory-install.js';
 import { memoryMemberPrompt, proposeMemberManifest } from './memory.js';
 import { DefaultsPrompter } from './prompter.js';
 import { enhanceFixtureDir, fakeAgentHandoff, fakePublishEngine } from './testing.js';
@@ -22,6 +23,7 @@ const harness = (): Harness =>
   fakePublishEngine({
     handoff: fakeAgentHandoff(),
     portfolio: true,
+    memorySelfTests: false,
     llm: { dir: enhanceFixtureDir('export-orders') },
   });
 
@@ -152,6 +154,15 @@ describe('Add member on an existing repository (plan 077)', () => {
     expect(await out(['rev-parse', 'HEAD'], store)).not.toBe(headBefore);
     expect(await out(['status', '--porcelain'], store)).toBe('');
     expect(await out(['status', '--porcelain'], jobs)).toBe('');
+    expect(readFileSync(path.join(jobs, '.claude', 'hooks', '.gitattributes'), 'utf8')).toBe(
+      HOOKS_GITATTRIBUTES,
+    );
+    expect(
+      (await out(['ls-files', '-s', '.claude/hooks/memory-session-end'], jobs)).startsWith(
+        '100755',
+      ),
+    ).toBe(true);
+    expect(await out(['ls-files', '.claude/settings.local.json'], jobs)).toBe('');
     expect(readFileSync(path.join(jobs, 'AGENTS.md'), 'utf8')).toBe(AGENTS);
     expect(readFileSync(path.join(store, 'system.yaml'), 'utf8')).toContain('- repo: jobs');
     const project = await h.engine.portfolioFor(jobs);

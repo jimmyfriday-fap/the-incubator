@@ -24,6 +24,10 @@ const assistant = (tools) =>
 const isMember = /^NEW_MEMBER: /m.test(prompt);
 const phase = isMember ? undefined : /^PHASE: (scaffold|bootstrap)$/m.exec(prompt)?.[1];
 if (phase) {
+  if (process.env.CLAUDE_CODE_USE_POWERSHELL_TOOL !== '0') {
+    process.stderr.write('memory build mode needs CLAUDE_CODE_USE_POWERSHELL_TOOL=0 (plan 079 WI-1)\n');
+    process.exit(3);
+  }
   // A new build's memory sessions (plan 075), whatever the coding mode is: the scaffold makes a minimal store
   // and commits it before any code; the bootstrap fills it and commits only the memory paths, leaving the
   // owner's build work alone. FAKE_MEMORY_BUILD: agents (also edits AGENTS.md), unverified (the report's
@@ -99,6 +103,15 @@ if (phase) {
   emit({ type: 'result', subtype: 'success', total_cost_usd: 0.1, result });
 } else if (isMember) {
   // Add member (plan 077): the new repository joins an existing store, whatever the coding mode is.
+  const memberToolsAt = process.argv.indexOf('--tools');
+  if (
+    memberToolsAt < 0 ||
+    /PowerShell/i.test(process.argv[memberToolsAt + 1] ?? '') ||
+    process.env.CLAUDE_CODE_USE_POWERSHELL_TOOL !== '0'
+  ) {
+    process.stderr.write('add member mode needs --tools without PowerShell (plan 079 WI-1)\n');
+    process.exit(3);
+  }
   const env = { ...process.env };
   for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_IMPLICIT_WORK_TREE']) delete env[k];
   const ident = ['-c', 'user.name=Fake Agent', '-c', 'user.email=fake@example.invalid'];
@@ -330,8 +343,15 @@ if (phase) {
   // repositories; install builds the store and links the members as the playbook's phases B and D would, and
   // ends with the store-mode report. FAKE_MEMORY_STORE: agents (also edits a member's AGENTS.md), unverified
   // (a failed verification step). FAKE_MEMORY_STORE_MEMBERS=pr links on memory/link; default is direct.
-  if (!process.argv.includes('--add-dir') || !process.argv.includes('--effort')) {
-    process.stderr.write('memory store mode needs --add-dir and --effort\n');
+  const toolsAt = process.argv.indexOf('--tools');
+  if (
+    !process.argv.includes('--add-dir') ||
+    !process.argv.includes('--effort') ||
+    toolsAt < 0 ||
+    /PowerShell/i.test(process.argv[toolsAt + 1] ?? '') ||
+    process.env.CLAUDE_CODE_USE_POWERSHELL_TOOL !== '0'
+  ) {
+    process.stderr.write('memory store mode needs --add-dir, --effort and --tools without PowerShell (plan 079 WI-1)\n');
     process.exit(3);
   }
   const env = { ...process.env };
@@ -370,6 +390,10 @@ if (phase) {
     writeFileSync(path.join(store, 'system.yaml'), manifest + '\n');
     writeFileSync(path.join(store, 'memory.conf'), 'commit_policy=' + storePolicy + '\n');
     writeFileSync(path.join(store, 'INDEX.md'), '# Memory index\n');
+    // The playbook's step B4 copies the seed's hooks into the store; this stand-in lets the Incubator-installed git hook run.
+    mkdirSync(path.join(store, 'hooks'), { recursive: true });
+    writeFileSync(path.join(store, 'hooks', 'pre-commit'), '#!/usr/bin/env bash\nexit 0\n');
+    chmodSync(path.join(store, 'hooks', 'pre-commit'), 0o755);
     git(store, 'add', '-A');
     git(store, 'commit', '-q', '-m', 'mem(platform): bootstrap ' + system + ' memory\n\nActor: bootstrap');
     for (const n of names) {

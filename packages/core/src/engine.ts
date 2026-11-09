@@ -238,7 +238,12 @@ import {
   type MemoryDone,
   type MemoryRunInput,
 } from './memory.js';
-import { checksReport, installMemoryProtected, type InstallCheck } from './memory-install.js';
+import {
+  checksReport,
+  installMemoryProtected,
+  installMemorySystemProtected,
+  type InstallCheck,
+} from './memory-install.js';
 import { resolveMemoryDestination, type MemoryPlan } from './memory-destination.js';
 
 /**
@@ -3024,6 +3029,8 @@ export class Engine {
         isolateSettings: true,
         effort: MEMORY_DEFAULT_EFFORT,
       }),
+      // The PowerShell tool is off as in repo mode (plan 079 WI-1, build).
+      env: { CLAUDE_CODE_USE_POWERSHELL_TOOL: '0' },
       model: MEMORY_DEFAULT_MODEL,
       cwd: dir,
       planPath: path.join(start.seed, 'playbooks', 'deploy-repo.md'),
@@ -3565,6 +3572,7 @@ export class Engine {
       }
       if (this.state(runId).steps['memory.agent']?.status !== 'ok')
         await this.runMemoryStoreAgent(runId, 'install');
+      await this.installMemorySystem(runId);
       const done = await this.checkMemoryStore(runId);
       this.record(runId, 'step.ok', { step: 'memory.done', data: done });
     });
@@ -3727,7 +3735,11 @@ export class Engine {
       argv: buildHandoffArgv(caps, ceilings, memoryStoreAllowedTools(dirs, phase), model, {
         addDirs: [start.seed],
         effort,
+        available: MEMORY_AVAILABLE_TOOLS,
+        isolateSettings: true,
       }),
+      // Without `--tools` a Windows session still has the PowerShell tool, which no allow rule covers (plan 079 WI-1, store).
+      env: { CLAUDE_CODE_USE_POWERSHELL_TOOL: '0' },
       model,
       cwd: start.workspace,
       planPath: path.join(start.seed, 'playbooks', 'deploy-system.md'),
@@ -3785,6 +3797,56 @@ export class Engine {
       step: 'memory.agent',
       data: { ...report, effortApplied: Boolean(caps.flags.effort) },
     });
+  }
+
+  /**
+   * After the store agent: what Claude Code refuses it to write in every repository (`.claude/` and `.git/`). The
+   * Incubator installs each member's SessionEnd hook, its settings and this machine's store path, and the store's git
+   * hook, then runs the playbook's verification steps 5 and 6 (plan 079 WI-1). Safe to run again on resume.
+   */
+  private async installMemorySystem(runId: string): Promise<void> {
+    const s = this.state(runId);
+    if (s.steps['memory.system.protected']?.status === 'ok') return;
+    const agent = s.steps['memory.agent']!.data as AgentReport;
+    const report = parseMemoryReport(agent.summary);
+    // Nothing is installed on a run the agent left unfinished or unverified: `checkMemoryStore` parks with the reason.
+    if (agent.tripped || agent.exitCode !== 0 || !report?.verificationPassed) return;
+    const start = s.steps['memory.start']!.data as {
+      seed: string;
+      workspace: string;
+      storeDir: string;
+    };
+    const manifest = this.entries(runId).findLast((e) => e.type === 'memory.manifest') as
+      { yaml?: string; members?: string[] } | undefined;
+    const members = (manifest?.members ?? []).map((name) => ({
+      name,
+      dir: path.join(start.workspace, name),
+    }));
+    if (
+      !members.length ||
+      !existsSync(path.join(start.storeDir, 'INDEX.md')) ||
+      members.some((x) => !existsSync(path.join(x.dir, '.memory-link')))
+    )
+      return;
+    const result = await installMemorySystemProtected({
+      exec: this.deps.handoff!.exec,
+      git: this.deps.publish!.git,
+      seed: start.seed,
+      store: start.storeDir,
+      members,
+      selfTests: this.deps.memorySelfTests !== false,
+      ...(this.sig(runId).signal ? { signal: this.sig(runId).signal } : {}),
+    });
+    const failed = result.checks.filter((c) => c.status === 'failed');
+    if (failed.length)
+      throw new ParkError(
+        'memory_verify_failed',
+        `the Incubator's own checks of the store install failed, so nothing was pushed: ${failed
+          .map((c) => `${c.step} (${c.detail})`)
+          .join('; ')}. Fix the install and resume, or cancel the run.`,
+        { problems: failed.map((c) => `${c.step}: ${c.detail}`) },
+      );
+    this.record(runId, 'step.ok', { step: 'memory.system.protected', data: result });
   }
 
   /** The Incubator's own checks of a store-mode install (spec rules 2 and 4a, ground rules 2 and 3). */
@@ -4119,6 +4181,7 @@ export class Engine {
     if (!confirmed) throw new ToolError('the member manifest is missing');
     if (this.state(runId).steps[`${key}.agent`]?.status !== 'ok')
       await this.runMemoryMemberAgent(runId, phase, f, confirmed.yaml);
+    if (phase !== 'bootstrap') await this.installMemoryMemberProtected(runId, phase, f);
     const result = await this.checkMemoryMember(runId, phase, f);
     this.record(runId, 'step.ok', { step: key, data: result });
     if (phase === 'bootstrap') return;
@@ -4193,8 +4256,10 @@ export class Engine {
         ceilings,
         memoryStoreAllowedTools([f.dir, f.store], 'install'),
         model,
-        { addDirs: [start.seed], effort },
+        { addDirs: [start.seed], effort, available: MEMORY_AVAILABLE_TOOLS, isolateSettings: true },
       ),
+      // Without `--tools` a Windows session still has the PowerShell tool, which no allow rule covers (plan 079 WI-1, member).
+      env: { CLAUDE_CODE_USE_POWERSHELL_TOOL: '0' },
       model,
       cwd: path.dirname(f.store),
       planPath: path.join(start.seed, 'playbooks', 'deploy-system.md'),
@@ -4234,6 +4299,44 @@ export class Engine {
       step: `${key}.agent`,
       data: { ...agentReport(out), effortApplied: Boolean(caps.flags.effort) },
     });
+  }
+
+  /**
+   * After an Add member agent: the new member's SessionEnd hook, settings and this machine's store path, which Claude
+   * Code refuses the agent to write (plan 079 WI-1). The store's git hook is already installed. Safe to run again.
+   */
+  private async installMemoryMemberProtected(
+    runId: string,
+    phase: MemoryMemberPhase,
+    f: MemberFacts,
+  ): Promise<void> {
+    const key = `memory.member.${phase}`;
+    const s = this.state(runId);
+    if (s.steps[`${key}.protected`]?.status === 'ok') return;
+    const agent = s.steps[`${key}.agent`]!.data as AgentReport;
+    if (agent.tripped || agent.exitCode !== 0) return;
+    if (!existsSync(path.join(f.dir, '.memory-link'))) return;
+    const start = s.steps[`${key}.start`]!.data as { seed: string };
+    const result = await installMemorySystemProtected({
+      exec: this.deps.handoff!.exec,
+      git: this.deps.publish!.git,
+      seed: start.seed,
+      store: f.store,
+      members: [{ name: f.name, dir: f.dir }],
+      storeHook: false,
+      selfTests: phase === 'full' && this.deps.memorySelfTests !== false,
+      ...(this.sig(runId).signal ? { signal: this.sig(runId).signal } : {}),
+    });
+    const failed = result.checks.filter((c) => c.status === 'failed');
+    if (failed.length)
+      throw new ParkError(
+        'memory_verify_failed',
+        `the Incubator's own checks of the new member failed, so nothing was pushed: ${failed
+          .map((c) => `${c.step} (${c.detail})`)
+          .join('; ')}. Fix the install and resume, or cancel the run.`,
+        { problems: failed.map((c) => `${c.step}: ${c.detail}`) },
+      );
+    this.record(runId, 'step.ok', { step: `${key}.protected`, data: result });
   }
 
   /** The Incubator's own checks of one Add member session: the link only touches the allowed paths, the store only moves forward. */

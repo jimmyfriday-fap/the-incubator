@@ -33,6 +33,20 @@ export const SEED_SKILLS = ['write-memory', 'dream', 'memory-bootstrap'] as cons
 /** The bootstrap skill's cap on skill stubs. */
 export const MAX_STUBS = 5;
 
+/** The SessionEnd command the system playbook's step D3 wires in a member (plan 079 WI-1). */
+export const MEMBER_SESSION_END_COMMAND = '"$CLAUDE_PROJECT_DIR"/.claude/hooks/memory-session-end';
+
+/** Keeps a member's hook script LF on every checkout: bash cannot run it with CRLF line ends (hand-built store, 2026-11-07). */
+export const HOOKS_GITATTRIBUTES = '* text eol=lf\n';
+
+/** The line the system playbook's step B5 puts in the store's git pre-commit hook. */
+export const STORE_HOOK_LINE = '"$(git rev-parse --show-toplevel)/hooks/pre-commit"';
+
+const MEMBER_COMMIT_MESSAGE =
+  'mem(link): install memory hook and settings (Incubator)\n\nThe agent cannot write .claude/, so the Incubator installed the SessionEnd hook, its settings and the store path for this machine.';
+
+const lastLine = (s: string): string => s.trim().split('\n').slice(-1)[0] ?? '';
+
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -43,7 +57,10 @@ function isObject(v: unknown): v is Record<string, unknown> {
  * Merges the SessionEnd hook into `.claude/settings.json` without touching any other key; adding it twice
  * changes nothing. `json` is the file's text, or null when there is none.
  */
-export function mergeSessionEnd(json: string | null): string {
+export function mergeSessionEnd(
+  json: string | null,
+  command: string = SESSION_END_COMMAND,
+): string {
   let root: Record<string, unknown> = {};
   if (json !== null && json.trim() !== '') {
     let parsed: unknown;
@@ -78,9 +95,9 @@ export function mergeSessionEnd(json: string | null): string {
     (entry) =>
       isObject(entry) &&
       Array.isArray(entry['hooks']) &&
-      entry['hooks'].some((h) => isObject(h) && h['command'] === SESSION_END_COMMAND),
+      entry['hooks'].some((h) => isObject(h) && h['command'] === command),
   );
-  if (!present) sessionEnd.push({ hooks: [{ type: 'command', command: SESSION_END_COMMAND }] });
+  if (!present) sessionEnd.push({ hooks: [{ type: 'command', command }] });
   return `${JSON.stringify({ ...root, hooks: { ...hooks, SessionEnd: sessionEnd } }, null, 2)}\n`;
 }
 
@@ -375,4 +392,321 @@ export function checksReport(checks: readonly InstallCheck[]): string {
     '## Incubator checks (playbook steps 4–6 and the protected files)',
     ...checks.map((c) => `- ${c.step}: ${c.status}${c.detail ? ` (${c.detail})` : ''}`),
   ].join('\n');
+}
+
+/**
+ * The store's git pre-commit hook (system playbook step B5): a new one that runs the store's own hook, or the
+ * existing one with the line appended once (plan 079 WI-1).
+ */
+export function storePreCommitHook(existing: string | null): string {
+  if (existing === null || existing.trim() === '')
+    return `#!/usr/bin/env bash\nexec ${STORE_HOOK_LINE}\n`;
+  if (existing.includes(STORE_HOOK_LINE)) return existing;
+  return `${existing.endsWith('\n') ? existing : `${existing}\n`}${STORE_HOOK_LINE} || exit 1\n`;
+}
+
+/**
+ * Merges this machine's path to the store into a member's `.claude/settings.local.json` (system playbook step D4)
+ * without touching any other key; adding it twice changes nothing. `json` is the file's text, or null when there is none.
+ */
+export function mergeStoreAccess(json: string | null, store: string): string {
+  let root: Record<string, unknown> = {};
+  if (json !== null && json.trim() !== '') {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      throw new ParkError(
+        'memory_settings_invalid',
+        '.claude/settings.local.json is not valid JSON, so the store path cannot be merged into it: fix the file and resume',
+      );
+    }
+    if (!isObject(parsed))
+      throw new ParkError(
+        'memory_settings_invalid',
+        '.claude/settings.local.json is not a JSON object, so the store path cannot be merged into it: fix the file and resume',
+      );
+    root = parsed;
+  }
+  for (const key of ['env', 'permissions'])
+    if (root[key] !== undefined && !isObject(root[key]))
+      throw new ParkError(
+        'memory_settings_invalid',
+        `"${key}" in .claude/settings.local.json is not an object, so the store path cannot be merged into it: fix the file and resume`,
+      );
+  const env = isObject(root['env']) ? root['env'] : {};
+  const permissions = isObject(root['permissions']) ? root['permissions'] : {};
+  if (
+    permissions['additionalDirectories'] !== undefined &&
+    !Array.isArray(permissions['additionalDirectories'])
+  )
+    throw new ParkError(
+      'memory_settings_invalid',
+      '"permissions.additionalDirectories" in .claude/settings.local.json is not a list, so the store path cannot be merged into it: fix the file and resume',
+    );
+  const dirs = [...((permissions['additionalDirectories'] as unknown[] | undefined) ?? [])];
+  if (!dirs.includes(store)) dirs.push(store);
+  return `${JSON.stringify(
+    {
+      ...root,
+      env: { ...env, MEMORY_STORE_DIR: store },
+      permissions: { ...permissions, additionalDirectories: dirs },
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+export interface InstallSystemOptions {
+  exec: Exec;
+  git: GitOps;
+  /** The session's copy of the seed (only `hooks/session-end` is read). */
+  seed: string;
+  /** The store repository's folder. */
+  store: string;
+  /** The members to install, each a repository folder. */
+  members: readonly { name: string; dir: string }[];
+  /** Install the store's git hook and run its self-test (default true). Add member leaves it to the store run. */
+  storeHook?: boolean;
+  signal?: AbortSignal;
+  /** Run the playbook's verification steps 5 and 6 (default true). */
+  selfTests?: boolean;
+}
+
+/**
+ * The parts of a store-mode install that Claude Code will not let a headless agent write (plan 079 WI-1): per member
+ * the SessionEnd hook, `.claude/settings.json`, this machine's store path in `.claude/settings.local.json` (D3, D4),
+ * one commit per member; in the store the git pre-commit hook (B5). Then the playbook's verification steps 5 (the store
+ * hook rejects a bad line) and 6 (each member's hook captures a transcript, and git ignores it). Safe to run again.
+ */
+export async function installMemorySystemProtected(
+  o: InstallSystemOptions,
+): Promise<InstallProtectedResult> {
+  const { exec, git } = o;
+  const checks: InstallCheck[] = [];
+  const add = (step: string, status: InstallCheck['status'], detail: string): void => {
+    checks.push({ step, status, detail });
+  };
+  const run = (
+    cwd: string,
+    args: string[],
+    extra: { env?: Record<string, string>; stdin?: string } = {},
+  ) =>
+    exec.run('git', args, {
+      timeoutMs: TIMEOUT,
+      cwd,
+      env: { GIT_TERMINAL_PROMPT: '0', ...(extra.env ?? {}) },
+      ...(extra.stdin !== undefined ? { stdin: extra.stdin } : {}),
+      ...(o.signal ? { signal: o.signal } : {}),
+    });
+  const storePath = o.store.replace(/\\/g, '/');
+  let commit: string | null = null;
+
+  // 1. Each member: hook, settings, this machine's store path, one commit (never the local settings).
+  for (const m of o.members) {
+    const hookFile = path.join(m.dir, '.claude', 'hooks', 'memory-session-end');
+    mkdirSync(path.dirname(hookFile), { recursive: true });
+    cpSync(path.join(o.seed, 'hooks', 'session-end'), hookFile);
+    chmodSync(hookFile, 0o755);
+    writeFileSync(path.join(m.dir, '.claude', 'hooks', '.gitattributes'), HOOKS_GITATTRIBUTES);
+    const settingsFile = path.join(m.dir, '.claude', 'settings.json');
+    writeFileSync(
+      settingsFile,
+      mergeSessionEnd(
+        existsSync(settingsFile) ? readFileSync(settingsFile, 'utf8') : null,
+        MEMBER_SESSION_END_COMMAND,
+      ),
+    );
+    const localFile = path.join(m.dir, '.claude', 'settings.local.json');
+    writeFileSync(
+      localFile,
+      mergeStoreAccess(existsSync(localFile) ? readFileSync(localFile, 'utf8') : null, storePath),
+    );
+    const staged = [
+      '.claude/hooks/.gitattributes',
+      '.claude/hooks/memory-session-end',
+      '.claude/settings.json',
+    ];
+    if ((await run(m.dir, ['check-ignore', '-q', '.claude/settings.local.json'])).code !== 0) {
+      const ignoreFile = path.join(m.dir, '.gitignore');
+      const text = existsSync(ignoreFile) ? readFileSync(ignoreFile, 'utf8') : '';
+      writeFileSync(
+        ignoreFile,
+        `${text === '' || text.endsWith('\n') ? text : `${text}\n`}.claude/settings.local.json\n`,
+      );
+      staged.push('.gitignore');
+    }
+    add(
+      `${m.name}:files`,
+      'passed',
+      'SessionEnd hook, settings and the store path for this machine installed',
+    );
+    const added = await run(m.dir, ['add', '--', ...staged]);
+    if (added.code !== 0) {
+      add(`${m.name}:commit`, 'failed', `git add failed: ${lastLine(added.stderr)}`);
+      continue;
+    }
+    await run(m.dir, ['update-index', '--chmod=+x', '--', '.claude/hooks/memory-session-end']);
+    if ((await run(m.dir, ['diff', '--cached', '--quiet'])).code === 0) {
+      add(`${m.name}:commit`, 'skipped', 'nothing new to commit');
+      continue;
+    }
+    try {
+      commit = await git.commit(m.dir, MEMBER_COMMIT_MESSAGE, {});
+      add(`${m.name}:commit`, 'passed', `committed ${commit.slice(0, 7)}`);
+    } catch (e) {
+      add(`${m.name}:commit`, 'failed', e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // 2. The store's git hook (playbook B5), then step 5: it must reject a line that is not dated.
+  if (o.storeHook !== false) {
+    const memoryHook = path.join(o.store, 'hooks', 'pre-commit');
+    if (!existsSync(memoryHook)) {
+      add(
+        'store-hook',
+        'failed',
+        'the store has no hooks/pre-commit (playbook step B4), so the git hook would have nothing to run',
+      );
+    } else {
+      const hooksOut = (await run(o.store, ['rev-parse', '--git-path', 'hooks'])).stdout.trim();
+      const hooksDir = path.resolve(o.store, hooksOut || path.join('.git', 'hooks'));
+      const hookFile = path.join(hooksDir, 'pre-commit');
+      const inside = rel(o.store, hooksDir);
+      const hookInRepo =
+        !inside.startsWith('..') && inside !== '.git' && !inside.startsWith('.git/');
+      let hookInstalled = false;
+      if (hookInRepo) {
+        add(
+          'store-hook',
+          'skipped',
+          `core.hooksPath points inside the store (${inside}): add ${STORE_HOOK_LINE} || exit 1 to ${inside}/pre-commit yourself`,
+        );
+      } else {
+        mkdirSync(hooksDir, { recursive: true });
+        writeFileSync(
+          hookFile,
+          storePreCommitHook(existsSync(hookFile) ? readFileSync(hookFile, 'utf8') : null),
+        );
+        chmodSync(hookFile, 0o755);
+        hookInstalled = true;
+        add(
+          'store-hook',
+          'passed',
+          `pre-commit hook installed in the store at ${rel(o.store, hookFile)}`,
+        );
+      }
+      if (o.selfTests === false) {
+        add('E5', 'skipped', 'self-tests turned off');
+      } else if (!hookInstalled) {
+        add('E5', 'skipped', 'no pre-commit hook was installed');
+      } else {
+        const projects = path.join(o.store, 'context', 'projects');
+        const target = existsSync(projects)
+          ? readdirSync(projects)
+              .map((n) => path.join(projects, n, 'failures.md'))
+              .find((f) => existsSync(f))
+          : undefined;
+        if (!target) {
+          add(
+            'E5',
+            'failed',
+            'no context/projects/<repo>/failures.md in the store to test the hook with',
+          );
+        } else {
+          const original = readFileSync(target);
+          const relTarget = rel(o.store, target);
+          try {
+            writeFileSync(target, Buffer.concat([original, Buffer.from('\n- not a dated line\n')]));
+            await run(o.store, ['add', '--', relTarget]);
+            const tried = await run(o.store, [
+              '-c',
+              'commit.gpgsign=false',
+              'commit',
+              '-q',
+              '-m',
+              'hook self-test',
+            ]);
+            if (tried.code === 0) {
+              // The hook let it through: undo our own commit before anything else happens.
+              await run(o.store, ['reset', '-q', '--soft', 'HEAD~1']);
+              add('E5', 'failed', 'the store pre-commit hook accepted a line that is not dated');
+            } else if (/memory/i.test(`${tried.stdout}${tried.stderr}`)) {
+              add('E5', 'passed', 'the store pre-commit hook rejected a line that is not dated');
+            } else {
+              add(
+                'E5',
+                'failed',
+                `the commit failed, but not from the memory hook: ${lastLine(tried.stderr)}`,
+              );
+            }
+          } finally {
+            await run(o.store, ['reset', '-q', '--', relTarget]);
+            writeFileSync(target, original);
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Step 6, per member: the SessionEnd hook captures a transcript into the store, and git ignores it.
+  const transcriptRoot = path.join(o.store, 'transcripts');
+  const captured = (): string[] => {
+    const files: string[] = [];
+    if (!existsSync(transcriptRoot)) return files;
+    for (const repo of readdirSync(transcriptRoot, { withFileTypes: true })) {
+      if (!repo.isDirectory()) continue;
+      for (const day of readdirSync(path.join(transcriptRoot, repo.name), {
+        withFileTypes: true,
+      })) {
+        const f = path.join(transcriptRoot, repo.name, day.name, 'selftest.jsonl');
+        if (day.isDirectory() && existsSync(f) && statSync(f).isFile()) files.push(f);
+      }
+    }
+    return files;
+  };
+  for (const m of o.members) {
+    if (o.selfTests === false) {
+      add(`E6:${m.name}`, 'skipped', 'self-tests turned off');
+      continue;
+    }
+    const ran = await run(
+      m.dir,
+      ['-c', 'alias.memscript=!.claude/hooks/memory-session-end', 'memscript'],
+      {
+        env: { CLAUDE_PROJECT_DIR: m.dir, MEMORY_STORE_DIR: storePath },
+        stdin: JSON.stringify({ session_id: 'selftest', transcript_path: '.memory-link' }),
+      },
+    );
+    const found = captured();
+    const leaked = found.length
+      ? (await git.status(o.store)).filter((e) => e.path.includes('selftest.jsonl'))
+      : [];
+    for (const f of found) rmSync(f, { force: true });
+    if (found.length === 0 && ran.code !== 0) {
+      add(
+        `E6:${m.name}`,
+        'failed',
+        `the SessionEnd hook failed (exit ${ran.code}): ${lastLine(ran.stderr)}`,
+      );
+    } else if (found.length === 0) {
+      // The seed hook exits 0 on any problem by design, so a silent no-op is a warning, not a failure: on Windows,
+      // python3 ends the transcript path with a carriage return and the hook then captures nothing (a seed defect).
+      add(
+        `E6:${m.name}`,
+        'warning',
+        'the SessionEnd hook ran but captured no transcript: transcripts will not be captured until the seed hook is fixed (on Windows, python3 ends the transcript path with a carriage return, which defeats it)',
+      );
+    } else if (leaked.length) {
+      add(`E6:${m.name}`, 'failed', 'the captured transcript is not ignored by git');
+    } else {
+      add(
+        `E6:${m.name}`,
+        'passed',
+        'the SessionEnd hook captured a transcript, and git ignores it',
+      );
+    }
+  }
+
+  return { commit, checks };
 }
