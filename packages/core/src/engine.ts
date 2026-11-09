@@ -4654,6 +4654,10 @@ export class Engine {
         ceilings,
         external ? externalTools(checks.commands) : undefined,
         codingModel ?? undefined,
+        // why: the allow list names Bash commands only. With the PowerShell tool on offer the agent used it and
+        // every `node scripts/check.mjs` was refused, and the operator's user-level hooks make allowed Bash
+        // commands unverifiable, so the coding session offers Bash alone and ignores user settings.
+        { available: MEMORY_AVAILABLE_TOOLS, isolateSettings: true },
       ),
       ...(codingModel ? { model: codingModel } : {}),
       cwd: repo,
