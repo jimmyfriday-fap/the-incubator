@@ -197,6 +197,21 @@ describe('the memory session (plan 071)', () => {
     expect(none.policy).toBeNull();
   });
 
+  it('accepts steps the agent ran as passed when it leaves the hook steps to the Incubator, but not a failure', () => {
+    const left = REPORT.replace(
+      'all passed',
+      'checks 1, 2, 3 and 7 passed. Checks 4, 5 and 6 are left to the Incubator.',
+    );
+    expect(parseMemoryReport(left)!.verificationPassed).toBe(true);
+    const leftAndFailed = REPORT.replace(
+      'all passed',
+      'check 2 failed. Checks 4, 5 and 6 are left to the Incubator.',
+    );
+    expect(parseMemoryReport(leftAndFailed)!.verificationPassed).toBe(false);
+    const unsaid = REPORT.replace('all passed', 'checks 1 and 2 passed.');
+    expect(parseMemoryReport(unsaid)!.verificationPassed).toBe(false);
+  });
+
   it('allows only the memory install paths', () => {
     for (const ok of [
       '.memory/INDEX.md',

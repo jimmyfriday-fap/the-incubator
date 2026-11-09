@@ -311,7 +311,11 @@ export function parseMemoryReport(text: string | null): MemoryReport | null {
   return {
     text: body.trim(),
     policy: policy === 'pr' || policy === 'direct' ? policy : null,
-    verificationPassed: /\ball passed\b/i.test(verification) && !/fail/i.test(verification),
+    // why: the agent cannot install hooks, so it reports the steps it did run as passed and the rest as "left to the
+    // Incubator", which runs them itself after the agent stops (acceptance run 12). A failure anywhere still fails.
+    verificationPassed:
+      (/\ball passed\b/i.test(verification) || /left to the Incubator/i.test(verification)) &&
+      !/fail/i.test(verification),
     kept: list(iso?.[1]),
     dropped: list(iso?.[2]),
   };
