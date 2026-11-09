@@ -109,6 +109,8 @@ describe('memory on a new build (plan 075)', () => {
     const prompt = readFileSync(path.join(dir, '.incubator', 'state', 'coding-prompt.txt'), 'utf8');
     expect(prompt).toContain('Read its INDEX.md before you change any code');
     expect(prompt).toContain('Do not commit: the owner commits.');
+    // The bootstrap records the design afterwards, so the coding session leaves the store alone.
+    expect(prompt).toContain('Do not write to the memory store in this session');
   }, 240_000);
 
   it('does not park when the coding session left its own memory note uncommitted for the owner', async () => {

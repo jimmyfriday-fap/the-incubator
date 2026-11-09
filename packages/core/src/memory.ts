@@ -466,8 +466,14 @@ export function memoryBuildPrompt(i: {
 }
 
 /** The line a build's coding session starts with once the memory scaffold is in place. */
-export function memoryBuildLine(store: string): string {
-  return `This solution has a memory store at \`${store}\`. Read its INDEX.md before you change any code. When you make a design decision, hit a failure likely to recur, or are corrected, record it with the write-memory skill. Do not commit: the owner commits.`;
+export function memoryBuildLine(store: string, opts: { bootstrapFollows?: boolean } = {}): string {
+  // why: a bootstrap session runs after this one and commits only its own lines. Lines this session leaves
+  // uncommitted in the same files cannot be staged apart from them, so the bootstrap's verification failed
+  // and the run parked (acceptance runs 10 and 11). The bootstrap reads the finished code instead.
+  const record = opts.bootstrapFollows
+    ? 'Do not write to the memory store in this session: a memory bootstrap runs after you and records the design from your finished code.'
+    : 'When you make a design decision, hit a failure likely to recur, or are corrected, record it with the write-memory skill.';
+  return `This solution has a memory store at \`${store}\`. Read its INDEX.md before you change any code. ${record} Do not commit: the owner commits.`;
 }
 
 // --- Store mode (plan 076) ----------------------------------------------------------------------------

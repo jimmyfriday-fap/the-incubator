@@ -4676,7 +4676,7 @@ export class Engine {
     // Plan 076: a member of a system reads the shared store its `.memory-link` points to.
     const store = memory ? memoryStoreFor(repo, memory.store) : null;
     const memoryLine = built
-      ? memoryBuildLine(REPO_STORE)
+      ? memoryBuildLine(REPO_STORE, { bootstrapFollows: true })
       : memberBuilt && store
         ? memoryBuildLine(store)
         : memory && store
