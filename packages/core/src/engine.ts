@@ -2499,6 +2499,14 @@ export class Engine {
       ...(d.commit !== undefined ? { commit: d.commit } : {}),
       pr: d.pr ?? this.latestPr(runId),
       ...(this.memoryOffered(runId, s) ? { memoryOffer: true } : {}),
+      ...(this.isBackshack(s) && s.input.backshack
+        ? {
+            backshack: {
+              toolSlug: s.input.backshack.fit.toolSlug,
+              branch: d.commit?.branch ?? d.branch ?? '',
+            },
+          }
+        : {}),
     });
   }
 

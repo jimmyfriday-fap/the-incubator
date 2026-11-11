@@ -143,6 +143,36 @@ describe('the WHAT-NOW guide (plan 057)', () => {
     expect(done.next[1]).toContain('Review pull request #1');
   });
 
+  it('tells the owner a Backshack tool is committed only and shipped by them (ADR-030)', () => {
+    const branch = 'incubator/backshack-order-export';
+    const w = whatNow(
+      facts({
+        backshack: { toolSlug: 'order-export', branch },
+        platform: 'other',
+        deployTarget: 'other',
+        verdict: 'ready',
+        commit: { sha: 'e9baec8c44e4489fc0d7', branch },
+      }),
+    );
+    expect(w.title).toBe('What now: order-export');
+    expect(w.status).toContain(
+      `Committed on ${branch} only: nothing was pushed, by design (ADR-030).`,
+    );
+    expect(w.status).not.toContain('Not pushed to GitHub yet.');
+    const text = [...w.about, ...w.run, ...w.install, ...w.next].join('\n');
+    expect(text).not.toContain('DEPLOY.md');
+    expect(text).not.toContain('Push the branch from the Incubator');
+    expect(w.next).toContain(
+      'Run Section 5 of the Backshack contract and the local gate on this worktree.',
+    );
+    expect(w.next.some((n) => n.includes('push the commit to backshack-dev main yourself'))).toBe(
+      true,
+    );
+    expect(w.next.filter((n) => /pull request/i.test(n))).toEqual([
+      'When both pass, push the commit to backshack-dev main yourself: every push to main deploys to staging. There is no pull request.',
+    ]);
+  });
+
   it('writes markdown that prettier leaves unchanged (a generated repository checks its format)', async () => {
     const md = whatNowMarkdown(whatNow(facts({ setup: 'composer install exited 1' })));
     expect(md.startsWith('# What now: COI Tracker\n')).toBe(true);

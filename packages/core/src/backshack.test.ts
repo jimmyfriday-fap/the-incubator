@@ -256,6 +256,10 @@ describe('a backshack-tool run (ADR-030)', () => {
     expect(await h.github.getBranchSha(ref, prepared.branch)).toBeNull();
     expect(h.github.repos.get(`${ref.owner}/${ref.name}`)!.prs).toEqual([]);
     expect(existsSync(path.join(prepared.dir, 'WHAT-NOW.md'))).toBe(false);
+    // The owner's report matches ADR-030: no push or pull request from the Incubator.
+    const guide = (await h.engine.finishDetail(runId))?.whatNow;
+    expect(guide?.title).toBe('What now: order-export');
+    expect(guide?.next.join(' ')).not.toContain('Push the branch from the Incubator');
   });
 
   it('proposes the contract’s group-guard lint as a check the owner can approve', async () => {

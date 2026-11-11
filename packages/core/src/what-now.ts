@@ -34,6 +34,8 @@ export interface WhatNowFacts {
   pr: { number: number; url: string } | null;
   /** Update runs: the project has no agent memory, so the guide offers Add memory (never installs it). */
   memoryOffer?: boolean;
+  /** ADR-030: a Backshack tool, committed on its worktree branch only; the owner runs the gate and ships it. */
+  backshack?: { toolSlug: string; branch: string };
 }
 
 /** The guide: shown on the run page, and written as WHAT-NOW.md. */
@@ -211,7 +213,12 @@ export function whatNow(f: WhatNowFacts): WhatNow {
     else if (f.commit?.left) status.push('The changes are left uncommitted in the folder.');
     else if (f.commit?.none) status.push('The agent changed nothing, so nothing was committed.');
     else status.push('The changes are not committed yet.');
-    status.push(f.pr ? `Pull request #${f.pr.number}: ${f.pr.url}` : 'Not pushed to GitHub yet.');
+    if (f.backshack)
+      status.push(
+        `Committed on ${f.commit?.branch ?? f.backshack.branch} only: nothing was pushed, by design (ADR-030).`,
+      );
+    else
+      status.push(f.pr ? `Pull request #${f.pr.number}: ${f.pr.url}` : 'Not pushed to GitHub yet.');
   }
   for (const w of f.warnings) status.push(`Note: ${w}`);
 
@@ -224,6 +231,30 @@ export function whatNow(f: WhatNowFacts): WhatNow {
     next.push(
       `Press Continue coding in the Incubator: the agent picks up where it stopped${waiting > 0 ? ` (${waiting} feature${waiting === 1 ? '' : 's'} not ready for test)` : ''}.`,
     );
+  if (f.backshack) {
+    next.push('Run Section 5 of the Backshack contract and the local gate on this worktree.');
+    next.push(
+      'When both pass, push the commit to backshack-dev main yourself: every push to main deploys to staging. There is no pull request.',
+    );
+    if (f.memoryOffer) next.push(MEMORY_OFFER);
+    return {
+      title: `What now: ${f.backshack.toolSlug}`,
+      runId: f.runId,
+      about: [
+        `${f.backshack.toolSlug}: a Backshack tool, one package in the backshack-dev repository.`,
+        `How it ships: through backshack-dev itself. The Incubator commits it on ${f.backshack.branch} and never pushes it.`,
+      ],
+      run: [
+        "Follow Section 5 of the Backshack contract (BACKSHACK_CONTRACT.md) in this worktree to run the tool's checks.",
+      ],
+      install: [
+        "It goes live with backshack-dev: a push to main deploys it to staging, and production only changes through backshack-dev's promote workflow.",
+      ],
+      built,
+      status,
+      next,
+    };
+  }
   next.push('Run it on your machine: the steps are under "How to run it" above.');
   if (f.pr)
     next.push(
