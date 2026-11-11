@@ -194,6 +194,21 @@ export function readBackshackContract(paths: BackshackPaths): string {
   return text.replace(/\r\n?/g, '\n');
 }
 
+/**
+ * The contract's Section 5 commands that can be approved checks, proposed ahead of the stack's own. Only the
+ * group-guard lint qualifies: `node --check` takes a flag where a check needs a subcommand, so the agent runs
+ * that one as a search-and-read step. `--enforce` makes a warning exit 1, so the Incubator's own run catches it.
+ */
+export function backshackChecks(slug: string): { command: string; what: string; why: string }[] {
+  return [
+    {
+      command: `php wp-content/plugins/backshack-datalake/bin/lint-group-guard.php --enforce --tool=${slug}`,
+      what: 'checks every query and action of the tool filters on the caller’s group',
+      why: 'Backshack Build Contract, Section 5 (G3/G8)',
+    },
+  ];
+}
+
 /** Where a tool's worktree goes, and its branch. */
 export function backshackWorktree(
   paths: BackshackPaths,

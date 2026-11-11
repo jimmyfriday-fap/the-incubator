@@ -189,6 +189,7 @@ import {
 import { CHECK_NOT_RUN, checkBudgetMs, runChecks, type CheckRun } from './check-run.js';
 import {
   RECOMMENDATION_FILE,
+  backshackChecks,
   backshackFit,
   backshackPaths,
   backshackWorktree,
@@ -854,7 +855,12 @@ export class Engine {
         // Proposals only: the owner approves what the coding agent may run (ADR-025).
         checks: isCanonicalRepo(got.dir)
           ? []
-          : proposeChecks(viewFromDir(got.dir), inspected.analysis),
+          : [
+              ...(this.isBackshack(s) && s.input.backshack
+                ? backshackChecks(s.input.backshack.fit.toolSlug)
+                : []),
+              ...proposeChecks(viewFromDir(got.dir), inspected.analysis),
+            ],
       });
       if (spec.stack.pack === OTHER && s.input.withGaps)
         this.record(runId, 'step.warn', {
@@ -2052,7 +2058,7 @@ export class Engine {
       { branch?: string; sha?: string } | undefined;
     const branch = part?.branch;
     if (!branch) throw new ToolError('the enhance branch was not recorded');
-    if (this.isBackshack(s)) return this.deliverBackshack(runId, dir, base, branch, part.sha);
+    if (this.isBackshack(s)) return this.deliverBackshack(runId, dir, base);
     const now = await git.currentBranch(dir);
     if (now !== branch) {
       const status = await git.status(dir);
@@ -2074,34 +2080,27 @@ export class Engine {
   }
 
   /**
-   * ADR-030: the plan commit moves the worktree's own branch forward (`incubator/backshack-<slug>`), so the tool
-   * is built on the branch the owner approved and no other branch is left in backshack-dev.
+   * ADR-030: the plan commit stays in the run's own clone, so the executor plan, tickets and lanes never reach
+   * backshack-dev; the agent reads the plan from there. The tool is built on the worktree's own branch
+   * (`incubator/backshack-<slug>`), which must still be where the owner approved it.
    */
   private async deliverBackshack(
     runId: string,
     dir: string,
     base: { head: string; branch: string },
-    planBranch: string,
-    planSha: string | undefined,
   ): Promise<void> {
     const git = this.deps.publish!.git;
-    const head = await git.headSha(dir);
-    if (head !== planSha) {
-      const status = await git.status(dir);
-      if (status.length || (await git.currentBranch(dir)) !== base.branch || head !== base.head)
-        throw new ParkError(
-          'folder_changed',
-          'the Backshack worktree changed while the plan was being prepared; put it back on its branch with no changes, and resume',
-          { expected: base, changed: status.slice(0, 8).map((e) => e.path) },
-        );
-      await git.fetch(
-        dir,
-        path.join(this.deps.store.runDir(runId), 'workspace', 'repo'),
-        `refs/heads/${planBranch}`,
+    const status = await git.status(dir);
+    if (
+      status.length ||
+      (await git.currentBranch(dir)) !== base.branch ||
+      (await git.headSha(dir)) !== base.head
+    )
+      throw new ParkError(
+        'folder_changed',
+        'the Backshack worktree changed while the plan was being prepared; put it back on its branch with no changes, and resume',
+        { expected: base, changed: status.slice(0, 8).map((e) => e.path) },
       );
-      await git.fastForward(dir, 'FETCH_HEAD');
-    }
-    ensureLocalExclude(dir);
     this.record(runId, 'step.ok', {
       step: 'deliver',
       data: { branch: base.branch, from: base.branch },
@@ -4702,8 +4701,12 @@ export class Engine {
       minutes: c.minutes > 0 ? c.minutes : DEFAULT_RUN_CEILINGS.minutes,
       usd: c.usd > 0 ? c.usd : 10,
     };
+    // ADR-030: a Backshack run's plan was committed in the run's clone only (deliverBackshack).
+    const planRoot = this.isBackshack(s)
+      ? path.join(this.deps.store.runDir(runId), 'workspace', 'repo')
+      : repo;
     const planPath = delivered
-      ? path.join(repo, ...delivered.planPath.split('/'))
+      ? path.join(planRoot, ...delivered.planPath.split('/'))
       : path.join(repo, 'docs', 'plans', '000-bootstrap.md');
     if (!existsSync(planPath))
       throw new PolicyError(`no executor plan at ${planPath}`, { code: 'no_plan' });
@@ -4769,7 +4772,10 @@ export class Engine {
           contract !== null ? { contract } : undefined,
         ) +
         (opts.continuation ? `\n${continuationText(opts.continuation)}` : ''),
-      ticket: activeTicket(repo, spec, delivered?.features.map(ticketId)),
+      // ADR-030: no tickets reach backshack-dev, so no active-ticket marker is written there either.
+      ticket: this.isBackshack(s)
+        ? null
+        : activeTicket(repo, spec, delivered?.features.map(ticketId)),
       checks,
     };
   }

@@ -36,8 +36,9 @@ re-plans after CODE starts. ADR-026 keeps the recommendation only in the turn an
    from code. Approval fetches `origin/main` in backshack-dev and adds a worktree on
    `incubator/backshack-<slug>`; an existing folder is refused, never reused or removed. The run is the
    existing in-place update (enhance) flow on that folder, except: no repository is created, the
-   canonical-pattern files (stack packs) are never added, the plan commit fast-forwards the worktree's own branch
-   instead of adding an `incubator/enhance-*` branch, the Incubator's guides (`WHAT-NOW.md`, design doc,
+   canonical-pattern files (stack packs) are never added, the plan commit stays in the run's own clone (the
+   agent reads the plan from there, and the tool is built on the worktree's own branch with no
+   `incubator/enhance-*` branch added), the Incubator's guides (`WHAT-NOW.md`, design doc,
    stand-up guide) stay out of the repository, and after the owner's commit the run ends committed locally with
    no push and no pull request. The handoff to staging (contract Section 5, the local gate, push, the ship
    skills) is the owner's.
@@ -68,10 +69,13 @@ re-plans after CODE starts. ADR-026 keeps the recommendation only in the turn an
 
 - Adding another workspace stack means another catalog entry and its own run checks; the kind is generic, the
   run rules here are Backshack's.
-- The enhance plan files (`docs/plans/NNN-*.md`, `.incubator/tickets/`, `.incubator/lanes/`) are committed on
-  the worktree branch with the plan, as on any update run. The owner drops them before the push if backshack-dev
-  should not keep them.
-- The coding agent runs only the check commands the owner approves for backshack-dev (ADR-025); the contract's
-  searches it does with its own file search, and it names any Section 5 command it could not run.
+- The enhance plan files (`docs/plans/NNN-*.md`, `.incubator/tickets/`, `.incubator/lanes/`) and the
+  active-ticket marker never reach backshack-dev: the branch holds only the tool's commit (amended 2026-11-03,
+  operator decision).
+- The coding agent runs only the check commands the owner approves for backshack-dev (ADR-025). The scan proposes
+  the contract's group-guard lint first (`php wp-content/plugins/backshack-datalake/bin/lint-group-guard.php
+--enforce --tool=<slug>`, so a warning fails the Incubator's own run of it); `node --check` cannot be an
+  approved check (a flag where a subcommand is required), so the agent does the contract's searches with its own
+  file search and names any Section 5 command it could not run.
 - Tests: the catalog holds `backshack-tool`; a `node-web` run's coding prompt has no contract text; a
   `backshack-tool` run's prompt has it verbatim; a missing contract parks the run.

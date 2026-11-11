@@ -12,6 +12,7 @@ import {
   recommendationYaml,
 } from './backshack.js';
 import type { IncubatorConfig } from './config.js';
+import { validateChecks } from './checks.js';
 import { handoffPrompt } from './handoff.js';
 import { DefaultsPrompter } from './prompter.js';
 import { enhanceFixtureDir, fakePublishEngine, seedExistingRepo } from './testing.js';
@@ -199,10 +200,30 @@ describe('a backshack-tool run (ADR-030)', () => {
     });
     // Committed on the branch, never pushed, no pull request, no Incubator guides in the repository.
     expect(await out(['status', '--porcelain'], prepared.dir)).toBe('');
-    expect(await out(['rev-list', '--count', `${mainBefore}..HEAD`], prepared.dir)).toBe('2');
+    // The executor plan, tickets and lanes stay in the run folder: the branch holds only the tool's commit.
+    expect(await out(['rev-list', '--count', `${mainBefore}..HEAD`], prepared.dir)).toBe('1');
+    const committed = await out(['diff', '--name-only', mainBefore, 'HEAD'], prepared.dir);
+    expect(committed).not.toMatch(/^(docs\/plans\/|\.incubator\/)/m);
+    expect(prompts.some((p) => p.includes('# Plan '))).toBe(true);
     expect(await h.github.getBranchSha(ref, prepared.branch)).toBeNull();
     expect(h.github.repos.get(`${ref.owner}/${ref.name}`)!.prs).toEqual([]);
     expect(existsSync(path.join(prepared.dir, 'WHAT-NOW.md'))).toBe(false);
+  });
+
+  it('proposes the contract’s group-guard lint as a check the owner can approve', async () => {
+    const { h } = await backshackHarness();
+    const prepared = await h.engine.backshackPrepare({
+      narrative: REQUEST,
+      fit: { toolName: 'Order Export' },
+      surface: 'test',
+    });
+    const runId = h.engine.start({ ...prepared.input, yes: true });
+    await h.engine.advance(runId, new DefaultsPrompter());
+    const lint =
+      'php wp-content/plugins/backshack-datalake/bin/lint-group-guard.php --enforce --tool=order-export';
+    const proposed = h.engine.proposedChecks(runId).map((c) => c.command);
+    expect(proposed[0]).toBe(lint);
+    expect(validateChecks(proposed)).toEqual([]);
   });
 
   it('parks with a clear error when the contract is missing, and never creates a worktree without it', async () => {
