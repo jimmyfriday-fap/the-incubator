@@ -33,6 +33,13 @@ export interface BackshackDecision {
   decidedAt: string;
 }
 
+/**
+ * The token cap a Backshack build gets when the owner has set none (`agents.ceilings.tokens`). Live run 2 processed
+ * 36.3M tokens (75 replies, mostly cache reads of a large context) for about $27 at list price, so 15M is roughly
+ * $11 on that one run. A proxy for plan usage, not dollars: tune it from the `handoff.result` journal entries.
+ */
+export const BACKSHACK_TOKEN_CEILING = 15_000_000;
+
 /** The file the decision is written to, in the run folder. */
 export const RECOMMENDATION_FILE = 'incubator-recommendation.yaml';
 

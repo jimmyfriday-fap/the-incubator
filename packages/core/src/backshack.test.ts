@@ -14,6 +14,7 @@ import type { Capabilities } from '@incubator/llm';
 import { nodeExec, type Exec } from '@incubator/runtime';
 import { completeSpec, type IncubatorSpec } from '@incubator/spec';
 import {
+  BACKSHACK_TOKEN_CEILING,
   RECOMMENDATION_FILE,
   backshackFit,
   backshackPaths,
@@ -245,6 +246,13 @@ describe('a backshack-tool run (ADR-030)', () => {
     const committed = await out(['diff', '--name-only', mainBefore, 'HEAD'], prepared.dir);
     expect(committed).not.toMatch(/^(docs\/plans\/|\.incubator\/)/m);
     expect(prompts.some((p) => p.includes('# Plan '))).toBe(true);
+    // The agent is held to a token cap that stops it mid-run, and what it processed is recorded for tracking.
+    expect(h.engine.entries(runId).find((e) => e.type === 'handoff.launch')).toMatchObject({
+      ceilings: { tokens: BACKSHACK_TOKEN_CEILING },
+    });
+    expect(h.engine.entries(runId).find((e) => e.type === 'handoff.result')).toMatchObject({
+      tokens: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, total: 0 },
+    });
     expect(await h.github.getBranchSha(ref, prepared.branch)).toBeNull();
     expect(h.github.repos.get(`${ref.owner}/${ref.name}`)!.prs).toEqual([]);
     expect(existsSync(path.join(prepared.dir, 'WHAT-NOW.md'))).toBe(false);

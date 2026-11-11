@@ -13,6 +13,7 @@ import {
   handoffPrompt,
   HANDOFF_ALLOWED_TOOLS,
   remainingTickets,
+  resolveCeilings,
   type HandoffProgress,
 } from './handoff.js';
 import { loadPrompt } from './prompts.js';
@@ -234,6 +235,79 @@ describe('handoff', () => {
     expect(m.feed(block('msg_2', 'tool_use') + block('msg_2', 'tool_use'))).toBeNull();
     expect([m.turns, m.toolCalls]).toEqual([2, 4]);
     expect(m.feed(block('msg_3', 'text'))).toBe('turns 3 > 2');
+  });
+
+  it('counts tokens per reply and trips the token cap mid-stream, before any cost is reported', () => {
+    const m = new CeilingMonitor(
+      { turns: 99, toolCalls: 99, minutes: 1, usd: 99, tokens: 1_000_000 },
+      false,
+    );
+    const reply = (id: string, u: Record<string, number>) =>
+      `${JSON.stringify({ type: 'assistant', message: { id, content: [{ type: 'text', text: 'x' }], usage: u } })}\n`;
+    const use = (cacheRead: number) => ({
+      input_tokens: 2,
+      output_tokens: 8,
+      cache_creation_input_tokens: 10,
+      cache_read_input_tokens: cacheRead,
+    });
+    expect(m.feed(reply('msg_1', use(380)))).toBeNull();
+    // The same reply arriving again (one event per content block) replaces its count, it does not add to it.
+    expect(m.feed(reply('msg_1', use(380)))).toBeNull();
+    expect(m.tokens).toEqual({ input: 2, output: 8, cacheWrite: 10, cacheRead: 380, total: 400 });
+    expect(m.feed(reply('msg_2', use(499_580)))).toBeNull();
+    expect(m.tokens.total).toBe(500_000);
+    expect(m.feed(reply('msg_3', use(500_100)))).toBe('tokens 1,000,120 > 1,000,000');
+    expect(m.costUsd).toBeNull();
+    expect(m.tripped).toBe('tokens 1,000,120 > 1,000,000');
+  });
+
+  it('takes the final token totals from the result event, and has no cap unless one is set', () => {
+    const m = new CeilingMonitor({ turns: 99, toolCalls: 99, minutes: 1, usd: 99 }, false);
+    m.feed(
+      `${JSON.stringify({ type: 'assistant', message: { id: 'a', content: [], usage: { cache_read_input_tokens: 9_999_999 } } })}\n`,
+    );
+    expect(m.tripped).toBeNull();
+    m.feed(
+      `${JSON.stringify({ type: 'result', usage: { input_tokens: 5, output_tokens: 70, cache_creation_input_tokens: 20, cache_read_input_tokens: 100 } })}\n`,
+    );
+    expect(m.tokens).toEqual({ input: 5, output: 70, cacheWrite: 20, cacheRead: 100, total: 195 });
+    // A usage object that is not one, or has junk counts, is ignored or counted as zero.
+    const odd = new CeilingMonitor(
+      { turns: 9, toolCalls: 9, minutes: 1, usd: 9, tokens: 10 },
+      false,
+    );
+    odd.feed(
+      `${JSON.stringify({ type: 'assistant', message: { id: 'x', content: [], usage: 'nope' } })}\n`,
+    );
+    odd.feed(
+      `${JSON.stringify({ type: 'assistant', message: { id: 'y', content: [], usage: { input_tokens: 'many', output_tokens: -5 } } })}\n`,
+    );
+    expect(odd.tokens.total).toBe(0);
+    expect(odd.tripped).toBeNull();
+  });
+
+  it('resolves the ceilings: the owner wins over the spec, junk is ignored, 0 turns the token cap off', () => {
+    const spec = { turns: 60, toolCalls: 0, minutes: 30, usd: 10 };
+    const dflt = { turns: 150, toolCalls: 400, minutes: 45, usd: 10 };
+    expect(resolveCeilings(spec, undefined, dflt)).toEqual({
+      turns: 60,
+      toolCalls: 400,
+      minutes: 30,
+      usd: 10,
+    });
+    expect(resolveCeilings(spec, undefined, dflt, 15_000_000)).toMatchObject({
+      tokens: 15_000_000,
+    });
+    expect(
+      resolveCeilings(
+        spec,
+        { turns: 20, minutes: 'soon', usd: -1, tokens: 8_000_000 },
+        dflt,
+        15_000_000,
+      ),
+    ).toEqual({ turns: 20, toolCalls: 400, minutes: 30, usd: 10, tokens: 8_000_000 });
+    expect(resolveCeilings(spec, { tokens: 0 }, dflt, 15_000_000)).not.toHaveProperty('tokens');
+    expect(resolveCeilings(spec, 'not an object', dflt)).not.toHaveProperty('tokens');
   });
 
   it('replays the shape of a real run that was stopped too early: 61 events, 27 replies (plan 035)', () => {

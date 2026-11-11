@@ -179,6 +179,7 @@ import {
   handoffPrompt,
   launchHandoff,
   remainingTickets,
+  resolveCeilings,
   type HandoffAgent,
   type HandoffOutcome,
   type HandoffProgress,
@@ -188,6 +189,7 @@ import {
 } from './handoff.js';
 import { CHECK_NOT_RUN, checkBudgetMs, runChecks, type CheckRun } from './check-run.js';
 import {
+  BACKSHACK_TOKEN_CEILING,
   RECOMMENDATION_FILE,
   backshackChecks,
   backshackFit,
@@ -4697,13 +4699,14 @@ export class Engine {
     const caps = await this.deps.handoff.probe(AGENT_ADAPTERS[agent]);
     if (!caps.installed || !caps.path)
       throw new PolicyError(`${AGENT_ADAPTERS[agent]} is not installed`, { code: 'agent_missing' });
-    const c = spec.agents.runCeilings;
-    const ceilings = {
-      turns: c.turns > 0 ? c.turns : DEFAULT_RUN_CEILINGS.turns,
-      toolCalls: c.toolCalls > 0 ? c.toolCalls : 400,
-      minutes: c.minutes > 0 ? c.minutes : DEFAULT_RUN_CEILINGS.minutes,
-      usd: c.usd > 0 ? c.usd : 10,
-    };
+    // The owner's ceilings (`agents.ceilings`) win over the spec's; a Backshack build also gets a default token cap,
+    // because the dollar ceiling cannot stop a run (the agent reports its cost only when it finishes).
+    const ceilings = resolveCeilings(
+      spec.agents.runCeilings,
+      chosen?.ceilings,
+      { ...DEFAULT_RUN_CEILINGS, toolCalls: 400, usd: 10 },
+      this.isBackshack(s) ? BACKSHACK_TOKEN_CEILING : 0,
+    );
     // ADR-030: a Backshack run's plan was committed in the run's clone only (deliverBackshack).
     const planRoot = this.isBackshack(s)
       ? path.join(this.deps.store.runDir(runId), 'workspace', 'repo')

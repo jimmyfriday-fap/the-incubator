@@ -82,5 +82,12 @@ re-plans after CODE starts. ADR-026 keeps the recommendation only in the turn an
 --enforce --tool=<slug>`, so a warning fails the Incubator's own run of it); `node --check` cannot be an
   approved check (a flag where a subcommand is required), so the agent does the contract's searches with its own
   file search and names any Section 5 command it could not run.
+- The coding agent is held to a token cap (Amended 2026-11-11). The dollar ceiling cannot stop a run: the agent
+  reports its cost only in its final message, and live run 2 spent about $27 at list price against a $10 ceiling.
+  A Backshack build therefore gets a default cap of 15M tokens (input, output, cache writes and cache reads, counted
+  reply by reply), which does stop it mid-run. The owner sets their own in `~/.incubator/config.json` under
+  `agents.ceilings` (`tokens`, and `turns`, `toolCalls`, `minutes`, `usd`); those win over the spec, and
+  `tokens: 0` turns the cap off. The cost here is plan usage, not an API bill, so the figures to track are the
+  token counts by kind that `handoff.result` now records beside the list-price estimate.
 - Tests: the catalog holds `backshack-tool`; a `node-web` run's coding prompt has no contract text; a
   `backshack-tool` run's prompt has it verbatim; a missing contract parks the run.

@@ -18,8 +18,57 @@ export interface Ceilings {
   turns: number;
   toolCalls: number;
   minutes: number;
+  /** Dollars at list price. The agent reports its cost only in its final message, so this stops nothing mid-run. */
   usd: number;
+  /**
+   * Tokens the agent may process: input + output + cache writes + cache reads, counted reply by reply as the
+   * stream arrives, so it stops a run mid-way. Absent or 0 means no cap. It is a proxy for plan usage, not dollars.
+   */
+  tokens?: number;
 }
+
+/** The ceilings the owner may set in `~/.incubator/config.json` (`agents.ceilings`). Unset keeps the spec's value. */
+export type OwnerCeilings = Partial<Record<keyof Ceilings, number>>;
+
+/**
+ * The ceilings a run is held to. The owner's own choice wins over the spec (as the coding model does, ADR-029);
+ * a value that is not a positive number is ignored, and for `tokens` an explicit 0 turns the cap off.
+ * `tokenDefault` is the cap a run gets when the owner set none (a Backshack build, ADR-030).
+ */
+export function resolveCeilings(
+  spec: { turns: number; toolCalls: number; minutes: number; usd: number },
+  owner: unknown,
+  defaults: { turns: number; toolCalls: number; minutes: number; usd: number },
+  tokenDefault = 0,
+): Ceilings {
+  const o = (owner !== null && typeof owner === 'object' ? owner : {}) as Record<string, unknown>;
+  const num = (v: unknown): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined;
+  const pick = (key: keyof typeof spec): number => {
+    const own = num(o[key]);
+    if (own !== undefined && own > 0) return own;
+    return spec[key] > 0 ? spec[key] : defaults[key];
+  };
+  const tokens = num(o['tokens']) ?? tokenDefault;
+  return {
+    turns: pick('turns'),
+    toolCalls: pick('toolCalls'),
+    minutes: pick('minutes'),
+    usd: pick('usd'),
+    ...(tokens > 0 ? { tokens } : {}),
+  };
+}
+
+/** What a run processed, by kind. `total` is the sum the token cap is measured against. */
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+  total: number;
+}
+
+const count = (n: number): string => n.toLocaleString('en-US');
 
 export interface HandoffPlan {
   agent: HandoffAgent;
@@ -213,6 +262,21 @@ export class CeilingMonitor {
   #buf = '';
   /** The replies already counted as turns (plan 035). */
   #replies = new Set<string>();
+  /** The latest usage of each reply, so a reply that arrives as several events is counted once. */
+  #usageById = new Map<string, Usage4>();
+  #sum: Usage4 = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
+  /** The totals the agent reports in its final `result` event: exact, where the running count is not. */
+  #final: Usage4 | null = null;
+
+  /**
+   * Tokens processed so far. Mid-stream it is the sum of each reply's own usage, which counts cache reads and
+   * writes exactly but under-reports output (a reply's first event carries a partial output count); the final
+   * `result` event replaces it with the agent's own totals.
+   */
+  get tokens(): TokenUsage {
+    const u = this.#final ?? this.#sum;
+    return { ...u, total: u.input + u.output + u.cacheWrite + u.cacheRead };
+  }
 
   constructor(
     private readonly ceilings: Ceilings,
@@ -235,8 +299,9 @@ export class CeilingMonitor {
       type?: string;
       subtype?: string;
       model?: unknown;
-      message?: { id?: unknown; content?: { type?: string; text?: unknown }[] };
+      message?: { id?: unknown; content?: { type?: string; text?: unknown }[]; usage?: unknown };
       result?: unknown;
+      usage?: unknown;
       total_cost_usd?: number;
       cost_usd?: number;
     };
@@ -255,6 +320,8 @@ export class CeilingMonitor {
         if (id !== null) this.#replies.add(id);
         this.turns++;
       }
+      const usage = readUsage(e.message?.usage);
+      if (usage) this.addUsage(id, usage);
       const blocks = e.message?.content ?? [];
       this.toolCalls += blocks.filter((c) => c.type === 'tool_use').length;
       const text = blocks.find(
@@ -264,16 +331,58 @@ export class CeilingMonitor {
     }
     if (e.type === 'result' && typeof e.result === 'string' && e.result.trim())
       this.resultText = e.result;
+    if (e.type === 'result') {
+      const final = readUsage(e.usage);
+      if (final) this.#final = final;
+    }
     const cost = e.total_cost_usd ?? e.cost_usd;
     if (typeof cost === 'number') this.costUsd = cost;
     if (this.tripped) return;
+    const cap = this.ceilings.tokens ?? 0;
     if (!this.turnsByFlag && this.turns > this.ceilings.turns)
       this.tripped = `turns ${this.turns} > ${this.ceilings.turns}`;
     else if (this.toolCalls > this.ceilings.toolCalls)
       this.tripped = `tool calls ${this.toolCalls} > ${this.ceilings.toolCalls}`;
     else if (this.costUsd !== null && this.costUsd > this.ceilings.usd)
       this.tripped = `cost $${this.costUsd} > $${this.ceilings.usd}`;
+    else if (cap > 0 && this.tokens.total > cap)
+      this.tripped = `tokens ${count(this.tokens.total)} > ${count(cap)}`;
   }
+
+  /** A reply's usage replaces what was counted for the same reply; an event without an id adds its own. */
+  private addUsage(id: string | null, u: Usage4): void {
+    const old = id === null ? undefined : this.#usageById.get(id);
+    if (old) this.shift(old, -1);
+    this.shift(u, 1);
+    if (id !== null) this.#usageById.set(id, u);
+  }
+
+  private shift(u: Usage4, sign: 1 | -1): void {
+    this.#sum.input += sign * u.input;
+    this.#sum.output += sign * u.output;
+    this.#sum.cacheWrite += sign * u.cacheWrite;
+    this.#sum.cacheRead += sign * u.cacheRead;
+  }
+}
+
+interface Usage4 {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+}
+
+/** The four counts of an agent's `usage` object; anything that is not a number counts as 0, none at all is null. */
+function readUsage(raw: unknown): Usage4 | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const u = raw as Record<string, unknown>;
+  const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
+  return {
+    input: n(u['input_tokens']),
+    output: n(u['output_tokens']),
+    cacheWrite: n(u['cache_creation_input_tokens']),
+    cacheRead: n(u['cache_read_input_tokens']),
+  };
 }
 
 export interface HandoffOutcome {
@@ -281,6 +390,8 @@ export interface HandoffOutcome {
   turns: number;
   toolCalls: number;
   costUsd: number | null;
+  /** What the agent processed, by kind: the usage figures to track, since the cost is plan usage, not an API bill. */
+  tokens: TokenUsage;
   tripped: string | null;
   /** The owner stopped the agent (Stop in the app, Ctrl+C): the work is probably unfinished. */
   stopped: boolean;
@@ -420,6 +531,7 @@ export async function launchHandoff(
     turns: monitor.turns,
     toolCalls: monitor.toolCalls,
     costUsd: monitor.costUsd,
+    tokens: monitor.tokens,
     tripped,
     stopped: Boolean(opts.signal?.aborted) && !monitor.tripped,
     model: monitor.model,

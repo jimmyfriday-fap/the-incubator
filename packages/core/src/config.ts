@@ -6,7 +6,16 @@ import type { LlmConfig } from '@incubator/llm';
 export interface IncubatorConfig {
   llm?: LlmConfig;
   /** The coding agent: which CLI, and which model it is asked for (ADR-029). Absent: the spec decides. */
-  agents?: { primary?: 'claude' | 'copilot' | 'cursor'; model?: string };
+  agents?: {
+    primary?: 'claude' | 'copilot' | 'cursor';
+    model?: string;
+    /**
+     * Run ceilings for the coding agent, winning over the spec's. `tokens` caps what the agent may process
+     * (input + output + cache writes + cache reads) and stops it mid-run; 0 turns the cap off. The others are
+     * `turns`, `toolCalls`, `minutes` and `usd` (a list-price estimate the agent reports only when it finishes).
+     */
+    ceilings?: Partial<Record<'turns' | 'toolCalls' | 'minutes' | 'usd' | 'tokens', number>>;
+  };
   gc?: { days?: number };
   discovery?: { timeoutMs?: number };
   /** Where a tool lives when it is not on PATH, by tool name (for example `flutter`). Absolute paths only. */
