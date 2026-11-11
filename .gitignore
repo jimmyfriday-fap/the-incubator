@@ -33,3 +33,7 @@ apps/desktop/app/
 apps/desktop/app-test/
 apps/desktop/release/
 apps/desktop/release-test/
+
+# agent config is a secret store: never committed (machine-global ignore does not travel with a clone)
+/.claude/settings.local.json
+/.mcp.json
