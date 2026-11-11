@@ -37,8 +37,9 @@ re-plans after CODE starts. ADR-026 keeps the recommendation only in the turn an
    `incubator/backshack-<slug>`; an existing folder is refused, never reused or removed. The run is the
    existing in-place update (enhance) flow on that folder, except: no repository is created, the
    canonical-pattern files (stack packs) are never added, the plan commit stays in the run's own clone (the
-   agent reads the plan from there, and the tool is built on the worktree's own branch with no
-   `incubator/enhance-*` branch added), the Incubator's guides (`WHAT-NOW.md`, design doc,
+   plan is inlined in the coding prompt, and the tool is built on the worktree's own branch with no
+   `incubator/enhance-*` branch added), the run's `.incubator/` guides and tickets are copied into the worktree
+   under a nested `.incubator/.gitignore` of `*`, the Incubator's guides (`WHAT-NOW.md`, design doc,
    stand-up guide) stay out of the repository, and after the owner's commit the run ends committed locally with
    no push and no pull request. The handoff to staging (contract Section 5, the local gate, push, the ship
    skills) is the owner's.
@@ -71,7 +72,11 @@ re-plans after CODE starts. ADR-026 keeps the recommendation only in the turn an
   run rules here are Backshack's.
 - The enhance plan files (`docs/plans/NNN-*.md`, `.incubator/tickets/`, `.incubator/lanes/`) and the
   active-ticket marker never reach backshack-dev: the branch holds only the tool's commit (amended 2026-11-03,
-  operator decision).
+  operator decision). The agent and the code verify still need the designs and tickets the plan names, so they
+  are copied into the worktree and hidden by the nested ignore file, which works in any repository and writes
+  nothing to backshack-dev's shared `.git` (a linked worktree shares `info/exclude` and config with the owner's
+  main checkout). Amended 2026-11-11: the first live run kept them in the run's clone only, and the agent
+  stopped because the files the plan named were not in its folder.
 - The coding agent runs only the check commands the owner approves for backshack-dev (ADR-025). The scan proposes
   the contract's group-guard lint first (`php wp-content/plugins/backshack-datalake/bin/lint-group-guard.php
 --enforce --tool=<slug>`, so a warning fails the Incubator's own run of it); `node --check` cannot be an

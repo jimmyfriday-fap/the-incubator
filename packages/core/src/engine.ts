@@ -197,6 +197,7 @@ import {
   readBackshackContract,
   recommendationYaml,
   requireBackshackPaths,
+  stageRunGuides,
   type BackshackDecision,
   type BackshackFit,
   type BackshackPaths,
@@ -2080,8 +2081,9 @@ export class Engine {
   }
 
   /**
-   * ADR-030: the plan commit stays in the run's own clone, so the executor plan, tickets and lanes never reach
-   * backshack-dev; the agent reads the plan from there. The tool is built on the worktree's own branch
+   * ADR-030: the plan commit stays in the run's own clone (the plan is inlined in the prompt); the guides and
+   * tickets are copied into the worktree under a nested ignore file (stageRunGuides), so the agent and the code
+   * verify read them where the plan says and nothing reaches the branch. The tool is built on the worktree's own branch
    * (`incubator/backshack-<slug>`), which must still be where the owner approved it.
    */
   private async deliverBackshack(
@@ -2101,6 +2103,7 @@ export class Engine {
         'the Backshack worktree changed while the plan was being prepared; put it back on its branch with no changes, and resume',
         { expected: base, changed: status.slice(0, 8).map((e) => e.path) },
       );
+    stageRunGuides(path.join(this.deps.store.runDir(runId), 'workspace', 'repo'), dir);
     this.record(runId, 'step.ok', {
       step: 'deliver',
       data: { branch: base.branch, from: base.branch },
@@ -4772,10 +4775,7 @@ export class Engine {
           contract !== null ? { contract } : undefined,
         ) +
         (opts.continuation ? `\n${continuationText(opts.continuation)}` : ''),
-      // ADR-030: no tickets reach backshack-dev, so no active-ticket marker is written there either.
-      ticket: this.isBackshack(s)
-        ? null
-        : activeTicket(repo, spec, delivered?.features.map(ticketId)),
+      ticket: activeTicket(repo, spec, delivered?.features.map(ticketId)),
       checks,
     };
   }

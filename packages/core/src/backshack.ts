@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ParkError, PolicyError } from '@incubator/runtime';
 import type { GitOps } from '@incubator/git';
@@ -207,6 +207,28 @@ export function backshackChecks(slug: string): { command: string; what: string; 
       why: 'Backshack Build Contract, Section 5 (G3/G8)',
     },
   ];
+}
+
+/**
+ * Copies the run's guides (`.incubator/`: enhance designs, tickets, lanes) from the run's clone into the worktree,
+ * where the plan and the code verify look for them, and hides them from git with a nested `.gitignore` of `*`
+ * (which also ignores itself). A file already in the worktree is kept, so a resumed run keeps the ticket states
+ * the agent advanced; `state/` is the agent's own bookkeeping and is never copied.
+ */
+// why: not `info/exclude` or git config: a linked worktree shares both with the owner's main checkout.
+export function stageRunGuides(fromRepo: string, worktree: string): void {
+  const from = path.join(fromRepo, '.incubator');
+  const to = path.join(worktree, '.incubator');
+  mkdirSync(to, { recursive: true });
+  writeFileSync(path.join(to, '.gitignore'), '*\n');
+  if (!existsSync(from)) return;
+  const state = path.join(from, 'state');
+  cpSync(from, to, {
+    recursive: true,
+    force: false,
+    errorOnExist: false,
+    filter: (src) => src !== state && !src.startsWith(state + path.sep),
+  });
 }
 
 /** Where a tool's worktree goes, and its branch. */

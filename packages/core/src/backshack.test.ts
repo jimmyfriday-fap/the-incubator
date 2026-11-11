@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +18,7 @@ import {
   backshackFit,
   backshackPaths,
   recommendationYaml,
+  stageRunGuides,
 } from './backshack.js';
 import type { IncubatorConfig } from './config.js';
 import { validateChecks } from './checks.js';
@@ -141,6 +150,32 @@ describe('the Backshack fit and decision (ADR-030)', () => {
   });
 });
 
+describe('staging the run guides in a Backshack worktree (ADR-030)', () => {
+  it('copies the guides, skips state, hides them from git and keeps files already there', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'bs-guides-'));
+    try {
+      const from = path.join(root, 'clone');
+      const to = path.join(root, 'worktree');
+      mkdirSync(path.join(from, '.incubator', 'tickets'), { recursive: true });
+      mkdirSync(path.join(from, '.incubator', 'state'), { recursive: true });
+      writeFileSync(path.join(from, '.incubator', 'tickets', 'E-a.json'), '{"state":"NEW"}');
+      writeFileSync(path.join(from, '.incubator', 'state', 'active-ticket'), 'E-a');
+      mkdirSync(to);
+      stageRunGuides(from, to);
+      const ticket = path.join(to, '.incubator', 'tickets', 'E-a.json');
+      expect(readFileSync(ticket, 'utf8')).toBe('{"state":"NEW"}');
+      expect(existsSync(path.join(to, '.incubator', 'state'))).toBe(false);
+      expect(readFileSync(path.join(to, '.incubator', '.gitignore'), 'utf8')).toBe('*\n');
+      // A resumed run keeps what the agent advanced.
+      writeFileSync(ticket, '{"state":"READY_FOR_TEST"}');
+      stageRunGuides(from, to);
+      expect(readFileSync(ticket, 'utf8')).toBe('{"state":"READY_FOR_TEST"}');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('the contract in the coding prompt (ADR-030)', () => {
   const plan = '# Plan\n\n**Step 1:** do it';
 
@@ -191,6 +226,11 @@ describe('a backshack-tool run (ADR-030)', () => {
     expect(await out(['rev-parse', '--abbrev-ref', 'HEAD'], prepared.dir)).toBe(prepared.branch);
     expect(await out(['branch', '--list', 'incubator/enhance-*'], devRepo)).toBe('');
     expect(prompts.some((p) => p.includes(CONTRACT.trim()))).toBe(true);
+    // The guides and tickets the plan names are in the worktree for the agent and the verify, hidden from git.
+    const tickets = path.join(prepared.dir, '.incubator', 'tickets');
+    expect(existsSync(path.join(prepared.dir, '.incubator', '.gitignore'))).toBe(true);
+    expect(existsSync(tickets) && readdirSync(tickets).some((f) => f.endsWith('.json'))).toBe(true);
+    expect(await out(['status', '--porcelain'], prepared.dir)).not.toContain('.incubator');
 
     h.engine.submitCommit(runId, { action: 'commit' });
     const done = await h.engine.resume(runId, new DefaultsPrompter());
