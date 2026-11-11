@@ -202,6 +202,17 @@ export function readBackshackContract(paths: BackshackPaths): string {
 }
 
 /**
+ * The files a Backshack tool run builds in: the tool's own package folder and its one-line shim (Backshack Build
+ * Contract G1). The word match the other enhance runs use (`resolveTargets`) is wrong here: backshack-dev holds every
+ * existing tool, so a request's words matched their `register.php` files and a third-party plugin, and the plan sent
+ * the agent to edit those. A new tool has nothing in the scan to match, so its targets come from its slug.
+ */
+export function backshackTargets(slug: string): string[] {
+  const plugin = 'wp-content/plugins/backshack-datalake';
+  return [`${plugin}/src/Tools/${slug}/`, `${plugin}/src/tools-auto/${slug}.php`];
+}
+
+/**
  * The contract's Section 5 commands that can be approved checks, proposed ahead of the stack's own. Only the
  * group-guard lint qualifies: `node --check` takes a flag where a check needs a subcommand, so the agent runs
  * that one as a search-and-read step. `--enforce` makes a warning exit 1, so the Incubator's own run catches it.

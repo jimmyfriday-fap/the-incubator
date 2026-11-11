@@ -192,6 +192,7 @@ import {
   BACKSHACK_TOKEN_CEILING,
   RECOMMENDATION_FILE,
   backshackChecks,
+  backshackTargets,
   backshackFit,
   backshackPaths,
   backshackWorktree,
@@ -1008,7 +1009,7 @@ export class Engine {
       sameDay ??
       `docs/plans/${nextPlanNumber([...repoFiles, ...(upstream?.plans ?? [])])}-enhance-${date}.md`;
     const targets = Object.fromEntries(
-      features.map((f) => [f.id, f.targets ?? resolveTargets(scan, f)]),
+      features.map((f) => [f.id, f.targets ?? this.targetsFor(runId, scan, f)]),
     );
     const files = buildDelivery({
       spec,
@@ -1742,6 +1743,17 @@ export class Engine {
 
   private isBackshack(s: RunState): boolean {
     return s.input.stack === BACKSHACK_STACK;
+  }
+
+  /**
+   * The files an enhancement request most plausibly touches. A Backshack tool run builds one new package, so its
+   * targets come from the tool's slug (ADR-030); every other run matches the request against the scan.
+   */
+  private targetsFor(runId: string, scan: RepoScan, f: Pick<Feature, 'id' | 'summary'>): string[] {
+    const s = this.state(runId);
+    return this.isBackshack(s) && s.input.backshack
+      ? backshackTargets(s.input.backshack.fit.toolSlug)
+      : resolveTargets(scan, f);
   }
 
   /** The contract, verbatim, for a Backshack run (parks when the file is missing); null for any other run. */
@@ -5214,7 +5226,7 @@ export class Engine {
             baseline.includes(f.id) ||
             f.targets
               ? f
-              : { ...f, targets: resolveTargets(scan, f) },
+              : { ...f, targets: this.targetsFor(runId, scan, f) },
           ),
         },
       };

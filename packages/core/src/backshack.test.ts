@@ -18,6 +18,7 @@ import {
   RECOMMENDATION_FILE,
   backshackFit,
   backshackPaths,
+  backshackTargets,
   recommendationYaml,
   stageRunGuides,
 } from './backshack.js';
@@ -151,6 +152,15 @@ describe('the Backshack fit and decision (ADR-030)', () => {
   });
 });
 
+describe('the files a Backshack tool run builds in (ADR-030)', () => {
+  it('are the tool package and its shim, whatever the scan of the repository matches', () => {
+    expect(backshackTargets('order-export')).toEqual([
+      'wp-content/plugins/backshack-datalake/src/Tools/order-export/',
+      'wp-content/plugins/backshack-datalake/src/tools-auto/order-export.php',
+    ]);
+  });
+});
+
 describe('staging the run guides in a Backshack worktree (ADR-030)', () => {
   it('copies the guides, skips state, hides them from git and keeps files already there', () => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'bs-guides-'));
@@ -232,6 +242,14 @@ describe('a backshack-tool run (ADR-030)', () => {
     expect(existsSync(path.join(prepared.dir, '.incubator', '.gitignore'))).toBe(true);
     expect(existsSync(tickets) && readdirSync(tickets).some((f) => f.endsWith('.json'))).toBe(true);
     expect(await out(['status', '--porcelain'], prepared.dir)).not.toContain('.incubator');
+
+    // The plan sends the agent to the new tool's own package, not to files of the repository the request's words matched.
+    const clone = path.join(h.store.runDir(runId), 'workspace', 'repo');
+    const planned = readdirSync(path.join(clone, 'docs', 'plans'))
+      .map((f) => readFileSync(path.join(clone, 'docs', 'plans', f), 'utf8'))
+      .join('\n');
+    for (const target of backshackTargets('order-export')) expect(planned).toContain(target);
+    expect(planned).not.toContain('index.js');
 
     h.engine.submitCommit(runId, { action: 'commit' });
     const done = await h.engine.resume(runId, new DefaultsPrompter());

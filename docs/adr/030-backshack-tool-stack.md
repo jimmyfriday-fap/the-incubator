@@ -82,6 +82,10 @@ re-plans after CODE starts. ADR-026 keeps the recommendation only in the turn an
 --enforce --tool=<slug>`, so a warning fails the Incubator's own run of it); `node --check` cannot be an
   approved check (a flag where a subcommand is required), so the agent does the contract's searches with its own
   file search and names any Section 5 command it could not run.
+- The plan's edit targets for a Backshack run are the new tool's package folder and its shim, taken from the slug
+  (`backshackTargets`), not the word match against the scan that other enhance runs use (Amended 2026-11-11). In
+  backshack-dev that match found the existing tools' `register.php` files and a third-party plugin, and the plan sent
+  the agent to edit them.
 - The coding agent is held to a token cap (Amended 2026-11-11). The dollar ceiling cannot stop a run: the agent
   reports its cost only in its final message, and live run 2 spent about $27 at list price against a $10 ceiling.
   A Backshack build therefore gets a default cap of 15M tokens (input, output, cache writes and cache reads, counted
