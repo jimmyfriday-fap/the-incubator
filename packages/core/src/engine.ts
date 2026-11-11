@@ -2973,7 +2973,16 @@ export class Engine {
         },
       });
     }
+    // why: the last check parked on a broken rule and the owner resumed; reading the old report again would park
+    // again, so the attempt is undone and the session runs once more.
+    if (
+      this.state(runId).steps[`${done}.agent`]?.status === 'ok' &&
+      this.memoryCheckParked(runId, phase)
+    )
+      await this.undoMemoryAttempt(runId, phase, true);
     if (this.state(runId).steps[`${done}.agent`]?.status !== 'ok') {
+      // why: a session killed part way leaves a half-written store; on a first attempt there is nothing to undo.
+      await this.undoMemoryAttempt(runId, phase);
       const unsupported = await this.runMemoryBuildAgent(runId, phase);
       if (unsupported) {
         // why: a build that worked without memory must not stop because its agent CLI cannot make the store.
@@ -3000,6 +3009,70 @@ export class Engine {
             : 'scaffold only; the bootstrap runs after the code',
       },
     });
+  }
+
+  /**
+   * MEMORY-RESUME-UNDO: puts the memory paths back to how they were when this memory session started, so a
+   * resumed session starts clean: after a kill part way (a half-written `.memory/`, run 9) and after a park on a
+   * broken rule. The owner's work and the memory notes that were already uncommitted stay as they are. Commits
+   * since then are undone only when they touched nothing outside the memory store; otherwise the run parks.
+   * With `always`, a `memory.retry` is recorded even when nothing had to be undone. Returns true when one was.
+   */
+  private async undoMemoryAttempt(
+    runId: string,
+    phase: MemoryBuildPhase,
+    always = false,
+  ): Promise<boolean> {
+    const git = this.deps.publish!.git;
+    const dir = this.runDir(this.state(runId));
+    const start = this.state(runId).steps[`memory.${phase}.start`]!.data as {
+      base: string;
+      branch: string | null;
+      dirtyMemory?: string[];
+    };
+    const branch = await git.currentBranch(dir);
+    if (branch !== start.branch)
+      throw new ParkError(
+        'memory_rules_broken',
+        `the build is on ${start.branch ?? 'a detached HEAD'}, but the folder is on ${branch ?? 'a detached HEAD'}: check out the build's branch, then resume, or cancel the run.`,
+        { problems: ['the folder is not on the build branch'] },
+      );
+    const head = await git.headSha(dir);
+    const committed =
+      head && head !== start.base
+        ? (await git.diffNameStatus(dir, start.base, head)).map(([, p]) => p)
+        : [];
+    const outside = committed.filter((p) => !allowedMemoryPath(p));
+    if (outside.length)
+      throw new ParkError(
+        'memory_rules_broken',
+        `the ${phase} of the memory store cannot undo its last attempt, because commits since it started changed files outside the store: ${outside
+          .slice(0, 8)
+          .join(', ')}. Undo those commits yourself, then resume, or cancel the run.`,
+        { problems: outside.map((p) => `committed outside the store: ${p}`) },
+      );
+    const before = new Set(start.dirtyMemory ?? []);
+    const paths = [
+      ...new Set([...committed, ...(await git.status(dir)).map((e) => e.path)]),
+    ].filter((p) => allowedMemoryPath(p) && !before.has(p));
+    if (!always && committed.length === 0 && paths.length === 0) return false;
+    if (committed.length) await git.resetSoft(dir, start.base);
+    await git.restorePathsTo(dir, start.base, paths);
+    this.record(runId, 'memory.retry', { phase, base: start.base, undone: paths });
+    return true;
+  }
+
+  /** True when this memory session's last check parked on a broken rule after its agent last ran. */
+  private memoryCheckParked(runId: string, phase: MemoryBuildPhase): boolean {
+    const entries = this.entries(runId);
+    const result = entries.findLast((e) => e.type === 'memory.result' && e['phase'] === phase);
+    const agent = entries.findLast(
+      (e) => e.type === 'step.ok' && e['step'] === `memory.${phase}.agent`,
+    );
+    const problems = result?.['problems'];
+    return Boolean(
+      result && agent && result.seq > agent.seq && Array.isArray(problems) && problems.length > 0,
+    );
   }
 
   /** Runs one memory session; returns why it cannot run with this agent CLI, or null when it ran. */
@@ -3173,7 +3246,7 @@ export class Engine {
     if (problems.length)
       throw new ParkError(
         'memory_rules_broken',
-        `the ${phase} of the memory store broke a rule: ${problems.join('; ')}. Fix the folder and resume, or cancel the run.`,
+        `the ${phase} of the memory store broke a rule: ${problems.join('; ')}. Resume to undo this attempt and run the memory session again, or cancel the run.`,
         { problems },
       );
     if (phase === 'bootstrap' && !report!.verificationPassed)

@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, rmSync, rmdirSync } from 'node:fs';
+import path from 'node:path';
 import { ToolError, type Exec, type SecretString } from '@incubator/runtime';
 
 export interface GitIdentity {
@@ -76,6 +78,13 @@ export interface GitOps {
   worktreeRemove(repo: string, dir: string, force: boolean): Promise<void>;
   /** Moves the checked-out branch forward to `ref` (`git merge --ff-only`); fails when that is not a fast-forward. */
   fastForward(dir: string, ref: string): Promise<void>;
+  /** `git reset --soft <ref>`: moves the branch back to a commit id and keeps the index and the folder. */
+  resetSoft(dir: string, ref: string): Promise<void>;
+  /**
+   * Puts each path back to how it was at the commit `base`, in the index and in the folder. A path that did not
+   * exist at `base` is deleted, with any folders that are left empty. Other paths are not touched.
+   */
+  restorePathsTo(dir: string, base: string, paths: readonly string[]): Promise<void>;
 }
 
 /** One path from `git status`: the two-letter porcelain code and the path (POSIX separators). */
@@ -232,6 +241,37 @@ export function createGitOps(exec: Exec): GitOps {
     },
     async fastForward(dir, ref) {
       await git(['merge', '-q', '--ff-only', ref], { cwd: dir });
+    },
+    async resetSoft(dir, ref) {
+      // why: only a commit id reaches git here, so nothing can be read as an option.
+      if (!/^[0-9a-f]{7,64}$/.test(ref))
+        throw new ToolError(`not a commit id: ${ref}`, { code: 'git_failed' });
+      await git(['reset', '-q', '--soft', ref], { cwd: dir });
+    },
+    async restorePathsTo(dir, base, paths) {
+      // GITOPS-RESTORE-PATHS: a resumed memory session starts from the files as they were when it began.
+      if (!/^[0-9a-f]{7,64}$/.test(base))
+        throw new ToolError(`not a commit id: ${base}`, { code: 'git_failed' });
+      for (const p of paths) {
+        const known = await git(['cat-file', '-e', `${base}:${p}`], { cwd: dir, allowFail: true });
+        if (known.code === 0) {
+          await git(['checkout', '-q', base, '--', p], { cwd: dir });
+          continue;
+        }
+        await git(['rm', '-q', '-r', '--cached', '--ignore-unmatch', '--', p], { cwd: dir });
+        rmSync(path.join(dir, p), { recursive: true, force: true });
+        // why: a store that did not exist at `base` must not leave empty folders that a fresh install trips over.
+        let parent = path.dirname(path.join(dir, p));
+        while (
+          path.relative(dir, parent) !== '' &&
+          !path.relative(dir, parent).startsWith('..') &&
+          existsSync(parent) &&
+          readdirSync(parent).length === 0
+        ) {
+          rmdirSync(parent);
+          parent = path.dirname(parent);
+        }
+      }
     },
     async countBetween(dir, from, to) {
       // why: only commit ids reach git here, so nothing can be read as an option (plan 025).

@@ -214,6 +214,18 @@ export function reduce(entries: readonly JournalEntry[], runId = '', input?: Run
           ),
         };
         break;
+      case 'memory.retry': {
+        // MEMORY-RESUME-STATE: an undone memory session runs its agent and its protected install again.
+        const again = [
+          `memory.${String(e['phase'])}.agent`,
+          `memory.${String(e['phase'])}.protected`,
+        ];
+        s = {
+          ...s,
+          steps: Object.fromEntries(Object.entries(s.steps).filter(([id]) => !again.includes(id))),
+        };
+        break;
+      }
       case 'repo.refresh':
         // why: a refresh (plan 025) reads the repository again, so the steps that checked, copied and
         // summarised it run again, and the new plan needs approving again.

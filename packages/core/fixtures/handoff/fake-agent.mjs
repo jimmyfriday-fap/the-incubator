@@ -31,7 +31,8 @@ if (phase) {
   // A new build's memory sessions (plan 075), whatever the coding mode is: the scaffold makes a minimal store
   // and commits it before any code; the bootstrap fills it and commits only the memory paths, leaving the
   // owner's build work alone. FAKE_MEMORY_BUILD: agents (also edits AGENTS.md), unverified (the report's
-  // verification fails), nothing (commits nothing).
+  // verification fails), nothing (commits nothing), half (leaves an uncommitted .memory/README.md and commits
+  // nothing, like a session killed part way).
   const quirk = process.env.FAKE_MEMORY_BUILD ?? '';
   const env = { ...process.env };
   for (const k of [
@@ -53,7 +54,10 @@ if (phase) {
   const today = /^TODAY: (.+)$/m.exec(prompt)?.[1] ?? '2026-01-01';
   const stated = /```text\n([\s\S]*?)\n```/.exec(prompt)?.[1]?.split('.')[0]?.trim() ?? 'nothing';
   let result;
-  if (quirk !== 'nothing') {
+  if (quirk === 'half') {
+    mkdirSync('.memory', { recursive: true });
+    writeFileSync(path.join('.memory', 'README.md'), 'half written\n');
+  } else if (quirk !== 'nothing') {
     const paths = [];
     const put = (p, text) => {
       mkdirSync(path.dirname(p), { recursive: true });

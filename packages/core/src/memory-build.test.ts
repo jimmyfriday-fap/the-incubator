@@ -149,4 +149,36 @@ describe('memory on a new build (plan 075)', () => {
     expect(state.parked).toMatchObject({ reason: 'memory_rules_broken' });
     expect(state.parked?.message).toContain('nothing was committed');
   }, 240_000);
+
+  it('undoes a half-written store and runs the memory session again when the owner resumes', async () => {
+    // MEMORY-RESUME-TEST
+    vi.stubEnv('FAKE_MEMORY_BUILD', 'half');
+    const { h, runId, dir, state } = await build();
+    expect(state.parked).toMatchObject({ reason: 'memory_rules_broken' });
+    expect(state.parked?.message).toContain('Resume to undo this attempt');
+    expect(existsSync(path.join(dir, '.memory', 'README.md'))).toBe(true);
+    vi.stubEnv('FAKE_MEMORY_BUILD', '');
+    const done = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(done.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(existsSync(path.join(dir, '.memory', 'README.md'))).toBe(false);
+    expect(existsSync(path.join(dir, '.memory', 'INDEX.md'))).toBe(true);
+    const retry = h.engine.entries(runId).find((e) => e.type === 'memory.retry');
+    expect(retry).toMatchObject({ phase: 'scaffold' });
+    expect(retry?.['undone']).toContain('.memory/README.md');
+    const subjects = (await out(['log', '--format=%s'], dir)).split('\n');
+    expect(subjects).toContain('mem(platform): scaffold memory infrastructure');
+    expect(subjects).toContain('mem(platform): bootstrap repo memory');
+  }, 240_000);
+
+  it('does not undo a memory session whose commits changed files outside the store', async () => {
+    vi.stubEnv('FAKE_MEMORY_BUILD', 'agents');
+    const { h, runId, dir, state } = await build();
+    expect(state.parked).toMatchObject({ reason: 'memory_rules_broken' });
+    const head = await out(['rev-parse', 'HEAD'], dir);
+    vi.stubEnv('FAKE_MEMORY_BUILD', '');
+    const again = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(again.parked).toMatchObject({ reason: 'memory_rules_broken' });
+    expect(again.parked?.message).toContain('cannot undo');
+    expect(await out(['rev-parse', 'HEAD'], dir)).toBe(head);
+  }, 240_000);
 });

@@ -380,3 +380,29 @@ describe('GitOps: removing a branch and a worktree (plan 069)', () => {
     expect(await git.deleteBranch(dir, 'incubator/tool')).toBe(true);
   });
 });
+
+describe('GitOps: undoing a memory attempt', () => {
+  it('moves the branch back and restores, deletes and prunes only the paths it is given', async () => {
+    // GITOPS-RESTORE-PATHS-TEST
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'gitops-undo-'));
+    await git.init(dir, 'main');
+    writeFileSync(path.join(dir, 'CLAUDE.md'), 'base\n');
+    await git.addAll(dir);
+    const base = await git.commit(dir, 'chore: base', ident);
+    mkdirSync(path.join(dir, '.memory', 'deep'), { recursive: true });
+    writeFileSync(path.join(dir, '.memory', 'INDEX.md'), 'index\n');
+    writeFileSync(path.join(dir, 'CLAUDE.md'), 'changed\n');
+    await git.addAll(dir);
+    await git.commit(dir, 'mem: attempt', ident);
+    writeFileSync(path.join(dir, '.memory', 'deep', 'half.md'), 'half\n');
+    writeFileSync(path.join(dir, 'owner.txt'), 'mine\n');
+    await expect(git.resetSoft(dir, '--hard')).rejects.toThrow(/not a commit id/);
+    await git.resetSoft(dir, base);
+    expect(await git.headSha(dir)).toBe(base);
+    await git.restorePathsTo(dir, base, ['CLAUDE.md', '.memory/INDEX.md', '.memory/deep/half.md']);
+    expect(readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8').trim()).toBe('base');
+    expect(existsSync(path.join(dir, '.memory'))).toBe(false);
+    expect(readFileSync(path.join(dir, 'owner.txt'), 'utf8')).toBe('mine\n');
+    expect(await git.status(dir)).toEqual([{ code: '??', path: 'owner.txt' }]);
+  });
+});

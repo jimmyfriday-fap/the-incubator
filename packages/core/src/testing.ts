@@ -242,6 +242,8 @@ export function faultyGit(inner: GitOps) {
         'fastForward',
         'deleteBranch',
         'worktreeRemove',
+        'resetSoft',
+        'restorePathsTo',
       ] as const
     ).map((m) => [m, wrap(m)]),
   ) as unknown as GitOps;
