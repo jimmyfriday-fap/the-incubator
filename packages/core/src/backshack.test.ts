@@ -280,6 +280,22 @@ describe('a backshack-tool run (ADR-030)', () => {
     expect(guide?.next.join(' ')).not.toContain('Push the branch from the Incubator');
   });
 
+  it('parks when the agent changed nothing instead of ending the run done, and the owner can leave it', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'idle');
+    const { h } = await backshackHarness();
+    const prepared = await h.engine.backshackPrepare({
+      narrative: REQUEST,
+      fit: { toolName: 'Order Export' },
+      rationale: ['A staged AI workflow for paying members.'],
+      surface: 'test',
+    });
+    const runId = h.engine.start({ ...prepared.input, yes: true });
+    const s = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(s.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    h.engine.submitCommit(runId, { action: 'leave' });
+    expect((await h.engine.resume(runId, new DefaultsPrompter())).state).toBe('DONE');
+  });
+
   it('proposes the contract’s group-guard lint as a check the owner can approve', async () => {
     const { h } = await backshackHarness();
     const prepared = await h.engine.backshackPrepare({

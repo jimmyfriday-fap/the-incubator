@@ -520,6 +520,22 @@ describe("update an existing solution in the owner's folder", () => {
     expect(existsSync(path.join(dir, '.memory'))).toBe(false);
   });
 
+  it('parks instead of finishing when the agent changed nothing, and ends only when the owner leaves it', async () => {
+    vi.stubEnv('FAKE_AGENT_MODE', 'idle');
+    const { h, ref, dir } = await seeded();
+    const runId = start(h, dir, ref);
+    const s = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(s.state).not.toBe('DONE');
+    expect(s.parked).toMatchObject({ state: 'COMMIT', reason: 'needs_commit' });
+    expect(s.parked?.message).toContain('nothing was delivered');
+    h.engine.submitCommit(runId, { action: 'leave' });
+    const done = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(done.state).toBe('DONE');
+    expect(h.engine.entries(runId).findLast((e) => e.type === 'run.done')).toMatchObject({
+      nothingToCommit: true,
+    });
+  });
+
   it('does not offer Add memory when the repository already has memory (plan 078)', async () => {
     const { h, ref, dir } = await seeded();
     mkdirSync(path.join(dir, '.memory'), { recursive: true });

@@ -2724,6 +2724,22 @@ export class Engine {
       const changes = await git.status(dir);
       if (changes.length === 0) {
         if (head === start.base) {
+          // why: an update run exists to change the repository; an agent that stopped without touching a file (it
+          // could not find the files its plan names, or asked a question and quit) has not delivered, so the run
+          // is not done. The owner ends it with `leave`, or continues coding afterwards. A new-solution run keeps
+          // its quiet finish.
+          if (s.input.kind === 'enhance' || this.isBackshack(s)) {
+            const after = this.continuedAt(runId);
+            const approval = this.entries(runId).findLast(
+              (e) => e.type === 'finish.approve' && e.seq > after,
+            );
+            if (approval?.['action'] !== 'leave')
+              throw new ParkError(
+                'needs_commit',
+                'the agent finished without changing any file: nothing was delivered. Choose "leave" to end the run here (continue coding runs the agent again), or read the closing message of the agent first',
+                { files: 0 },
+              );
+          }
           done({ sha: null, branch: start.branch, none: true });
           this.record(runId, 'run.done', { nothingToCommit: true });
           return;
