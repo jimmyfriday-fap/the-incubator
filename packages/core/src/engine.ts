@@ -1749,7 +1749,11 @@ export class Engine {
    * The files an enhancement request most plausibly touches. A Backshack tool run builds one new package, so its
    * targets come from the tool's slug (ADR-030); every other run matches the request against the scan.
    */
-  private targetsFor(runId: string, scan: RepoScan, f: Pick<Feature, 'id' | 'summary'>): string[] {
+  private targetsFor(
+    runId: string,
+    scan: RepoScan,
+    f: Parameters<typeof resolveTargets>[1],
+  ): string[] {
     const s = this.state(runId);
     return this.isBackshack(s) && s.input.backshack
       ? backshackTargets(s.input.backshack.fit.toolSlug)
