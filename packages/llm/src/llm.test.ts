@@ -258,6 +258,20 @@ describe('CliAdapter (real subprocess)', () => {
     expect(argsOf()).not.toContain('--model');
   });
 
+  it('launches discovery without the owner’s account connectors when the CLI has the flag', async () => {
+    const help = `${CLAUDE_HELP}
+  --strict-mcp-config  Only use MCP servers from --mcp-config
+`;
+    const dir = fakeCliDir(help, JSON.stringify({ type: 'result', result: '{"answer": 1}' }));
+    const adapter = new CliAdapter({ id: 'claude-cli', bin: 'fake-agent', exec: execWith(dir) });
+    await complete(adapter, req());
+    const call = JSON.parse(readFileSync(path.join(dir, 'last-call.json'), 'utf8')) as {
+      args: string[];
+    };
+    expect(call.args).toContain('--strict-mcp-config');
+    expect(call.args).not.toContain('--mcp-config');
+  });
+
   it('runs headless with tools disabled, an empty cwd, allowlisted env and stdin prompt', async () => {
     const reply = JSON.stringify({
       type: 'result',

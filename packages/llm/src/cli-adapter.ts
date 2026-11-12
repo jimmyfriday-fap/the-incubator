@@ -135,6 +135,9 @@ export class CliAdapter implements LlmAdapter {
     if (model && f.model) args.push(f.model, model);
     const contract = `Reply with only one JSON value that validates against this JSON Schema (${req.schemaName}):\n${JSON.stringify(req.schema)}`;
     let stdin = `${req.user}\n\n${contract}\n`;
+    // why: the owner's account connectors attach to every `claude` launch and their tool definitions are re-read on
+    // every reply (live run 2: ~450k tokens). With no `--mcp-config` given, this flag leaves a discovery call none.
+    if (f.strictMcp) args.push(f.strictMcp);
     if (f.systemPrompt) args.push(f.systemPrompt, req.system);
     else stdin = `${req.system}\n\n---\n\n${stdin}`;
     const cwd = await mkdtemp(path.join(tmpdir(), 'incubator-llm-'));

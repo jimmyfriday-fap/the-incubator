@@ -188,6 +188,8 @@ import {
   launchHandoff,
   remainingTickets,
   resolveCeilings,
+  DEFAULT_CONTEXT_CEILING,
+  DEFAULT_TOKEN_CEILING,
   type HandoffAgent,
   type HandoffOutcome,
   type HandoffProgress,
@@ -197,7 +199,6 @@ import {
 } from './handoff.js';
 import { CHECK_NOT_RUN, checkBudgetMs, runChecks, type CheckRun } from './check-run.js';
 import {
-  BACKSHACK_TOKEN_CEILING,
   RECOMMENDATION_FILE,
   backshackChecks,
   backshackTargets,
@@ -4854,13 +4855,15 @@ export class Engine {
     const caps = await this.deps.handoff.probe(AGENT_ADAPTERS[agent]);
     if (!caps.installed || !caps.path)
       throw new PolicyError(`${AGENT_ADAPTERS[agent]} is not installed`, { code: 'agent_missing' });
-    // The owner's ceilings (`agents.ceilings`) win over the spec's; a Backshack build also gets a default token cap,
-    // because the dollar ceiling cannot stop a run (the agent reports its cost only when it finishes).
+    // The owner's ceilings (`agents.ceilings`) win over the spec's. Every run gets a default token cap, because the
+    // dollar ceiling cannot stop a run (the agent reports its cost only when it finishes), and a default per-reply
+    // context ceiling, so a session that has outgrown its working memory ends and the next part starts fresh.
     const ceilings = resolveCeilings(
       spec.agents.runCeilings,
       chosen?.ceilings,
       { ...DEFAULT_RUN_CEILINGS, toolCalls: 400, usd: 10 },
-      this.isBackshack(s) ? BACKSHACK_TOKEN_CEILING : 0,
+      DEFAULT_TOKEN_CEILING,
+      DEFAULT_CONTEXT_CEILING,
     );
     // ADR-030: a Backshack run's plan was committed in the run's clone only (deliverBackshack).
     const planRoot = this.isBackshack(s)
@@ -4980,6 +4983,8 @@ export class Engine {
       argv: plan.argv,
       model: plan.model ?? null,
       ceilings: plan.ceilings,
+      // 'none' = no MCP connectors attach (`--strict-mcp-config`); 'owner' = the CLI lacks the flag, so the owner's attach.
+      mcp: plan.argv.some((a) => a === '--strict-mcp-config') ? 'none' : 'owner',
       ticket,
       checks,
     });

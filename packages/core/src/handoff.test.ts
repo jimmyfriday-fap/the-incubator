@@ -7,6 +7,8 @@ import { nodeExec } from '@incubator/runtime';
 import type { Capabilities } from '@incubator/llm';
 import {
   CeilingMonitor,
+  DEFAULT_CONTEXT_CEILING,
+  DEFAULT_TOKEN_CEILING,
   buildHandoffArgv,
   cleanAgentText,
   continuationText,
@@ -366,6 +368,73 @@ describe('handoff', () => {
     expect(resolveCeilings(spec, 'not an object', dflt)).not.toHaveProperty('tokens');
   });
 
+  it('resolves the per-reply context ceiling: the owner wins, 0 turns it off, absent means no cap', () => {
+    const spec = { turns: 60, toolCalls: 0, minutes: 30, usd: 10 };
+    const dflt = { turns: 150, toolCalls: 400, minutes: 45, usd: 10 };
+    expect(resolveCeilings(spec, undefined, dflt)).not.toHaveProperty('context');
+    expect(resolveCeilings(spec, undefined, dflt, 0, DEFAULT_CONTEXT_CEILING)).toMatchObject({
+      context: 200_000,
+    });
+    expect(resolveCeilings(spec, { context: 120_000 }, dflt, 0, 200_000)).toMatchObject({
+      context: 120_000,
+    });
+    expect(resolveCeilings(spec, { context: 0 }, dflt, 0, 200_000)).not.toHaveProperty('context');
+    expect(resolveCeilings(spec, { context: 'big' }, dflt, 0, 200_000)).toMatchObject({
+      context: 200_000,
+    });
+    expect(DEFAULT_TOKEN_CEILING).toBe(15_000_000);
+  });
+
+  it('tracks the context of each reply (first, peak, last) and trips the context ceiling', () => {
+    const m = new CeilingMonitor(
+      { turns: 99, toolCalls: 99, minutes: 1, usd: 99, context: 100_000 },
+      false,
+    );
+    const reply = (id: string, u: Record<string, number>, parent: string | null = null) =>
+      `${JSON.stringify({ type: 'assistant', parent_tool_use_id: parent, message: { id, content: [{ type: 'text', text: 'x' }], usage: u } })}
+`;
+    // context = input + cache writes + cache reads of the reply; output does not count.
+    expect(
+      m.feed(
+        reply('a', {
+          input_tokens: 2,
+          output_tokens: 900,
+          cache_creation_input_tokens: 18,
+          cache_read_input_tokens: 20_000,
+        }),
+      ),
+    ).toBeNull();
+    expect(m.context).toEqual({ first: 20_020, peak: 20_020, last: 20_020 });
+    expect(m.feed(reply('b', { input_tokens: 5, cache_read_input_tokens: 60_000 }))).toBeNull();
+    // A sub-agent's conversation is not the session's context.
+    expect(m.feed(reply('c', { input_tokens: 400_000 }, 'toolu_1'))).toBeNull();
+    expect(m.feed(reply('d', { input_tokens: 5, cache_read_input_tokens: 30_000 }))).toBeNull();
+    expect(m.context).toEqual({ first: 20_020, peak: 60_005, last: 30_005 });
+    expect(m.feed(reply('e', { input_tokens: 5, cache_read_input_tokens: 100_000 }))).toBe(
+      'context 100,005 > 100,000',
+    );
+    expect(m.compactions).toBe(0);
+  });
+
+  it('ends the part when the agent compacts its own conversation, and counts it', () => {
+    const m = new CeilingMonitor(
+      { turns: 99, toolCalls: 99, minutes: 1, usd: 99, context: 200_000 },
+      false,
+    );
+    expect(
+      m.feed(`${JSON.stringify({ type: 'system', subtype: 'compact_boundary' })}
+`),
+    ).toBe('context compacted 1 time');
+    expect(m.compactions).toBe(1);
+    // With the context ceiling off a compaction is only counted.
+    const off = new CeilingMonitor({ turns: 99, toolCalls: 99, minutes: 1, usd: 99 }, false);
+    expect(
+      off.feed(`${JSON.stringify({ type: 'system', subtype: 'compact_boundary' })}
+`),
+    ).toBeNull();
+    expect(off.compactions).toBe(1);
+  });
+
   it('replays the shape of a real run that was stopped too early: 61 events, 27 replies (plan 035)', () => {
     const m = new CeilingMonitor({ turns: 60, toolCalls: 400, minutes: 45, usd: 10 }, false);
     let events = 0;
@@ -422,6 +491,33 @@ describe('handoff', () => {
     expect(h.engine.entries(runId).map((e) => e.type)).toEqual(
       expect.arrayContaining(['handoff.launch', 'handoff.result']),
     );
+  });
+
+  it('launches every agent without the owner’s MCP connectors, with default ceilings for context and tokens, and records the context', async () => {
+    const isolating = caps({ ...agentCaps.flags, strictMcp: '--strict-mcp-config' });
+    const { h, runId } = await publishedRun('complete', undefined, { probe: () => isolating });
+    const out = await h.engine.launchHandoff(runId);
+    const launch = h.engine.entries(runId).findLast((e) => e.type === 'handoff.launch')!;
+    const argv = launch['argv'] as string[];
+    expect(argv).toContain('--strict-mcp-config');
+    expect(argv).not.toContain('--mcp-config');
+    expect(launch['mcp']).toBe('none');
+    expect(launch['ceilings']).toMatchObject({
+      tokens: DEFAULT_TOKEN_CEILING,
+      context: DEFAULT_CONTEXT_CEILING,
+    });
+    // The outcome carries the context overhead of the setup, so every run shows its own.
+    expect(out).toMatchObject({ context: { first: 0, peak: 0, last: 0 }, compactions: 0 });
+    expect(h.engine.entries(runId).findLast((e) => e.type === 'handoff.result')).toMatchObject({
+      context: { first: 0, peak: 0, last: 0 },
+      compactions: 0,
+    });
+    // A CLI without the flag is launched as before, and the journal says the owner's connectors may attach.
+    const plain = await publishedRun('complete');
+    await plain.h.engine.launchHandoff(plain.runId);
+    expect(
+      plain.h.engine.entries(plain.runId).findLast((e) => e.type === 'handoff.launch'),
+    ).toMatchObject({ mcp: 'owner' });
   });
 
   it('passes the chosen coding model, records the one that ran, and lists the models used', async () => {

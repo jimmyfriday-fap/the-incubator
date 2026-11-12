@@ -14,7 +14,6 @@ import type { Capabilities } from '@incubator/llm';
 import { nodeExec, type Exec } from '@incubator/runtime';
 import { completeSpec, type IncubatorSpec } from '@incubator/spec';
 import {
-  BACKSHACK_TOKEN_CEILING,
   RECOMMENDATION_FILE,
   backshackFit,
   backshackPaths,
@@ -24,7 +23,7 @@ import {
 } from './backshack.js';
 import type { IncubatorConfig } from './config.js';
 import { validateChecks } from './checks.js';
-import { handoffPrompt } from './handoff.js';
+import { DEFAULT_CONTEXT_CEILING, DEFAULT_TOKEN_CEILING, handoffPrompt } from './handoff.js';
 import { Portfolio } from './portfolio.js';
 import { DefaultsPrompter } from './prompter.js';
 import { enhanceFixtureDir, fakePublishEngine, seedExistingRepo } from './testing.js';
@@ -276,7 +275,7 @@ describe('a backshack-tool run (ADR-030)', () => {
     expect(prompts.some((p) => p.includes('# Plan '))).toBe(true);
     // The agent is held to a token cap that stops it mid-run, and what it processed is recorded for tracking.
     expect(h.engine.entries(runId).find((e) => e.type === 'handoff.launch')).toMatchObject({
-      ceilings: { tokens: BACKSHACK_TOKEN_CEILING },
+      ceilings: { tokens: DEFAULT_TOKEN_CEILING, context: DEFAULT_CONTEXT_CEILING },
     });
     expect(h.engine.entries(runId).find((e) => e.type === 'handoff.result')).toMatchObject({
       tokens: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, total: 0 },

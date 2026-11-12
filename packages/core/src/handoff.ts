@@ -28,7 +28,26 @@ export interface Ceilings {
    * stream arrives, so it stops a run mid-way. Absent or 0 means no cap. It is a proxy for plan usage, not dollars.
    */
   tokens?: number;
+  /**
+   * The most tokens one reply may carry as context (input + cache writes + cache reads of that reply). A session
+   * that grows past it is expensive on every further reply, so the part ends and the next one starts fresh.
+   * Absent or 0 means no cap.
+   */
+  context?: number;
 }
+
+/**
+ * The token cap every run gets when the owner set none (`agents.ceilings.tokens`). Live run 2 processed 36.3M tokens
+ * (75 replies, mostly cache reads of a large context) for about $27 at list price, so 15M is roughly $11 on that one
+ * run. A proxy for plan usage, not dollars: tune it from the `handoff.result` journal entries.
+ */
+export const DEFAULT_TOKEN_CEILING = 15_000_000;
+
+/**
+ * The per-reply context a session may reach before its part ends (`agents.ceilings.context`). A healthy session on a
+ * lean setup stays well under it; live run 2 sat at about 500k per reply.
+ */
+export const DEFAULT_CONTEXT_CEILING = 200_000;
 
 /** The ceilings the owner may set in `~/.incubator/config.json` (`agents.ceilings`). Unset keeps the spec's value. */
 export type OwnerCeilings = Partial<Record<keyof Ceilings, number>>;
@@ -36,13 +55,14 @@ export type OwnerCeilings = Partial<Record<keyof Ceilings, number>>;
 /**
  * The ceilings a run is held to. The owner's own choice wins over the spec (as the coding model does, ADR-029);
  * a value that is not a positive number is ignored, and for `tokens` an explicit 0 turns the cap off.
- * `tokenDefault` is the cap a run gets when the owner set none (a Backshack build, ADR-030).
+ * `tokenDefault` and `contextDefault` are the caps a run gets when the owner set none; an explicit 0 turns either off.
  */
 export function resolveCeilings(
   spec: { turns: number; toolCalls: number; minutes: number; usd: number },
   owner: unknown,
   defaults: { turns: number; toolCalls: number; minutes: number; usd: number },
   tokenDefault = 0,
+  contextDefault = 0,
 ): Ceilings {
   const o = (owner !== null && typeof owner === 'object' ? owner : {}) as Record<string, unknown>;
   const num = (v: unknown): number | undefined =>
@@ -53,12 +73,14 @@ export function resolveCeilings(
     return spec[key] > 0 ? spec[key] : defaults[key];
   };
   const tokens = num(o['tokens']) ?? tokenDefault;
+  const context = num(o['context']) ?? contextDefault;
   return {
     turns: pick('turns'),
     toolCalls: pick('toolCalls'),
     minutes: pick('minutes'),
     usd: pick('usd'),
     ...(tokens > 0 ? { tokens } : {}),
+    ...(context > 0 ? { context } : {}),
   };
 }
 
@@ -298,6 +320,13 @@ export class CeilingMonitor {
   resultText: string | null = null;
   /** The model the agent says it is using (its `system` init event). */
   model: string | null = null;
+  /**
+   * What each reply carried as context (input + cache writes + cache reads), of the main conversation: the first
+   * reply (the fixed overhead of the setup), the largest, and the latest. All 0 before the first reply.
+   */
+  context: ContextUse = { first: 0, peak: 0, last: 0 };
+  /** How many times the agent compacted its own conversation (`compact_boundary`): it lost its working memory. */
+  compactions = 0;
   #buf = '';
   /** The replies already counted as turns (plan 035). */
   #replies = new Set<string>();
@@ -342,6 +371,7 @@ export class CeilingMonitor {
     let e: {
       type?: string;
       subtype?: string;
+      parent_tool_use_id?: unknown;
       model?: unknown;
       message?: { id?: unknown; content?: { type?: string; text?: unknown }[]; usage?: unknown };
       result?: unknown;
@@ -356,6 +386,7 @@ export class CeilingMonitor {
     }
     if (e.type === 'system' && e.subtype === 'init' && typeof e.model === 'string')
       this.model = cleanAgentText(e.model, 100);
+    if (e.type === 'system' && e.subtype === 'compact_boundary') this.compactions++;
     if (e.type === 'assistant') {
       // why: Claude's stream sends one `assistant` event per content block of a reply, all with the reply's
       // message id; a turn is one reply (plan 035). Events without an id count one turn each, as before.
@@ -365,7 +396,12 @@ export class CeilingMonitor {
         this.turns++;
       }
       const usage = readUsage(e.message?.usage);
-      if (usage) this.addUsage(id, usage);
+      if (usage) {
+        this.addUsage(id, usage);
+        // why: a sub-agent has its own conversation; only the main one is the session whose growth costs money.
+        if (e.parent_tool_use_id === null || e.parent_tool_use_id === undefined)
+          this.noteContext(usage.input + usage.cacheWrite + usage.cacheRead);
+      }
       const blocks = e.message?.content ?? [];
       this.toolCalls += blocks.filter((c) => c.type === 'tool_use').length;
       const text = blocks.find(
@@ -383,7 +419,12 @@ export class CeilingMonitor {
     if (typeof cost === 'number') this.costUsd = cost;
     if (this.tripped) return;
     const cap = this.ceilings.tokens ?? 0;
-    if (!this.turnsByFlag && this.turns > this.ceilings.turns)
+    const contextCap = this.ceilings.context ?? 0;
+    if (this.compactions > 0 && contextCap > 0)
+      this.tripped = `context compacted ${this.compactions} time${this.compactions === 1 ? '' : 's'}`;
+    else if (contextCap > 0 && this.context.last > contextCap)
+      this.tripped = `context ${count(this.context.last)} > ${count(contextCap)}`;
+    else if (!this.turnsByFlag && this.turns > this.ceilings.turns)
       this.tripped = `turns ${this.turns} > ${this.ceilings.turns}`;
     else if (this.toolCalls > this.ceilings.toolCalls)
       this.tripped = `tool calls ${this.toolCalls} > ${this.ceilings.toolCalls}`;
@@ -393,6 +434,13 @@ export class CeilingMonitor {
       this.tripped = `cost ~$${(this.estimatedUsd ?? 0).toFixed(2)} > $${this.ceilings.usd} (estimated)`;
     else if (cap > 0 && this.tokens.total > cap)
       this.tripped = `tokens ${count(this.tokens.total)} > ${count(cap)}`;
+  }
+
+  private noteContext(n: number): void {
+    if (n <= 0) return;
+    if (this.context.first === 0) this.context.first = n;
+    this.context.peak = Math.max(this.context.peak, n);
+    this.context.last = n;
   }
 
   /** A reply's usage replaces what was counted for the same reply; an event without an id adds its own. */
@@ -431,6 +479,13 @@ function readUsage(raw: unknown): Usage4 | null {
   };
 }
 
+/** The context a session carried per reply, in tokens (see `CeilingMonitor.context`). */
+export interface ContextUse {
+  first: number;
+  peak: number;
+  last: number;
+}
+
 export interface HandoffOutcome {
   exitCode: number | null;
   turns: number;
@@ -438,6 +493,10 @@ export interface HandoffOutcome {
   costUsd: number | null;
   /** What the agent processed, by kind: the usage figures to track, since the cost is plan usage, not an API bill. */
   tokens: TokenUsage;
+  /** The context per reply: `first` is the fixed overhead of the setup, `peak` and `last` show how far the session grew. */
+  context: ContextUse;
+  /** How many times the agent compacted its own conversation. */
+  compactions: number;
   tripped: string | null;
   /** The owner stopped the agent (Stop in the app, Ctrl+C): the work is probably unfinished. */
   stopped: boolean;
@@ -578,6 +637,8 @@ export async function launchHandoff(
     toolCalls: monitor.toolCalls,
     costUsd: monitor.costUsd,
     tokens: monitor.tokens,
+    context: { ...monitor.context },
+    compactions: monitor.compactions,
     tripped,
     stopped: Boolean(opts.signal?.aborted) && !monitor.tripped,
     model: monitor.model,
