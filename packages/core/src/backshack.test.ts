@@ -206,6 +206,14 @@ describe('the contract in the coding prompt (ADR-030)', () => {
     expect(p.indexOf('**Step 1:** do it')).toBeLessThan(p.indexOf(CONTRACT.trim()));
     expect(handoffPrompt(plan, undefined, { contract: CONTRACT })).toContain(CONTRACT.trim());
   });
+
+  it('keeps tests out of backshack-dev: a test step becomes scenarios for backshack-generator (plan 080)', () => {
+    const p = handoffPrompt(plan, { checks: [] }, { contract: CONTRACT });
+    expect(p).toContain('Tests live only in backshack-generator');
+    expect(p).toContain('/test-newslug-scaffolding');
+    for (const other of [handoffPrompt(plan), handoffPrompt(plan, { checks: [] })])
+      expect(other).not.toContain('Tests live only in backshack-generator');
+  });
 });
 
 describe('a backshack-tool run (ADR-030)', () => {

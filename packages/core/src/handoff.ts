@@ -18,7 +18,10 @@ export interface Ceilings {
   turns: number;
   toolCalls: number;
   minutes: number;
-  /** Dollars at list price. The agent reports its cost only in its final message, so this stops nothing mid-run. */
+  /**
+   * Dollars at list price. Mid-run the monitor estimates it from the tokens and the model (plan 080); the agent's own
+   * figure, sent in its final message, wins once it arrives.
+   */
   usd: number;
   /**
    * Tokens the agent may process: input + output + cache writes + cache reads, counted reply by reply as the
@@ -69,6 +72,37 @@ export interface TokenUsage {
 }
 
 const count = (n: number): string => n.toLocaleString('en-US');
+
+/** Plan 080: list prices in dollars per million tokens, from the claude-api reference (cached 2026-11-03). */
+export const LIST_PRICES: Record<string, { input: number; output: number; cacheRead: number }> = {
+  'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2 },
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.1 },
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheRead: 0.01 },
+  'claude-opus-5': { input: 5, output: 25, cacheRead: 0.5 },
+  'claude-opus-4-8': { input: 5, output: 25, cacheRead: 0.5 },
+  'claude-opus-4-7': { input: 5, output: 25, cacheRead: 0.5 },
+  'claude-opus-4-6': { input: 5, output: 25, cacheRead: 0.5 },
+  'claude-sonnet-5': { input: 2, output: 10, cacheRead: 0.2 },
+  'claude-sonnet-4-6': { input: 3, output: 15, cacheRead: 0.3 },
+  'claude-haiku-4-5': { input: 1, output: 5, cacheRead: 0.1 },
+};
+
+/**
+ * Plan 080: what the tokens so far cost at list price, or null when the model has no price. Cache writes are priced
+ * at twice the input rate (the 1-hour cache), so the estimate errs toward stopping early.
+ */
+export function estimateCostUsd(model: string | null, t: TokenUsage): number | null {
+  if (!model) return null;
+  const p = LIST_PRICES[model.replace(/\[.*\]$/, '').trim()];
+  if (!p) return null;
+  return (
+    (t.input * p.input +
+      t.output * p.output +
+      t.cacheWrite * p.input * 2 +
+      t.cacheRead * p.cacheRead) /
+    1_000_000
+  );
+}
 
 export interface HandoffPlan {
   agent: HandoffAgent;
@@ -278,6 +312,11 @@ export class CeilingMonitor {
     return { ...u, total: u.input + u.output + u.cacheWrite + u.cacheRead };
   }
 
+  /** Plan 080: the cost so far at list price, from the tokens and the model; null when the model has no price. */
+  get estimatedUsd(): number | null {
+    return estimateCostUsd(this.model, this.tokens);
+  }
+
   constructor(
     private readonly ceilings: Ceilings,
     private readonly turnsByFlag: boolean,
@@ -345,6 +384,8 @@ export class CeilingMonitor {
       this.tripped = `tool calls ${this.toolCalls} > ${this.ceilings.toolCalls}`;
     else if (this.costUsd !== null && this.costUsd > this.ceilings.usd)
       this.tripped = `cost $${this.costUsd} > $${this.ceilings.usd}`;
+    else if (this.costUsd === null && (this.estimatedUsd ?? 0) > this.ceilings.usd)
+      this.tripped = `cost ~$${(this.estimatedUsd ?? 0).toFixed(2)} > $${this.ceilings.usd} (estimated)`;
     else if (cap > 0 && this.tokens.total > cap)
       this.tripped = `tokens ${count(this.tokens.total)} > ${count(cap)}`;
   }

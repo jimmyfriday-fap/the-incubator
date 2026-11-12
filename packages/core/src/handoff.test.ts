@@ -10,6 +10,7 @@ import {
   buildHandoffArgv,
   cleanAgentText,
   continuationText,
+  estimateCostUsd,
   handoffPrompt,
   HANDOFF_ALLOWED_TOOLS,
   remainingTickets,
@@ -259,6 +260,44 @@ describe('handoff', () => {
     expect(m.feed(reply('msg_3', use(500_100)))).toBe('tokens 1,000,120 > 1,000,000');
     expect(m.costUsd).toBeNull();
     expect(m.tripped).toBe('tokens 1,000,120 > 1,000,000');
+  });
+
+  it('trips the dollar ceiling mid-stream on the list-price estimate, before any cost is reported (plan 080)', () => {
+    const m = new CeilingMonitor({ turns: 99, toolCalls: 99, minutes: 1, usd: 1 }, false);
+    m.feed(`${JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-opus-5-5' })}\n`);
+    const reply = (id: string, output: number) =>
+      `${JSON.stringify({ type: 'assistant', message: { id, content: [], usage: { output_tokens: output } } })}\n`;
+    // 40,000 output tokens at $20 per million is $0.80: under the $1 ceiling.
+    expect(m.feed(reply('msg_1', 40_000))).toBeNull();
+    expect(m.estimatedUsd).toBeCloseTo(0.8, 6);
+    // 20,000 more makes $1.20: over it.
+    expect(m.feed(reply('msg_2', 20_000))).toBe('cost ~$1.20 > $1 (estimated)');
+    expect(m.costUsd).toBeNull();
+  });
+
+  it('never trips on an estimate for a model it has no price for (plan 080)', () => {
+    const m = new CeilingMonitor({ turns: 99, toolCalls: 99, minutes: 1, usd: 1 }, false);
+    m.feed(`${JSON.stringify({ type: 'system', subtype: 'init', model: 'fake-agent-model' })}\n`);
+    m.feed(
+      `${JSON.stringify({ type: 'assistant', message: { id: 'a', content: [], usage: { output_tokens: 50_000_000 } } })}\n`,
+    );
+    expect(m.estimatedUsd).toBeNull();
+    expect(m.tripped).toBeNull();
+  });
+
+  it('prices tokens at list price, cache writes at twice the input rate (plan 080)', () => {
+    const t = {
+      input: 1_000_000,
+      output: 1_000_000,
+      cacheWrite: 1_000_000,
+      cacheRead: 1_000_000,
+      total: 4_000_000,
+    };
+    // Sonnet 5.5: $2 input + $10 output + $4 cache write + $0.10 cache read.
+    expect(estimateCostUsd('claude-sonnet-5-5', t)).toBeCloseTo(16.1, 6);
+    expect(estimateCostUsd('claude-sonnet-5-5[1m]', t)).toBeCloseTo(16.1, 6);
+    expect(estimateCostUsd('gpt-5', t)).toBeNull();
+    expect(estimateCostUsd(null, t)).toBeNull();
   });
 
   it('takes the final token totals from the result event, and has no cap unless one is set', () => {
