@@ -1425,7 +1425,12 @@ export class Engine {
         (ref ? `https://github.com/${ref.owner}/${ref.name}` : null);
       let project = pf.match({ markerId: dir ? readMarker(dir) : null, remote, dir });
       if (!project) {
-        const base = dir ? path.basename(dir) : (ref?.name ?? '');
+        // why: a Backshack tool is built in a worktree named after the tool, but the project is backshack-dev itself.
+        const base = this.isBackshack(s)
+          ? path.basename(this.backshackPaths().devRepo)
+          : dir
+            ? path.basename(dir)
+            : (ref?.name ?? '');
         project = pf.create({
           name: base || 'New project',
           summary: input.kind === 'new' ? sanitizeRequest(input.narrative ?? '', 240) : '',

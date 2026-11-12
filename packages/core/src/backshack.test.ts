@@ -25,6 +25,7 @@ import {
 import type { IncubatorConfig } from './config.js';
 import { validateChecks } from './checks.js';
 import { handoffPrompt } from './handoff.js';
+import { Portfolio } from './portfolio.js';
 import { DefaultsPrompter } from './prompter.js';
 import { enhanceFixtureDir, fakePublishEngine, seedExistingRepo } from './testing.js';
 
@@ -81,13 +82,14 @@ function generatorRepo(contract: string | null = CONTRACT): string {
   return dir;
 }
 
-async function backshackHarness(opts: { contract?: string | null } = {}) {
+async function backshackHarness(opts: { contract?: string | null; portfolio?: boolean } = {}) {
   const prompts: string[] = [];
   const config: IncubatorConfig = {};
   const h = fakePublishEngine({
     handoff: { exec: recordingExec(prompts), probe: () => Promise.resolve(agentCaps) },
     llm: { dir: enhanceFixtureDir('export-orders') },
     config: () => config,
+    ...(opts.portfolio ? { portfolio: true } : {}),
   });
   // The seeded repository stands in for backshack-dev: a clone whose origin has main.
   const { ref, dir } = await seedExistingRepo(
@@ -278,6 +280,22 @@ describe('a backshack-tool run (ADR-030)', () => {
     const guide = (await h.engine.finishDetail(runId))?.whatNow;
     expect(guide?.title).toBe('What now: order-export');
     expect(guide?.next.join(' ')).not.toContain('Push the branch from the Incubator');
+  });
+
+  it('files the run under the repository (backshack-dev), not under the tool worktree it was built in', async () => {
+    const { h, devRepo } = await backshackHarness({ portfolio: true });
+    const prepared = await h.engine.backshackPrepare({
+      narrative: REQUEST,
+      fit: { toolName: 'Order Export' },
+      rationale: ['A staged AI workflow for paying members.'],
+      surface: 'test',
+    });
+    const runId = h.engine.start({ ...prepared.input, yes: true });
+    await h.engine.advance(runId, new DefaultsPrompter());
+    const projects = new Portfolio(h.home).list();
+    expect(projects).toHaveLength(1);
+    expect(projects[0]!.name).toBe(path.basename(devRepo));
+    expect(projects[0]!.name).not.toContain('order-export');
   });
 
   it('parks when the agent changed nothing instead of ending the run done, and the owner can leave it', async () => {
