@@ -45,6 +45,14 @@ import { MAX_ROUNDS, questionIssues, selectQuestions } from './discovery/questio
 import type { JournalEntry } from './journal.js';
 import { loadPrompt } from './prompts.js';
 import { inspectFolder, type FolderPurpose, type FolderVerdict } from './folders.js';
+import { readStoreSystem } from './memory-adopt.js';
+import {
+  BACKSHACK_SYSTEM_REPOS,
+  findSystemRepos,
+  sameFolder,
+  userStoreDirWarning,
+  type SystemRepoRow,
+} from './backshack-system.js';
 import {
   agentReport,
   draftMessage,
@@ -226,6 +234,8 @@ import {
   prefillIsolationTerms,
   seedVersion,
   MEMORY_BUILD_ALLOWED_TOOLS,
+  MEMBER_NAME,
+  repoNameFromRemote,
   allowedMemberPath,
   manifestMembers,
   memoryStoreAllowedTools,
@@ -459,6 +469,80 @@ export class Engine {
   /** The systems the portfolio knows, for the Add memory and new-build forms (plan 076). */
   memorySystems(): MemorySystem[] {
     return this.deps.portfolio?.systems() ?? [];
+  }
+
+  /**
+   * Registers a memory store that already exists (built by hand) with the portfolio (plan 079 WI-2). Reads the store and
+   * the members' folders; writes nothing in the store or in any member. Running it again replaces the record.
+   */
+  async adoptMemorySystem(storeDir: string): Promise<{ system: MemorySystem; matched: number }> {
+    const pf = this.deps.portfolio;
+    if (!pf)
+      throw new PolicyError('the portfolio is not available, so a store cannot be adopted', {
+        code: 'no_portfolio',
+      });
+    const found = readStoreSystem(storeDir);
+    const today = this.deps.clock.now().toISOString().slice(0, 10);
+    const members: MemorySystem['members'] = [];
+    let matched = 0;
+    for (const m of found.members) {
+      const project = existsSync(m.dir) ? await this.portfolioFor(m.dir) : undefined;
+      if (project) {
+        matched += 1;
+        const record: NonNullable<PortfolioProject['memory']> = {
+          mode: 'member',
+          system: found.name,
+          store: found.store,
+          seedVersion: found.seedVersion,
+          commitPolicy: found.storeCommitPolicy,
+          installedAt: today,
+          report: 'adopted an existing store',
+        };
+        pf.update(project.id, (p) => {
+          p.memory = record;
+        });
+      }
+      members.push({ name: m.repo, dir: m.dir, projectId: project?.id ?? null });
+    }
+    const system = pf.saveSystem({
+      name: found.name,
+      store: found.store,
+      remote: await this.remoteOf(found.store),
+      seedVersion: found.seedVersion,
+      storeCommitPolicy: found.storeCommitPolicy,
+      manifest: found.manifest,
+      members,
+    });
+    return { system, matched };
+  }
+
+  /**
+   * The built-in list of a system's repositories, each with its folder on this computer and whether it is a member of the
+   * adopted store (plan 079 WI-2). Only "backshack". Read only.
+   */
+  async memorySystemRepos(
+    name: string,
+    opts: { root?: string; settingsFile?: string } = {},
+  ): Promise<{ root: string; rows: (SystemRepoRow & { member: boolean })[]; warnings: string[] }> {
+    if (name !== 'backshack')
+      throw new PolicyError(`no built-in list for ${name}`, { code: 'usage' });
+    const adopted = this.deps.portfolio?.system(name);
+    const root = opts.root ? path.resolve(opts.root) : adopted ? path.dirname(adopted.store) : null;
+    if (!root)
+      throw new PolicyError('pass --root <the folder that holds the Backshack repositories>', {
+        code: 'usage',
+      });
+    const memberDirs = (adopted?.members ?? []).map((x) => x.dir);
+    const found = await findSystemRepos(root, BACKSHACK_SYSTEM_REPOS, {
+      storeMembers: memberDirs,
+      remoteOf: (d) => this.remoteOf(d),
+    });
+    const rows = found.map((r) => ({
+      ...r,
+      member: r.dir !== null && memberDirs.some((d) => sameFolder(d, r.dir!)),
+    }));
+    const warn = userStoreDirWarning(opts.settingsFile);
+    return { root, rows, warnings: warn ? [warn] : [] };
   }
 
   /** A run that starts from an existing, complete spec (for `publish <spec>` and scaffold runs). */
@@ -3737,7 +3821,7 @@ export class Engine {
     const git = this.deps.publish!.git;
     const chosen = new Set(m.members.map((x) => x.name));
     for (const n of names) {
-      if (!/^[a-z0-9][a-z0-9._-]*$/i.test(n))
+      if (!MEMBER_NAME.test(n))
         throw new PolicyError(`"${n}" is not a repository folder name`, { code: 'bad_manifest' });
       if (chosen.has(n)) continue;
       // why: a repository the discovery found is an addition the owner chose; it gets the same checks.
@@ -4160,7 +4244,9 @@ export class Engine {
 
   private memoryStoreDetail(runId: string, s: RunState): NonNullable<MemoryDetail['store']> {
     const m = s.input.memory!;
-    const joinName = m.joinSystem ? path.basename(this.runDir(s)) : null;
+    const joinName = m.joinSystem
+      ? (this.recordedMemberName(runId) ?? path.basename(this.runDir(s)))
+      : null;
     const discover = s.steps['memory.discover']?.data as
       { proposed?: string | null; evidence?: string } | undefined;
     const confirmed = this.entries(runId).findLast((e) => e.type === 'memory.manifest') as
@@ -4179,6 +4265,29 @@ export class Engine {
   }
 
   // --- Add member (plan 077): one more repository joins a system that already has a store --------------------
+
+  /** The name recorded for an Add member run by `resolveMemberName`, or null. */
+  private recordedMemberName(runId: string): string | null {
+    const e = this.entries(runId).findLast((x) => x.type === 'memory.member.name') as unknown as
+      { name?: string } | undefined;
+    return e?.name ?? null;
+  }
+
+  /**
+   * Names the repository an Add member run adds: its GitHub repo name, else its folder name (plan 079 WI-2). Reading the
+   * remote is asynchronous and `memberFacts` is not, so the name is recorded once in the journal. A new build that joins
+   * a system has no remote yet and keeps its folder name.
+   */
+  private async resolveMemberName(runId: string): Promise<void> {
+    if (this.recordedMemberName(runId) !== null) return;
+    const s = this.state(runId);
+    if (s.input.kind !== 'memory') return;
+    const dir = this.runDir(s);
+    const fromRemote = repoNameFromRemote(await this.remoteOf(dir));
+    const name =
+      fromRemote !== null && MEMBER_NAME.test(fromRemote) ? fromRemote : path.basename(dir);
+    this.record(runId, 'memory.member.name', { name });
+  }
 
   /** The repository, the system and the store of an Add member run (an existing repo, or a new build joining). */
   private memberFacts(runId: string): MemberFacts {
@@ -4199,7 +4308,7 @@ export class Engine {
     const dir = this.runDir(s);
     return {
       dir,
-      name: path.basename(dir),
+      name: this.recordedMemberName(runId) ?? path.basename(dir),
       system,
       store: known.store,
       storePolicy: known.storeCommitPolicy,
@@ -4232,6 +4341,7 @@ export class Engine {
     if (this.state(runId).steps[key]?.status === 'ok') return;
     const git = this.deps.publish!.git;
     if (!this.deps.handoff) throw new ToolError('a build with memory needs a coding agent CLI');
+    await this.resolveMemberName(runId);
     const f = this.memberFacts(runId);
     if (
       phase === 'bootstrap' &&

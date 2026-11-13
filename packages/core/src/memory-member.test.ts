@@ -274,3 +274,72 @@ describe('a new build that joins a system (plan 077)', () => {
     expect(prompt).toContain('Read its INDEX.md before you change any code');
   }, 360_000);
 });
+
+describe('Add member with GitHub names and allowlist repositories (plan 079 WI-2)', () => {
+  it('names a nested repository after its GitHub repo, dots included, and links it to the store', async () => {
+    const { h, workspace, store } = await shopSystem();
+    const site = await repoIn(workspace, path.join('site', 'app', 'public'));
+    await git(['remote', 'add', 'origin', 'git@github.com:o/site.cloud.git'], site);
+    const runId = joinRun(h, site);
+    const parked = await h.engine.advance(runId, new DefaultsPrompter());
+    expect(parked.parked).toMatchObject({ reason: 'memory_manifest' });
+    const d = h.engine.memoryDetail(runId)!;
+    expect(d.store).toMatchObject({ awaitingManifest: true, members: ['site.cloud'] });
+    expect(d.store!.proposed).toContain('- repo: site.cloud');
+    expect(d.store!.proposed).toContain('path: ../site/app/public');
+    await h.engine.confirmMemoryManifest(runId, d.store!.proposed!);
+    const done = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(done.state).toBe('DONE');
+    const link = readFileSync(path.join(site, '.memory-link'), 'utf8');
+    expect(link).toContain('system=shop');
+    const rel = /^path=(.+)$/m.exec(link)![1]!.trim();
+    expect(path.resolve(site, rel)).toBe(path.resolve(store));
+    expect(readFileSync(path.join(store, 'system.yaml'), 'utf8')).toContain('- repo: site.cloud');
+    const system = h.engine.memorySystems().find((x) => x.name === 'shop')!;
+    expect(system.members.map((x) => x.name)).toContain('site.cloud');
+    expect(await out(['status', '--porcelain'], site)).toBe('');
+    expect(await out(['status', '--porcelain'], store)).toBe('');
+  }, 240_000);
+
+  it('joins a container repository whose .gitignore is an allowlist, adding the "!" lines itself', async () => {
+    const { h, workspace, store } = await shopSystem();
+    writeFileSync(
+      path.join(workspace, '.gitignore'),
+      ['/*', '!/.gitignore', '!/.memory-link', '!/CLAUDE.md', '!/.claude/', '/.claude/*', ''].join(
+        '\n',
+      ),
+    );
+    await git(['init', '-q', '-b', 'main'], workspace);
+    await git(
+      ['remote', 'add', 'origin', 'https://github.com/o/backshack-workspace.git'],
+      workspace,
+    );
+    await git(['add', '.gitignore'], workspace);
+    await git(['commit', '-q', '-m', 'allowlist'], workspace);
+    const runId = joinRun(h, workspace);
+    await h.engine.advance(runId, new DefaultsPrompter());
+    const d = h.engine.memoryDetail(runId)!;
+    expect(d.store).toMatchObject({ awaitingManifest: true, members: ['backshack-workspace'] });
+    await h.engine.confirmMemoryManifest(runId, d.store!.proposed!);
+    const done = await h.engine.resume(runId, new DefaultsPrompter());
+    expect(done.state).toBe('DONE');
+    const ignore = readFileSync(path.join(workspace, '.gitignore'), 'utf8');
+    expect(ignore).toContain('!/.claude/hooks/\n');
+    expect(ignore).toContain('!/.claude/hooks/memory-session-end');
+    expect(ignore).toContain('!/.claude/settings.json');
+    expect(
+      (await out(['ls-files', '-s', '.claude/hooks/memory-session-end'], workspace)).startsWith(
+        '100755',
+      ),
+    ).toBe(true);
+    expect(await out(['ls-files', '.claude/settings.json'], workspace)).toBe(
+      '.claude/settings.json',
+    );
+    expect(await out(['ls-files', '.claude/settings.local.json'], workspace)).toBe('');
+    expect(existsSync(path.join(workspace, '.claude', 'settings.local.json'))).toBe(true);
+    expect(await out(['status', '--porcelain'], workspace)).toBe('');
+    expect(await out(['status', '--porcelain'], store)).toBe('');
+    const system = h.engine.memorySystems().find((x) => x.name === 'shop')!;
+    expect(system.members.map((x) => x.name)).toContain('backshack-workspace');
+  }, 240_000);
+});

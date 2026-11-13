@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ConfigStore, Engine, RunStore } from '@incubator/core';
@@ -565,6 +565,40 @@ describe('publish, handoff, auth, gc', () => {
       expect(policy.err.join('')).toContain('--store-policy is pr or direct');
       const manifest = io();
       expect(await main(['memory-manifest', 'no-such-run'], manifest.io, d.factory)).not.toBe(0);
+    });
+
+    it('memory-adopt and memory-system (plan 079 WI-2)', async () => {
+      const d = publishDeps(undefined, { portfolio: true });
+      const home = mkdtempSync(path.join(tmpdir(), 'cli adopt '));
+      const store = path.join(home, 'bs-memory');
+      mkdirSync(store, { recursive: true });
+      writeFileSync(
+        path.join(store, 'system.yaml'),
+        'system: backshack\nseed_version: 1.0.1\nmembers:\n  - repo: backshack-bow\n    path: ../backshack-bow\n    role: member\n',
+      );
+      writeFileSync(path.join(store, 'memory.conf'), 'commit_policy=direct\n');
+      const settings = path.join(home, 'settings.json');
+      writeFileSync(settings, '{"env":{"MEMORY_STORE_DIR":"C:/x"}}');
+      const none = io();
+      expect(await main(['memory-adopt', path.join(home, 'nope')], none.io, d.factory)).toBe(2);
+      const adopted = io();
+      expect(await main(['memory-adopt', store], adopted.io, d.factory)).toBe(0);
+      expect(adopted.out.join('')).toContain('adopted the memory system backshack');
+      expect(adopted.out.join('')).toContain('nothing was written');
+      const list = io();
+      expect(
+        await main(
+          ['memory-system', 'backshack', '--root', home, '--settings', settings],
+          list.io,
+          d.factory,
+        ),
+      ).toBe(0);
+      const text = list.out.join('');
+      expect(text).toContain('backshack-bow | no local copy | not a member yet');
+      expect(text).toContain('backshack-workspace | no local copy');
+      expect(text).toContain('warning: MEMORY_STORE_DIR');
+      const other = io();
+      expect(await main(['memory-system', 'rolling-schedule'], other.io, d.factory)).toBe(2);
     });
 
     it('sets a project code identifiers, and refuses a bad one or a missing project (plan 071)', async () => {

@@ -13,6 +13,7 @@ import { runGc } from './commands/gc.js';
 import { runAdopt, type AdoptOptions } from './commands/adopt.js';
 import { runEnhance, type EnhanceOptions } from './commands/enhance.js';
 import { runMemory, runMemoryManifest, type MemoryOptions } from './commands/memory.js';
+import { runMemoryAdopt, runMemorySystem } from './commands/memory-system.js';
 import { runConfig } from './commands/config.js';
 import { runPortfolio } from './commands/portfolio.js';
 import { runUi } from './commands/ui.js';
@@ -234,6 +235,32 @@ export async function main(
     )
     .action(async (runId: string, file: string | undefined) => {
       code = await runMemoryManifest(getDeps(), io, runId, file);
+    });
+
+  program
+    .command('memory-adopt <storeFolder>')
+    .description(
+      'register an existing memory store (one you built by hand) with the portfolio; writes nothing in the store or in its repositories',
+    )
+    .action(async (storeFolder: string) => {
+      code = await runMemoryAdopt(getDeps(), io, storeFolder);
+    });
+
+  program
+    .command('memory-system <name>')
+    .description(
+      'list the repositories of a built-in system (only "backshack"), where each sits on this computer and whether it is a member; changes nothing',
+    )
+    .option(
+      '--root <folder>',
+      'the folder that holds the repositories (default: beside the adopted store)',
+    )
+    .option(
+      '--settings <file>',
+      'the Claude settings file to check for MEMORY_STORE_DIR (default: ~/.claude/settings.json)',
+    )
+    .action(async (name: string, opts: { root?: string; settings?: string }) => {
+      code = await runMemorySystem(getDeps(), io, name, opts);
     });
 
   program

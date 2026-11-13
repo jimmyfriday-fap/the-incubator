@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  MEMBER_NAME,
   MEMORY_ALLOWED_TOOLS,
   MEMORY_AVAILABLE_TOOLS,
   allowedMemoryPath,
@@ -17,6 +18,7 @@ import {
   olderSeed,
   parseMemoryReport,
   prefillIsolationTerms,
+  repoNameFromRemote,
   seedVersion,
 } from './memory.js';
 import type { PortfolioProject } from './portfolio.js';
@@ -243,5 +245,27 @@ describe('the memory session (plan 071)', () => {
     expect(line).toContain('`.memory/`');
     expect(line).toContain('INDEX.md');
     expect(line).toContain('write-memory');
+  });
+});
+
+describe('repoNameFromRemote (plan 079 WI-2)', () => {
+  it('takes the last segment of an https or ssh remote and drops .git', () => {
+    expect(repoNameFromRemote('git@github.com:o/site.cloud.git')).toBe('site.cloud');
+    expect(repoNameFromRemote('https://github.com/o/backshack-workspace.git')).toBe(
+      'backshack-workspace',
+    );
+    expect(repoNameFromRemote('https://github.com/o/x/')).toBe('x');
+    expect(repoNameFromRemote('ssh://git@host/o/r.git')).toBe('r');
+    expect(repoNameFromRemote(null)).toBeNull();
+    expect(repoNameFromRemote('')).toBeNull();
+    expect(repoNameFromRemote('justaname')).toBeNull();
+  });
+
+  it('accepts dotted repository names and refuses spaces and a leading dot', () => {
+    expect(MEMBER_NAME.test('site.cloud')).toBe(true);
+    expect(MEMBER_NAME.test('backshack-workspace')).toBe(true);
+    expect(MEMBER_NAME.test('Local Sites')).toBe(false);
+    expect(MEMBER_NAME.test('.hidden')).toBe(false);
+    expect(MEMBER_NAME.test('a/b')).toBe(false);
   });
 });

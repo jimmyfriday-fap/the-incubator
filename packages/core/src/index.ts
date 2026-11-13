@@ -22,6 +22,8 @@ export * from './stacks.js';
 export * from './portfolio.js';
 export * from './memory.js';
 export * from './memory-destination.js';
+export * from './memory-adopt.js';
+export * from './backshack-system.js';
 export * from './reverse-out.js';
 export * from './settings.js';
 export * from './stack-recommendation.js';

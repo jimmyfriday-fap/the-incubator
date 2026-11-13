@@ -527,6 +527,37 @@ export async function installMemorySystemProtected(
       '.claude/hooks/memory-session-end',
       '.claude/settings.json',
     ];
+    // A repository whose .gitignore is an allowlist hides these files. Add the exact "!" lines, and the folders above
+    // them (git cannot re-include a file under an excluded folder), then check again (plan 079 WI-2).
+    const hidden: string[] = [];
+    for (const p of staged)
+      if ((await run(m.dir, ['check-ignore', '-q', p])).code === 0) hidden.push(p);
+    if (hidden.length) {
+      const ignoreFile = path.join(m.dir, '.gitignore');
+      const text = existsSync(ignoreFile) ? readFileSync(ignoreFile, 'utf8') : '';
+      const want: string[] = [];
+      for (const p of hidden) {
+        const parts = p.split('/');
+        for (let i = 1; i < parts.length; i++) want.push(`!/${parts.slice(0, i).join('/')}/`);
+        want.push(`!/${p}`);
+      }
+      writeFileSync(
+        ignoreFile,
+        `${text === '' || text.endsWith('\n') ? text : `${text}\n`}${[...new Set(want)].join('\n')}\n`,
+      );
+      staged.push('.gitignore');
+      const still: string[] = [];
+      for (const p of hidden)
+        if ((await run(m.dir, ['check-ignore', '-q', p])).code === 0) still.push(p);
+      if (still.length) {
+        add(
+          `${m.name}:unignore`,
+          'failed',
+          `still ignored after adding "!" lines to .gitignore: ${still.join(', ')}`,
+        );
+        continue;
+      }
+    }
     if ((await run(m.dir, ['check-ignore', '-q', '.claude/settings.local.json'])).code !== 0) {
       const ignoreFile = path.join(m.dir, '.gitignore');
       const text = existsSync(ignoreFile) ? readFileSync(ignoreFile, 'utf8') : '';
@@ -534,7 +565,7 @@ export async function installMemorySystemProtected(
         ignoreFile,
         `${text === '' || text.endsWith('\n') ? text : `${text}\n`}.claude/settings.local.json\n`,
       );
-      staged.push('.gitignore');
+      if (!staged.includes('.gitignore')) staged.push('.gitignore');
     }
     add(
       `${m.name}:files`,

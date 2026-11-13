@@ -109,6 +109,20 @@ export function kebab(name: string): string {
 }
 
 const SYSTEM_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** A repository's name in a system: its GitHub repo name (dots allowed) or its folder name (plan 079 WI-2). */
+export const MEMBER_NAME = /^[a-z0-9][a-z0-9._-]*$/i;
+
+/** The last path segment of an https or ssh git remote, without `.git`; null when there is none (plan 079 WI-2). */
+export function repoNameFromRemote(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = url
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\.git$/i, '');
+  return /[/:]([^/:]+)$/.exec(trimmed)?.[1] ?? null;
+}
+
 /** A code identifier, slug or internal host: no spaces, nothing a shell or a prompt could misread. */
 const TERM = /^[A-Za-z0-9._:/@-]{2,100}$/;
 
@@ -141,7 +155,7 @@ export function checkMemoryInput(m: MemoryRunInput): MemoryRunInput {
     if (m.members.length < 2)
       throw new PolicyError('store mode needs two or more repositories', { code: 'bad_members' });
     const names = m.members.map((x) => x.name);
-    if (new Set(names).size !== names.length || names.some((n) => !SYSTEM_NAME.test(n)))
+    if (new Set(names).size !== names.length || names.some((n) => !MEMBER_NAME.test(n)))
       throw new PolicyError('each repository of a system needs its own kebab-case folder name', {
         code: 'bad_members',
       });
