@@ -18,6 +18,7 @@ export const CANDIDATES = {
   allowedTools: ['--allowedTools', '--allowed-tools'],
   availableTools: ['--tools'],
   settingSources: ['--setting-sources'],
+  strictMcp: ['--strict-mcp-config'],
   addDir: ['--add-dir'],
   effort: ['--effort', '--reasoning-effort'],
 } as const;
@@ -63,6 +64,7 @@ export function capabilitiesFromHelp(version: string, help: string, path?: strin
   set('allowedTools', pickFlag(help, CANDIDATES.allowedTools));
   set('availableTools', pickFlag(help, CANDIDATES.availableTools));
   set('settingSources', pickFlag(help, CANDIDATES.settingSources));
+  set('strictMcp', pickFlag(help, CANDIDATES.strictMcp));
   set('addDir', pickFlag(help, CANDIDATES.addDir));
   set('effort', pickFlag(help, CANDIDATES.effort));
   const stdinPrompt = /stdin|standard input|piped/i.test(help);

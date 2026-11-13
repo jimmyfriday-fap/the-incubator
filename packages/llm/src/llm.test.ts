@@ -640,6 +640,16 @@ describe('capability probing for Add memory (plan 071)', () => {
     ).toBeUndefined();
   });
 
+  it('finds the flag that keeps the owner’s account connectors out of a headless session', () => {
+    const help = `${CLAUDE_HELP}\n  --strict-mcp-config  Only use MCP servers from --mcp-config\n`;
+    expect(capabilitiesFromHelp('2.1.0 (Claude Code)\n', help, '/bin/claude').flags.strictMcp).toBe(
+      '--strict-mcp-config',
+    );
+    expect(
+      capabilitiesFromHelp('2.1.0 (Claude Code)\n', CLAUDE_HELP, '/bin/claude').flags.strictMcp,
+    ).toBeUndefined();
+  });
+
   it('leaves them out when the CLI does not offer them', () => {
     const caps = capabilitiesFromHelp('2.1.0 (Claude Code)\n', CLAUDE_HELP, '/bin/claude');
     expect(caps.flags.addDir).toBeUndefined();

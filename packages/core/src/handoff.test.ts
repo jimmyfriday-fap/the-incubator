@@ -167,6 +167,23 @@ describe('handoff', () => {
     ).not.toContain('--setting-sources');
   });
 
+  it('offers a headless session no MCP servers, only when asked to isolate and the CLI has the flag', () => {
+    const flags = {
+      printMode: ['-p'],
+      streamJson: ['--output-format', 'stream-json'],
+      strictMcp: '--strict-mcp-config',
+    };
+    const ceilings = { turns: 30, toolCalls: 100, minutes: 20, usd: 5 };
+    expect(
+      buildHandoffArgv(caps(flags), ceilings, ['Read'], undefined, { isolateSettings: true }),
+    ).toContain('--strict-mcp-config');
+    expect(buildHandoffArgv(caps(flags), ceilings, ['Read'])).not.toContain('--strict-mcp-config');
+    const { strictMcp: _unused, ...without } = flags;
+    expect(
+      buildHandoffArgv(caps(without), ceilings, ['Read'], undefined, { isolateSettings: true }),
+    ).not.toContain('--strict-mcp-config');
+  });
+
   it('asks the agent for the chosen model when its CLI has a flag, and parks when it has none', () => {
     const flags = {
       printMode: ['-p'],

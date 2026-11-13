@@ -193,6 +193,11 @@ export function buildHandoffArgv(
     // why: the owner's user-level hooks (a PreToolUse hook that wraps Bash commands) make every allow-listed command
     // unverifiable, so a memory session reads only the project's and the local settings (acceptance build 3).
     ...(extra.isolateSettings && f.settingSources ? [f.settingSources, 'project,local'] : []),
+    // why: the owner's account connectors (14 of them, production Backshack and WordPress write tools among them) were
+    // offered to every headless session. Their tool definitions added about 450k tokens to each request and, when one
+    // connected late, changed the start of the request and forced the whole cache to be written again (about $2 a time).
+    // With no `--mcp-config` given, this flag leaves the session with no MCP servers at all.
+    ...(extra.isolateSettings && f.strictMcp ? [f.strictMcp] : []),
     ...(f.acceptEdits ?? []),
     ...(f.allowedTools ? [f.allowedTools, tools.join(',')] : []),
   ];

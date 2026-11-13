@@ -58,6 +58,8 @@ export interface Capabilities {
     availableTools?: string;
     /** Flag choosing which settings files a headless session reads (e.g. `--setting-sources project,local`), so the owner's own user-level hooks cannot rewrite the session's commands. */
     settingSources?: string;
+    /** Flag that loads no MCP servers except those given on the command line (`--strict-mcp-config`), so the owner's account connectors are not offered to a headless session. */
+    strictMcp?: string;
     /** Flag giving the agent another directory it may read (plan 071: the memory seed copy). */
     addDir?: string;
     /** Flag choosing the agent's reasoning effort (plan 071). */

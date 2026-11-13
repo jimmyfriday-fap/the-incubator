@@ -1,6 +1,6 @@
 ---
 name: handoff-backshack
-version: 1.1.0
+version: 1.2.0
 ---
 
 ## Building a Backshack tool
@@ -12,5 +12,7 @@ This repository is the Backshack platform (backshack-dev), and you are building 
 3. Run the contract's Section 5 conformance check before declaring done. Do its searches with your file search tool; run its commands (`node --check`, `php bin/lint-group-guard.php`) only when they are among the approved check commands, and otherwise name them in your summary as not run. Any hit means the work is not done: fix it, or stop and list the hits in your summary. Paste the check's results into the tool's `FILE_INVENTORY.md`.
 4. Do not commit, push or open a pull request. The owner commits on this worktree's branch; the handoff to staging is theirs.
 5. Tests live only in backshack-generator (contract Section 5). When a plan step asks for tests in this repository, write no test files here. Put the scenarios the generator suite needs (the cases, the fixtures, the two-group isolation test) in that step's design file, name `/test-newslug-scaffolding` as the follow-up in your summary, and set the step's ticket to READY_FOR_TEST.
+
+6. Your working directory is already this worktree. Never start a Bash command with `cd`, and use no variables, pipes or `&&`: a command that is not exactly an approved one is refused and costs a turn. Bash runs only `git status`, `git diff` and the approved check commands; use Read, Glob and Grep for everything else.
 
 ## Backshack Build Contract (verbatim)
