@@ -25,8 +25,9 @@ A single repo is a system with one member. Both layouts use the same tiers:
 ```
 VERSION
 bin/memory                 index | check | stale
+bin/redact-transcript.mjs  redacts secrets, IPs and emails from a transcript copy (run by session-end)
 hooks/pre-commit           format, isolation, secrets, platform-on-main guard
-hooks/session-end          Claude Code hook: copies the session transcript into the store
+hooks/session-end          Claude Code hook: copies a redacted session transcript into the store
 skills/write-memory/       how any session records a learning
 skills/dream/              out-of-band curation → PR with evidence
 skills/memory-bootstrap/   populate the store from code; reconcile shared knowledge to platform

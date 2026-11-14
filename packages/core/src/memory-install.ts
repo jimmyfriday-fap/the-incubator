@@ -370,12 +370,12 @@ export async function installMemoryProtected(
   } else if (result.captured === 0 && result.code !== 0) {
     add('E6', 'failed', `the SessionEnd hook failed (exit ${result.code}): ${result.err}`);
   } else if (result.captured === 0) {
-    // The seed hook exits 0 on any problem by design, so a silent no-op is a warning, not a failure: on Windows,
-    // python3 ends the transcript path with a carriage return and the hook then captures nothing (a seed defect).
+    // The seed hook exits 0 on any problem by design, so a silent no-op is a warning, not a failure. The usual cause is
+    // a missing node or a missing redactor: the hook copies nothing rather than a raw transcript.
     add(
       'E6',
       'warning',
-      'the SessionEnd hook ran but captured no transcript: transcripts will not be captured until the seed hook is fixed (on Windows, python3 ends the transcript path with a carriage return, which defeats it)',
+      'the SessionEnd hook ran but captured no transcript: it copies nothing when node or .memory/bin/redact-transcript.mjs is missing (copy bin/redact-transcript.mjs from the seed), because a raw copy would hold secrets',
     );
   } else if (result.leaked) {
     add('E6', 'failed', 'the captured transcript is not ignored by git');
@@ -721,12 +721,12 @@ export async function installMemorySystemProtected(
         `the SessionEnd hook failed (exit ${ran.code}): ${lastLine(ran.stderr)}`,
       );
     } else if (found.length === 0) {
-      // The seed hook exits 0 on any problem by design, so a silent no-op is a warning, not a failure: on Windows,
-      // python3 ends the transcript path with a carriage return and the hook then captures nothing (a seed defect).
+      // The seed hook exits 0 on any problem by design, so a silent no-op is a warning, not a failure. The usual cause
+      // is a store with no bin/redact-transcript.mjs (or no node): the hook copies nothing rather than a raw transcript.
       add(
         `E6:${m.name}`,
         'warning',
-        'the SessionEnd hook ran but captured no transcript: transcripts will not be captured until the seed hook is fixed (on Windows, python3 ends the transcript path with a carriage return, which defeats it)',
+        'the SessionEnd hook ran but captured no transcript: it copies nothing when node or bin/redact-transcript.mjs in the store is missing (copy bin/redact-transcript.mjs from the seed into the store), because a raw copy would hold secrets',
       );
     } else if (leaked.length) {
       add(`E6:${m.name}`, 'failed', 'the captured transcript is not ignored by git');

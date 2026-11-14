@@ -14,24 +14,49 @@ else
   get() { printf '%s' "$input" | grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/'; }
   sid="$(get session_id)"; src="$(get transcript_path)"
 fi
+# Windows Python prints CRLF; drop the trailing CR or the -f test below fails.
+src="${src%$'\r'}"; sid="${sid%$'\r'}"
 [ -n "${sid:-}" ] && [ -f "${src:-}" ] || exit 0
 
 root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 [ -n "$root" ] || exit 0
 
+# A session started in a git worktree has the worktree as its root: no untracked .memory-link, a relative store path that
+# does not resolve, and a folder name that is not the repo name (2026-11-09: about half the transcripts were never copied).
+# Resolve the main checkout and use it for the link file, the store path and the repo name.
+main="$root"
+common="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+[ -n "$common" ] && [ -d "$common" ] && main="$(dirname "$common")"
+if [ ! -d "$root/.memory/context" ] && [ ! -f "$root/.memory-link" ]; then root="$main"; fi
+
 if [ -d "$root/.memory/context" ]; then
   dest="$root/.memory/transcripts"
+  redactor="$root/.memory/bin/redact-transcript.mjs"
 elif [ -f "$root/.memory-link" ]; then
-  link() { sed -n "s/^$1=//p" "$root/.memory-link" | head -1; }
+  link() { sed -n "s/^$1=//p" "$root/.memory-link" | head -1 | sed 's/[[:space:]]*$//'; }
   store="${MEMORY_STORE_DIR:-}"
-  if [ -z "$store" ]; then rel="$(link path)"; [ -n "$rel" ] && store="$root/$rel"; fi
+  if [ -z "$store" ]; then
+    rel="$(link path)"
+    if [ -n "$rel" ]; then
+      store="$root/$rel"
+      # A .memory-link that is tracked in the repo is also present in a worktree, where the relative path points at the wrong folder.
+      [ -d "$store/context" ] || store="$main/$rel"
+    fi
+  fi
   [ -n "$store" ] && [ -d "$store/context" ] || exit 0
   repo="$(link repo)"; repo="${repo:-$(basename "$root")}"
   dest="$store/transcripts/$repo"
+  redactor="$store/bin/redact-transcript.mjs"
 else
   exit 0
 fi
 
 dir="$dest/$(date +%F)"
-mkdir -p "$dir" && cp "$src" "$dir/$sid.jsonl"
+# Never copy a raw transcript: it holds whatever tools printed (secrets, IPs, emails). The redactor parses each JSONL line and
+# replaces those values with [REDACTED:<rule>]. No node or no redactor means no copy, not a raw copy (2026-11-09).
+if command -v node >/dev/null 2>&1 && [ -f "$redactor" ]; then
+  mkdir -p "$dir" && { node "$redactor" "$src" "$dir/$sid.jsonl" || rm -f "$dir/$sid.jsonl"; }
+else
+  echo "memory session-end: node or $redactor missing; transcript not copied (it would be raw)" >&2
+fi
 exit 0

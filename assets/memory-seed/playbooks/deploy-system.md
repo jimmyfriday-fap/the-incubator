@@ -58,7 +58,7 @@ Output the proposed manifest and the evidence table, then **stop**. Make no chan
 | `memory.conf` | `SEED/templates/memory.conf` with `commit_policy=<STORE_COMMIT_POLICY>` |
 | `ISOLATION.txt` | `SEED/templates/ISOLATION.txt`, then one line per term kept in A1. For each `excluded` repo, add its distinctive code identifiers (not its name or domain) unless a member uses them. |
 | `.seed-version` | contents of `SEED/VERSION` |
-| `bin/memory`, `hooks/pre-commit`, `hooks/session-end` | `SEED/bin/memory`, `SEED/hooks/*` (then `chmod +x`) |
+| `bin/memory`, `bin/redact-transcript.mjs`, `hooks/pre-commit`, `hooks/session-end` | `SEED/bin/*`, `SEED/hooks/*` (then `chmod +x`). The member hook reads `bin/redact-transcript.mjs` from the store and copies nothing without it. |
 | `transcripts/README.md` | `SEED/templates/transcripts-README.md` |
 | `dreams/.gitkeep` | empty |
 | `context/platform/*.md` | per `SEED/templates/context-files.md` |
@@ -81,7 +81,7 @@ For each member, in its repo (on branch `memory/link` if its policy is `pr`, oth
    - If CLAUDE.md is only an import such as `@AGENTS.md`, keep it and add the memory block below. Leave AGENTS.md whole.
    - Otherwise, confirm that the conventions, decisions, and architecture facts in CLAUDE.md were captured in C, then remove them from CLAUDE.md. Keep a one-to-two-line description, the build/run/test commands, and any `@` imports. Put the memory block at the top.
    - If CLAUDE.md is missing, create it. When AGENTS.md exists, it contains `@AGENTS.md` and the memory block.
-3. **Transcript hook.** Copy `SEED/hooks/session-end` to `.claude/hooks/memory-session-end` and `chmod +x` it. Merge into `.claude/settings.json`:
+3. **Transcript hook.** Copy `SEED/hooks/session-end` to `.claude/hooks/memory-session-end` and `chmod +x` it (never an older copy of the hook: it must be the one that redacts, and the store must hold `bin/redact-transcript.mjs`). Merge into `.claude/settings.json`:
    ```json
    { "hooks": { "SessionEnd": [ { "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/memory-session-end" } ] } ] } }
    ```

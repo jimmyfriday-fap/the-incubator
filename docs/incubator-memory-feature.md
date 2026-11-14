@@ -55,7 +55,7 @@ Store on each affected solution:
 | `memory.mode`          | `repo` or `member`                                     |
 | `memory.system`        | `backshack`                                            |
 | `memory.store`         | `.memory/` (repo mode) or the store repo's path or URL |
-| `memory.seed_version`  | `1.0.1`                                                |
+| `memory.seed_version`  | `1.1.0`                                                |
 | `memory.commit_policy` | `pr` or `direct`                                       |
 | `memory.installed_at`  | date                                                   |
 | `memory.report`        | the playbook's final report                            |

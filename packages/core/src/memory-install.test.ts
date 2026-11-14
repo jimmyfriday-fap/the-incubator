@@ -24,20 +24,6 @@ import {
 } from './memory-install.js';
 
 const SEED = path.resolve(import.meta.dirname, '../../../assets/memory-seed');
-/**
- * The seed's session-end hook, with the carriage return that Windows python3 puts at the end of the transcript path
- * stripped. The unpatched hook captures nothing on Windows when python3 is installed (a seed defect, reported to its
- * owner; the seed is never edited here), so these tests run the Incubator's code against the hook working as meant.
- */
-function sessionEndHook(): string {
-  const text = readFileSync(path.join(SEED, 'hooks', 'session-end'), 'utf8');
-  const guard = '[ -n "${sid:-}" ] && [ -f "${src:-}" ] || exit 0';
-  if (!text.includes(guard))
-    throw new Error('the seed session-end hook changed: update this test helper');
-  // why: a function replacer, because `$'` in a replacement string means "the text after the match".
-  return text.replace(guard, () => `src="\${src%$'\\r'}"\n${guard}`);
-}
-
 const tmp = (name: string) => mkdtempSync(path.join(os.tmpdir(), `${name} `));
 
 describe('mergeSessionEnd', () => {
@@ -189,7 +175,11 @@ describe('installMemoryProtected', () => {
     mkdirSync(path.join(mem, 'hooks'), { recursive: true });
     copyFileSync(path.join(SEED, 'bin', 'memory'), path.join(mem, 'bin', 'memory'));
     copyFileSync(path.join(SEED, 'hooks', 'pre-commit'), path.join(mem, 'hooks', 'pre-commit'));
-    writeFileSync(path.join(mem, 'hooks', 'session-end'), sessionEndHook());
+    copyFileSync(path.join(SEED, 'hooks', 'session-end'), path.join(mem, 'hooks', 'session-end'));
+    copyFileSync(
+      path.join(SEED, 'bin', 'redact-transcript.mjs'),
+      path.join(mem, 'bin', 'redact-transcript.mjs'),
+    );
     // The playbook has the real agent run `chmod +x` on these three; Linux and macOS refuse to run them without it.
     for (const script of [
       ['bin', 'memory'],
@@ -273,10 +263,10 @@ describe('installMemoryProtected', () => {
       const r = await installMemoryProtected({ exec: nodeExec, git, dir, seed: SEED, stubs });
       return r.checks.find((c) => c.step === 'E6')!;
     };
-    // Exits 0 and captures nothing, as the seed hook does on Windows when python3 ends the path with \r.
+    // Exits 0 and captures nothing, as the seed hook does when node or the redactor is missing.
     const silent = await withHook('cat >/dev/null; exit 0');
     expect(silent.status).toBe('warning');
-    expect(silent.detail).toContain('will not be captured until the seed hook is fixed');
+    expect(silent.detail).toContain('bin/redact-transcript.mjs');
     expect((await withHook('cat >/dev/null; echo broken >&2; exit 4')).status).toBe('failed');
   });
 

@@ -25,25 +25,6 @@ import {
 const SEED = path.resolve(import.meta.dirname, '../../../assets/memory-seed');
 const tmp = (name: string) => mkdtempSync(path.join(os.tmpdir(), `${name} `));
 
-/**
- * A copy of the seed with its session-end hook patched for the carriage return that Windows python3 puts at the end of
- * the transcript path (a seed defect, reported to its owner; the seed is never edited here).
- */
-function patchedSeed(): string {
-  const seed = tmp('system seed');
-  mkdirSync(path.join(seed, 'hooks'), { recursive: true });
-  const text = readFileSync(path.join(SEED, 'hooks', 'session-end'), 'utf8');
-  const guard = '[ -n "${sid:-}" ] && [ -f "${src:-}" ] || exit 0';
-  if (!text.includes(guard))
-    throw new Error('the seed session-end hook changed: update this test helper');
-  // why: a function replacer, because `$'` in a replacement string means "the text after the match".
-  writeFileSync(
-    path.join(seed, 'hooks', 'session-end'),
-    text.replace(guard, () => `src="\${src%$'\\r'}"\n${guard}`),
-  );
-  return seed;
-}
-
 describe('installMemorySystemProtected', () => {
   const git = createGitOps(nodeExec);
   const g = (dir: string, ...args: string[]) =>
@@ -80,6 +61,10 @@ describe('installMemorySystemProtected', () => {
     mkdirSync(path.join(store, 'bin'), { recursive: true });
     mkdirSync(path.join(store, 'hooks'), { recursive: true });
     copyFileSync(path.join(SEED, 'bin', 'memory'), path.join(store, 'bin', 'memory'));
+    copyFileSync(
+      path.join(SEED, 'bin', 'redact-transcript.mjs'),
+      path.join(store, 'bin', 'redact-transcript.mjs'),
+    );
     if (weakHook)
       writeFileSync(path.join(store, 'hooks', 'pre-commit'), '#!/usr/bin/env bash\nexit 0\n');
     else
@@ -126,7 +111,7 @@ describe('installMemorySystemProtected', () => {
       await g(dir, 'commit', '-q', '-m', `mem(link): connect ${name}`);
       members.push({ name, dir });
     }
-    return { workspace, store, members, seed: patchedSeed() };
+    return { workspace, store, members, seed: SEED };
   }
 
   const install = (f: Awaited<ReturnType<typeof afterSystemAgent>>) =>

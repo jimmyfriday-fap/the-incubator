@@ -43,7 +43,7 @@ Let `<repo>` be the repo directory's name. Create:
 | `.memory/ISOLATION.txt` | `SEED/templates/ISOLATION.txt`, then one line per term kept in A4 |
 | `.memory/.gitignore` | `SEED/templates/gitignore` |
 | `.memory/.seed-version` | contents of `SEED/VERSION` |
-| `.memory/bin/memory`, `.memory/hooks/pre-commit`, `.memory/hooks/session-end` | `SEED/bin/memory`, `SEED/hooks/*` (then `chmod +x`) |
+| `.memory/bin/memory`, `.memory/bin/redact-transcript.mjs`, `.memory/hooks/pre-commit`, `.memory/hooks/session-end` | `SEED/bin/*`, `SEED/hooks/*` (then `chmod +x`). The session-end hook copies nothing without `bin/redact-transcript.mjs`. |
 | `.memory/transcripts/README.md` | `SEED/templates/transcripts-README.md` |
 | `.memory/dreams/.gitkeep` | empty |
 | `.memory/context/platform/*.md`, `.memory/context/projects/<repo>/*.md` | per `SEED/templates/context-files.md` |
@@ -76,7 +76,7 @@ Follow `.claude/skills/memory-bootstrap/SKILL.md` with one member, this repo. Pa
 3. `git status --porcelain` shows changes only within the paths allowed by ground rule 2. `AGENTS.md` is unchanged (`git diff --quiet -- AGENTS.md`).
 4. **Hook rejects bad lines:** add `- not a dated line` to `context/projects/<repo>/failures.md`, stage it, and try to commit. The commit must be rejected. Revert the line and unstage.
 5. **Policy wiring:** `memory.conf` matches A3. With `pr`, confirm the hook's main/master guard is active. With `direct`, confirm the hook exits after its checks without the guard.
-6. **Transcript capture:** `echo '{"session_id":"selftest","transcript_path":"'"$PWD"'/.memory/README.md"}' | CLAUDE_PROJECT_DIR="$PWD" .memory/hooks/session-end`. Confirm `.memory/transcripts/<TODAY>/selftest.jsonl` exists and is absent from `git status`, then delete it.
+6. **Transcript capture:** `echo '{"session_id":"selftest","transcript_path":"'"$PWD"'/.memory/README.md"}' | CLAUDE_PROJECT_DIR="$PWD" .memory/hooks/session-end`. Confirm `.memory/transcripts/<TODAY>/selftest.jsonl` exists and is absent from `git status`, then delete it. To check redaction, run `node .memory/bin/redact-transcript.mjs --selftest` (it must print `ok`).
 7. **Cold read:** using only CLAUDE.md (and anything it imports), `.memory/INDEX.md`, and the files the index points to, answer: "How do I build and test this repo, and what are the top three things a new session would most likely get wrong?" If you can't, fix the store and re-run checks 1 to 3.
 
 ## F. Deliver
