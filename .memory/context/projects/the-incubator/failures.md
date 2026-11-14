@@ -7,6 +7,7 @@ last_verified: 2026-11-04
 
 # the-incubator failures
 
+- [2026-11-14] [claude-code] A headless `claude -p` session is offered every claude.ai account connector unless it is also given `--strict-mcp-config` with no `--mcp-config` (`--tools` limits only built-in tools), and a Backshack build part then cost about $10 instead of about $1 because 14 connectors added about 450k tokens to each request and a late connection rewrote the whole prompt cache. (src: commit 598f50d, packages/core/src/handoff.ts)
 - [2026-11-04] [bootstrap] Reading git status must not take the index lock; a status read that did made a commit running beside it fail. (src: commit 66da936)
 - [2026-11-04] [bootstrap] On Windows a command shim that wraps a PHP archive must be run with php, not with node. (src: commit 1e8e04f)
 - [2026-11-04] [bootstrap] A built repository's dependencies must be installed before the coding agent starts, including a repository with no lockfile. (src: commits 644881a, f161bcd)
