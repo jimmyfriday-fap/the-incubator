@@ -18,6 +18,9 @@ import {
   remainingTickets,
   resolveCeilings,
   type HandoffProgress,
+  STEP_NOTES_FILE,
+  STEP_NOTES_MAX,
+  readStepNotes,
 } from './handoff.js';
 import { loadPrompt } from './prompts.js';
 import type { EngineDeps } from './engine.js';
@@ -636,7 +639,7 @@ describe('handoff on a repository the Incubator did not build (ADR-025)', () => 
   it('tells a continuing part what the earlier parts committed (plan 036)', () => {
     const p = loadPrompt('handoff-continue');
     expect(p.name).toBe('handoff-continue');
-    expect(p.version).toBe('1.2.0');
+    expect(p.version).toBe('1.3.0');
     expect(p.body).toContain('do not stop with the tickets unmarked');
     expect(MAX_CODE_PARTS).toBe(5);
     const text = continuationText({
@@ -679,6 +682,68 @@ describe('handoff on a repository the Incubator did not build (ADR-025)', () => 
     expect(text).not.toContain('Earlier parts, committed on this branch');
   });
 
+  it("gives a step its own session: one step in the prompt, the earlier steps' notes, capped, never committed", () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'notes '));
+    expect(readStepNotes(repo)).toBeNull();
+    mkdirSync(path.join(repo, '.incubator', 'state'), { recursive: true });
+    const file = path.join(repo, ...STEP_NOTES_FILE.split('/'));
+    expect(STEP_NOTES_FILE).toBe('.incubator/state/notes.md');
+    writeFileSync(file, '  \n');
+    expect(readStepNotes(repo)).toBeNull();
+    writeFileSync(file, 'step 1: Foo::bar() takes (int $id)\r\n');
+    expect(readStepNotes(repo)).toBe('step 1: Foo::bar() takes (int $id)');
+    // Over the cap the newest lines are kept, cut at a line so no line starts half way.
+    const lines = Array.from(
+      { length: 200 },
+      (_, i) => `note line ${String(i).padStart(3, '0')} xxxxxxxxxx`,
+    );
+    writeFileSync(file, lines.join('\n'));
+    const capped = readStepNotes(repo)!;
+    expect(capped.length).toBeLessThanOrEqual(STEP_NOTES_MAX);
+    expect(capped.endsWith('note line 199 xxxxxxxxxx')).toBe(true);
+    expect(capped.split('\n').every((l) => l.startsWith('note line '))).toBe(true);
+
+    const text = continuationText({
+      part: 2,
+      max: 6,
+      base: 'a'.repeat(40),
+      earlier: [{ part: 1, sha: 'b'.repeat(40), tripped: null }],
+      remaining: [{ id: 'E-b', summary: 'second request' }],
+      stepped: { notes: 'step 1: Foo::bar() takes (int $id)' },
+    });
+    expect(text.startsWith('## Continuing: part 2 of up to 6\n\n')).toBe(true);
+    expect(text).toContain('Build only your step');
+    expect(text).toContain('## Notes from earlier steps\n\nstep 1: Foo::bar() takes (int $id)');
+    expect(text).toContain(`- part 1: commit ${'b'.repeat(12)}\n`);
+    expect(text).toContain('- E-b: second request');
+    // The stepped prompt never tells the session to re-read the earlier work.
+    expect(text).not.toContain('First find out what is already done');
+    const bare = continuationText({
+      part: 2,
+      max: 6,
+      base: null,
+      earlier: [],
+      stepped: { notes: null },
+    });
+    expect(bare).toContain('(No notes from earlier steps.)');
+    // A checkpoint names the run's own parts limit.
+    expect(partMessage({ title: 't', part: 7, tripped: null, left: 'x', max: 9 }, 'r1')).toContain(
+      'part 7 of up to 9: t',
+    );
+  });
+
+  it('puts the reading rules and the notes rule in the three coding prompts', () => {
+    for (const name of ['handoff-external', 'handoff-backshack']) {
+      const p = loadPrompt(name);
+      expect(p.version).toBe('1.3.0');
+      expect(p.body).toContain('by range (`offset` and `limit`)');
+      expect(p.body).toContain('Never read a file again');
+      expect(p.body).toContain(`add at most five lines to the end of \`${STEP_NOTES_FILE}\``);
+    }
+    expect(loadPrompt('handoff-continue').body).toContain('by range (`offset` and `limit`)');
+    expect(loadPrompt('handoff-step').version).toBe('1.0.0');
+  });
+
   it('lists the tickets not marked ready, counts a broken ticket file as not done, and tells the next part what is left (plan 042)', () => {
     const repo = mkdtempSync(path.join(os.tmpdir(), 'tickets '));
     const dir = path.join(repo, '.incubator', 'tickets');
@@ -716,7 +781,7 @@ describe('handoff on a repository the Incubator did not build (ADR-025)', () => 
   it('ships the external prompt versioned and byte-pinned', () => {
     const p = loadPrompt('handoff-external');
     expect(p.name).toBe('handoff-external');
-    expect(p.version).toBe('1.2.0');
+    expect(p.version).toBe('1.3.0');
     expect(p.body).toContain('Whatever state the file shows now');
     expect(p.body).toMatchSnapshot();
   });

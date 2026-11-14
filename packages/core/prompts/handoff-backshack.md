@@ -1,6 +1,6 @@
 ---
 name: handoff-backshack
-version: 1.2.0
+version: 1.3.0
 ---
 
 ## Building a Backshack tool
@@ -14,5 +14,8 @@ This repository is the Backshack platform (backshack-dev), and you are building 
 5. Tests live only in backshack-generator (contract Section 5). When a plan step asks for tests in this repository, write no test files here. Put the scenarios the generator suite needs (the cases, the fixtures, the two-group isolation test) in that step's design file, name `/test-newslug-scaffolding` as the follow-up in your summary, and set the step's ticket to READY_FOR_TEST.
 
 6. Your working directory is already this worktree. Never start a Bash command with `cd`, and use no variables, pipes or `&&`: a command that is not exactly an approved one is refused and costs a turn. Bash runs only `git status`, `git diff` and the approved check commands; use Read, Glob and Grep for everything else.
+
+7. Read only what the work needs: the files the plan names, and a reference file by range (`offset` and `limit`), only for the part you are writing. Never read a file again that you already read in this session, and do not open another tool's or module's code beyond the reference the plan names.
+8. When your step is finished, add at most five lines to the end of `.incubator/state/notes.md` (read it first if it exists, create it if not): what the next step needs from yours: signatures you confirmed, decisions, file names. Nothing else goes there; the Incubator never commits it.
 
 ## Backshack Build Contract (verbatim)

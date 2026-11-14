@@ -201,6 +201,11 @@ export interface DeliveryInput {
   external?: boolean;
   /** Plan 049: numbered folders where the folder's default branch is past this branch; null when unknown. */
   numbered?: { ref: string; ahead: NumberedAhead[] } | null;
+  /**
+   * A lean plan for a workspace stack (Backshack): no scan report to read, and no design-file ceremony. Every step
+   * is already specified in the plan, so the agent decides the approach in a few lines and writes the code.
+   */
+  lean?: boolean;
 }
 
 /**
@@ -245,6 +250,64 @@ export function ticketId(f: Pick<Feature, 'id'>): string {
 }
 
 /**
+ * The plan one coding session reads when each plan step gets its own session: the preamble, the one step of
+ * `ticket` (the `**Step N:**` block that names it) and its row of the touched-files table. The other steps are
+ * listed by title as not in this session, so the agent neither reads nor builds them. A plan that does not
+ * name the ticket (a hand-written plan, or a ticket already gone) is returned whole.
+ */
+export function stepPlan(planText: string, ticket: string): string {
+  const lines = planText.split('\n');
+  const isStep = (l: string): boolean => /^\*\*Step \d+:\*\*/.test(l);
+  const starts = lines.flatMap((l, i) => (isStep(l) ? [i] : []));
+  if (!starts.length) return planText;
+  // A step block runs to the next step, or to the next `##` section (the numbered folders, the touched-files table).
+  const blocks = starts.map((from, k) => {
+    let to = starts[k + 1] ?? lines.length;
+    for (let i = from + 1; i < to; i++)
+      if (lines[i]!.startsWith('## ')) {
+        to = i;
+        break;
+      }
+    return { from, to, own: lines.slice(from, to).some((l) => l.trim() === `- Ticket: ${ticket}`) };
+  });
+  if (!blocks.some((b) => b.own)) return planText;
+  const titleOf = (l: string): string => l.replace(/^\*\*(Step \d+):\*\*\s*/, '$1: ').trim();
+  const others = blocks.filter((b) => !b.own).map((b) => `- ${titleOf(lines[b.from]!)}`);
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const b = blocks.find((x) => x.from === i);
+    if (!b) {
+      const row = lines[i]!;
+      // The touched-files table: keep the header and this ticket's row, drop the other tickets' rows.
+      if (
+        row.startsWith('| ') &&
+        row.includes('.incubator/tickets/') &&
+        !row.includes(`.incubator/tickets/${ticket}.json`)
+      ) {
+        i++;
+        continue;
+      }
+      out.push(row);
+      i++;
+      continue;
+    }
+    if (b.own) {
+      out.push(...lines.slice(b.from, b.to));
+      if (others.length && blocks.findLast((x) => x.own) === b)
+        out.push(
+          '**Not in this session** (other steps, each done by its own session):',
+          '',
+          ...others,
+          '',
+        );
+    }
+    i = b.to;
+  }
+  return out.join('\n');
+}
+
+/**
  * Plan 048: the headings of the design stage's output contract (`.incubator/lanes/<lane>/design.md`). The
  * other copies are in `scripts/guard/lane-contract.mjs` and its template-pack copy.
  */
@@ -276,6 +339,7 @@ export function designFile(ticket: string, brief: string): string {
 
 function renderPlan(d: DeliveryInput): string {
   const dir = `.incubator/enhance/${d.date}`;
+  const lean = d.lean === true;
   const t = (f: Feature): string[] => d.targets[f.id] ?? [];
   const runners = d.scan.tests.runners.join(', ') || 'none detected';
   const steps = d.features.map((f, i) => {
@@ -284,31 +348,50 @@ function renderPlan(d: DeliveryInput): string {
       `**Step ${i + 1}:** ${clean(f.summary, 240)} (\`${f.id}\`, lane \`${f.lane}\`).`,
       ...(targets.length
         ? targets.map((x) => `- Target: ${x}`)
-        : ['- Target: (none resolved from the scan; the design stage decides)']),
-      `- Design (write it first): ${dir}/design-${f.id}.md`,
+        : [
+            lean
+              ? '- Target: (none resolved from the scan; find it from the step)'
+              : '- Target: (none resolved from the scan; the design stage decides)',
+          ]),
+      ...(lean ? [] : [`- Design (write it first): ${dir}/design-${f.id}.md`]),
       `- Ticket: ${ticketId(f)}`,
       '',
     ].join('\n');
   });
-  const rows = d.features.map(
-    (f) =>
-      `| ${f.id} | ${t(f).join(', ') || '(design stage decides)'} | ${dir}/design-${f.id}.md, .incubator/tickets/${ticketId(f)}.json |`,
+  const rows = d.features.map((f) =>
+    lean
+      ? `| ${f.id} | ${t(f).join(', ') || '(find it from the step)'} | .incubator/tickets/${ticketId(f)}.json |`
+      : `| ${f.id} | ${t(f).join(', ') || '(design stage decides)'} | ${dir}/design-${f.id}.md, .incubator/tickets/${ticketId(f)}.json |`,
   );
+  const preamble = lean
+    ? [
+        "You are extending an existing repository. The owner's change request is in",
+        `\`${dir}/request.md\`. For each step below:`,
+        '',
+        '1. State your approach in at most five lines, then write the code. Do not write a design file and do not',
+        "   run the lane's enrich and codegen stages: the step is already specified here.",
+        '2. Touch only the listed targets unless the step needs another file; say why in your summary.',
+        "3. Keep the repository's own checks green after every step; follow its existing conventions.",
+        '4. Stop at `READY_FOR_TEST`, or park with a reason.',
+      ]
+    : [
+        "You are extending an existing repository. The Incubator scanned it and recorded the owner's change",
+        `request in \`${dir}/request.md\`; the scan is in \`${dir}/scan-report.md\`. For each step below:`,
+        '',
+        "1. Write the step's design into its design file first: the file starts with the brief for the design",
+        '   stage (`.incubator/lanes/<lane>/design.md`) and ends with the headings to fill in. Then run the',
+        "   lane's enrich and codegen stages, in that order.",
+        "2. Touch only the listed targets and the step's design file unless the design says otherwise and gives the reason.",
+        "3. Keep the repository's own checks green after every step; follow its existing conventions.",
+        '4. Stop at `READY_FOR_TEST`, or park with a reason. Record anything you had to improvise as a',
+        '   remediation item in the ticket.',
+      ];
   return [
     `# Plan ${path.posix.basename(d.planPath).slice(0, 3)}: enhance ${clean(d.spec.project.name, 80)}`,
     '',
     '## Executor preamble',
     '',
-    "You are extending an existing repository. The Incubator scanned it and recorded the owner's change",
-    `request in \`${dir}/request.md\`; the scan is in \`${dir}/scan-report.md\`. For each step below:`,
-    '',
-    "1. Write the step's design into its design file first: the file starts with the brief for the design",
-    '   stage (`.incubator/lanes/<lane>/design.md`) and ends with the headings to fill in. Then run the',
-    "   lane's enrich and codegen stages, in that order.",
-    "2. Touch only the listed targets and the step's design file unless the design says otherwise and gives the reason.",
-    "3. Keep the repository's own checks green after every step; follow its existing conventions.",
-    '4. Stop at `READY_FOR_TEST`, or park with a reason. Record anything you had to improvise as a',
-    '   remediation item in the ticket.',
+    ...preamble,
     '',
     `Test runners detected: ${runners}.`,
     '',
@@ -316,7 +399,7 @@ function renderPlan(d: DeliveryInput): string {
     ...numberedSection(d.numbered ?? null),
     '## Touched files and markers',
     '',
-    '| Request | Targets | Design and ticket |',
+    lean ? '| Request | Targets | Ticket |' : '| Request | Targets | Design and ticket |',
     '|---|---|---|',
     ...rows,
     '',

@@ -171,12 +171,25 @@ describe('staging the run guides in a Backshack worktree (ADR-030)', () => {
       mkdirSync(path.join(from, '.incubator', 'tickets'), { recursive: true });
       mkdirSync(path.join(from, '.incubator', 'state'), { recursive: true });
       writeFileSync(path.join(from, '.incubator', 'tickets', 'E-a.json'), '{"state":"NEW"}');
+      mkdirSync(path.join(from, '.incubator', 'enhance', '2026-05-01'), { recursive: true });
+      writeFileSync(
+        path.join(from, '.incubator', 'enhance', '2026-05-01', 'scan-report.md'),
+        'x'.repeat(5000),
+      );
+      writeFileSync(path.join(from, '.incubator', 'enhance', '2026-05-01', 'request.md'), 'ask');
       writeFileSync(path.join(from, '.incubator', 'state', 'active-ticket'), 'E-a');
       mkdirSync(to);
       stageRunGuides(from, to);
       const ticket = path.join(to, '.incubator', 'tickets', 'E-a.json');
       expect(readFileSync(ticket, 'utf8')).toBe('{"state":"NEW"}');
       expect(existsSync(path.join(to, '.incubator', 'state'))).toBe(false);
+      // The request is staged; the scan report (a large file the plan never names) is not.
+      expect(existsSync(path.join(to, '.incubator', 'enhance', '2026-05-01', 'request.md'))).toBe(
+        true,
+      );
+      expect(
+        existsSync(path.join(to, '.incubator', 'enhance', '2026-05-01', 'scan-report.md')),
+      ).toBe(false);
       expect(readFileSync(path.join(to, '.incubator', '.gitignore'), 'utf8')).toBe('*\n');
       // A resumed run keeps what the agent advanced.
       writeFileSync(ticket, '{"state":"READY_FOR_TEST"}');
@@ -258,6 +271,11 @@ describe('a backshack-tool run (ADR-030)', () => {
       .map((f) => readFileSync(path.join(clone, 'docs', 'plans', f), 'utf8'))
       .join('\n');
     for (const target of backshackTargets('order-export')) expect(planned).toContain(target);
+    // A lean plan: no scan report to read, no design file to write first.
+    expect(planned).not.toContain('scan-report.md');
+    expect(planned).not.toContain('Design (write it first)');
+    expect(planned).toContain('State your approach in at most five lines');
+    expect(prompts.some((p) => p.includes('.incubator/state/notes.md'))).toBe(true);
     expect(planned).not.toContain('index.js');
 
     h.engine.submitCommit(runId, { action: 'commit' });

@@ -238,7 +238,8 @@ export function stageRunGuides(fromRepo: string, worktree: string): void {
     recursive: true,
     force: false,
     errorOnExist: false,
-    filter: (src) => src !== state && !src.startsWith(state + path.sep),
+    filter: (src) =>
+      src !== state && !src.startsWith(state + path.sep) && path.basename(src) !== 'scan-report.md',
   });
 }
 

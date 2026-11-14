@@ -176,6 +176,7 @@ import {
   REQUEST_MAX,
   sanitizeRequest,
   ticketId,
+  stepPlan,
   type EnhancePlanRecord,
   type FolderUpstream,
 } from './enhance.js';
@@ -187,6 +188,7 @@ import {
   handoffPrompt,
   launchHandoff,
   remainingTickets,
+  readStepNotes,
   resolveCeilings,
   DEFAULT_CONTEXT_CEILING,
   DEFAULT_TOKEN_CEILING,
@@ -1111,6 +1113,7 @@ export class Engine {
       targets,
       base,
       numbered: upstream ? { ref: upstream.ref, ahead: upstream.ahead } : null,
+      lean: this.isBackshack(this.state(runId)),
       // No Incubator gate in the repository, and none arriving with this delivery.
       external:
         !isCanonicalRepo(dir) &&
@@ -2268,6 +2271,9 @@ export class Engine {
       // the approved checks itself, and keeps going until every request's ticket is marked and the checks pass.
       const external = checks.mode !== 'gate';
       const tickets = external ? this.planTickets(runId) : [];
+      // Each plan step gets its own session (prepareHandoff hands a part one step), so a plan with many steps needs
+      // more parts than MAX_CODE_PARTS: one per step, and two for a part that stops at a limit.
+      const maxParts = Math.max(MAX_CODE_PARTS, tickets.length + 2);
       // why: a check that already failed before the agent started (for example, dependencies not installed) is
       // reported, but does not hold the agent's work back.
       const baseline =
@@ -2303,9 +2309,10 @@ export class Engine {
             ? {
                 continuation: {
                   part,
-                  max: MAX_CODE_PARTS,
+                  max: maxParts,
                   base: base ?? null,
                   earlier,
+                  ...(tickets.length ? { stepped: { notes: readStepNotes(dir) } } : {}),
                   ...(resumed ? { before: resumed } : {}),
                   ...(left
                     ? {
@@ -2355,7 +2362,7 @@ export class Engine {
           }
         }
         const more = out.tripped !== null || (verify !== null && !verify.done);
-        if (!more || part >= MAX_CODE_PARTS) break;
+        if (!more || part >= maxParts) break;
         // why: a part that changed nothing would spend the next part's limits the same way.
         if (!changed) break;
         // why: without an identity there is nobody to commit as; the commit request then says what to set.
@@ -2379,7 +2386,10 @@ export class Engine {
           : null;
         const sha = await git.commit(
           dir,
-          partMessage({ title, part, tripped: out.tripped, left: unfinished }, runId),
+          partMessage(
+            { title, part, tripped: out.tripped, left: unfinished, max: maxParts },
+            runId,
+          ),
           {},
         );
         const done: CodePart = { part, sha, tripped: out.tripped };
@@ -4915,6 +4925,10 @@ export class Engine {
       (linked.data as { skipped?: boolean } | undefined)?.skipped !== true;
     // Plan 076: a member of a system reads the shared store its `.memory-link` points to.
     const store = memory ? memoryStoreFor(repo, memory.store) : null;
+    // One fresh session per plan step: an update or Backshack run hands the part only the step of the first ticket
+    // not yet marked, so what an earlier step read and wrote is not carried in this session's context.
+    const ticket = activeTicket(repo, spec, delivered?.features.map(ticketId));
+    const planText = readFileSync(planPath, 'utf8');
     const memoryLine = built
       ? memoryBuildLine(REPO_STORE, { bootstrapFollows: true })
       : memberBuilt && store
@@ -4931,12 +4945,12 @@ export class Engine {
 `
           : '') +
         handoffPrompt(
-          readFileSync(planPath, 'utf8'),
+          external && ticket && delivered ? stepPlan(planText, ticket) : planText,
           external ? { checks: checks.commands } : undefined,
           contract !== null ? { contract } : undefined,
         ) +
         (opts.continuation ? `\n${continuationText(opts.continuation)}` : ''),
-      ticket: activeTicket(repo, spec, delivered?.features.map(ticketId)),
+      ticket,
       checks,
     };
   }

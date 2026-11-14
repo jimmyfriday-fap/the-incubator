@@ -19,6 +19,7 @@ import {
   numberedMax,
   resolveTargets,
   sanitizeRequest,
+  stepPlan,
   ticketId,
 } from './enhance.js';
 import { enhanceFixtureDir, fakePublishEngine, hashTree, seedExistingRepo } from './testing.js';
@@ -874,6 +875,67 @@ describe('enhance', () => {
 });
 
 describe('enhance helpers', () => {
+  it('cuts a plan down to one step for its own session (stepPlan)', () => {
+    const plan = [
+      '# Plan 007: enhance Demo',
+      '',
+      '## Executor preamble',
+      '',
+      'Do each step.',
+      '',
+      '**Step 1:** first thing (`a`, lane `x`).',
+      '- Target: src/a.ts',
+      '- Ticket: E-a',
+      '',
+      '**Step 2:** second thing (`b`, lane `x`).',
+      '- Target: src/b.ts',
+      '- Ticket: E-b',
+      '',
+      '**Step 3:** third thing (`a-b`, lane `x`).',
+      '- Target: src/c.ts',
+      '- Ticket: E-a-b',
+      '',
+      '## Touched files and markers',
+      '',
+      '| Request | Targets | Ticket |',
+      '|---|---|---|',
+      '| a | src/a.ts | .incubator/tickets/E-a.json |',
+      '| b | src/b.ts | .incubator/tickets/E-b.json |',
+      '| a-b | src/c.ts | .incubator/tickets/E-a-b.json |',
+      '',
+      '## Acceptance commands',
+      '',
+      'all pass',
+      '',
+    ].join('\n');
+    const one = stepPlan(plan, 'E-b');
+    expect(one).toContain('Do each step.');
+    expect(one).toContain('**Step 2:** second thing');
+    expect(one).toContain('- Target: src/b.ts');
+    expect(one).not.toContain('src/a.ts');
+    expect(one).not.toContain('src/c.ts');
+    expect(one).toContain('**Not in this session**');
+    expect(one).toContain('- Step 1: first thing (`a`, lane `x`).');
+    expect(one).toContain('- Step 3: third thing (`a-b`, lane `x`).');
+    expect(one).toContain('| b | src/b.ts | .incubator/tickets/E-b.json |');
+    expect(one).not.toContain('E-a.json');
+    expect(one).toContain('| Request | Targets | Ticket |');
+    expect(one).toContain('## Acceptance commands\n\nall pass');
+    // A ticket whose id starts another ticket's id is not confused with it.
+    const first = stepPlan(plan, 'E-a');
+    expect(first).toContain('**Step 1:** first thing');
+    expect(first).not.toContain('**Step 3:**');
+    expect(first).toContain('- Step 3: third thing');
+    expect(first).not.toContain('E-a-b.json');
+    // Last step: the not-in-this-session list still follows the one step.
+    const last = stepPlan(plan, 'E-a-b');
+    expect(last.indexOf('**Step 3:**')).toBeLessThan(last.indexOf('**Not in this session**'));
+    // A plan that does not name the ticket, or has no steps, is returned whole.
+    expect(stepPlan(plan, 'E-zzz')).toBe(plan);
+    expect(stepPlan('# Plan\n\nno steps here', 'E-a')).toBe('# Plan\n\nno steps here');
+    expect(one.length).toBeLessThan(plan.length);
+  });
+
   it('ships the enhance prompt versioned and byte-pinned', () => {
     const p = loadPrompt('enhance');
     expect(p.name).toBe('enhance');

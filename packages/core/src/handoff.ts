@@ -252,6 +252,28 @@ export interface CodePart {
   tripped: string | null;
 }
 
+/**
+ * Where each step's session leaves what the next step needs (at most five lines, the prompts say). Under
+ * `.incubator/state/`: the agent's own bookkeeping, which git never sees, so a checkpoint commit cannot carry it.
+ */
+export const STEP_NOTES_FILE = '.incubator/state/notes.md';
+/** The most characters of the notes a step's prompt carries: the newest, cut at a line. */
+export const STEP_NOTES_MAX = 2000;
+
+/** The notes the earlier steps left, newest last, capped at STEP_NOTES_MAX; null when there are none. */
+export function readStepNotes(repo: string): string | null {
+  const file = path.join(repo, ...STEP_NOTES_FILE.split('/'));
+  if (!existsSync(file)) return null;
+  let text = readFileSync(file, 'utf8').replace(/\r\n/g, '\n').trim();
+  if (!text) return null;
+  if (text.length > STEP_NOTES_MAX) {
+    text = text.slice(-STEP_NOTES_MAX);
+    const nl = text.indexOf('\n');
+    text = nl >= 0 ? text.slice(nl + 1) : text;
+  }
+  return text;
+}
+
 /** The section added to the prompt of a continuing part: what the earlier parts committed (plan 036). */
 export function continuationText(c: {
   part: number;
@@ -263,6 +285,11 @@ export function continuationText(c: {
   /** Plan 042: the requests not done yet, and the checks that failed when the Incubator ran them. */
   remaining?: readonly { id: string; summary: string }[];
   failing?: readonly { command: string; tail: string }[];
+  /**
+   * Each plan step has its own session: the prompt then holds one step (`stepPlan`), and carries the earlier
+   * steps' notes (`STEP_NOTES_FILE`) in place of a re-read of their work.
+   */
+  stepped?: { notes: string | null };
 }): string {
   const list = c.earlier
     .map(
@@ -271,6 +298,17 @@ export function continuationText(c: {
     )
     .join('\n');
   const since = c.base ? ` since ${c.base.slice(0, 12)}` : '';
+  if (c.stepped) {
+    const notes = c.stepped.notes
+      ? `\n## Notes from earlier steps\n\n${c.stepped.notes}\n`
+      : '\n(No notes from earlier steps.)\n';
+    const earlier = c.earlier.length
+      ? `Earlier parts, committed on this branch${since}:\n\n${list}\n`
+      : c.before
+        ? `The earlier coding session's work is committed on this branch${c.before.since ? ` since ${c.before.since.slice(0, 12)}` : ''}; it ends at commit ${c.before.sha.slice(0, 12)}${c.before.tripped ? ` (it stopped at ${c.before.tripped})` : ''}.\n`
+        : '';
+    return `## Continuing: part ${c.part} of up to ${c.max}\n\n${loadPrompt('handoff-step').body}\n\n${earlier}${notes}${leftText(c)}`;
+  }
   if (c.before && c.earlier.length === 0) {
     const why = c.before.tripped ? ` (it stopped at ${c.before.tripped})` : '';
     const from = c.before.since ? ` since ${c.before.since.slice(0, 12)}` : '';

@@ -1491,6 +1491,13 @@ describe('an update run keeps going until every request is done (plan 043)', () 
     expect(of(h, runId, 'handoff.launch')).toHaveLength(2);
     expect(of(h, runId, 'code.part').map((e) => e['part'])).toEqual([1]);
     expect(prompt(dir, 1)).not.toContain('These requests are not done yet');
+    // Each part is its own session with its own step: part 1 holds the first step, part 2 the second.
+    expect(prompt(dir, 1)).toContain(`- Ticket: ${ORDERS}`);
+    expect(prompt(dir, 1)).not.toContain(`- Ticket: ${FILTER}`);
+    expect(prompt(dir, 1)).toContain('**Not in this session**');
+    expect(prompt(dir, 2)).toContain(`- Ticket: ${FILTER}`);
+    expect(prompt(dir, 2)).not.toContain(`- Ticket: ${ORDERS}`);
+    expect(prompt(dir, 2)).toContain('Build only your step');
     expect(prompt(dir, 2)).toContain('## Continuing: part 2 of up to 5');
     expect(prompt(dir, 2)).toContain(
       `These requests are not done yet: their tickets are not marked READY_FOR_TEST.\n\n- ${FILTER}: ${FILTER_SUMMARY}`,

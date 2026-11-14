@@ -85,10 +85,20 @@ export const MAX_CODE_PARTS = 5;
 
 /** The checkpoint commit after a part stopped at a run limit (plan 036): local only, never the owner's commit. */
 export function partMessage(
-  opts: { title: string; part: number; tripped: string | null; left?: string | null },
+  opts: {
+    title: string;
+    part: number;
+    tripped: string | null;
+    left?: string | null;
+    /** The parts limit of this run; MAX_CODE_PARTS when a plan with many steps did not raise it. */
+    max?: number;
+  },
   runId: string,
 ): string {
-  const head = subject('chore', `part ${opts.part} of up to ${MAX_CODE_PARTS}: ${opts.title}`);
+  const head = subject(
+    'chore',
+    `part ${opts.part} of up to ${opts.max ?? MAX_CODE_PARTS}: ${opts.title}`,
+  );
   const why = opts.tripped
     ? `The coding agent stopped at a run limit (${opts.tripped}); the next part continues from here.`
     : `The coding agent stopped with work left (${opts.left ?? 'unknown'}); the next part continues from here.`;
