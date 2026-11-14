@@ -1,6 +1,7 @@
 # ADR-031: Add memory runs, where the agent commits and the owner decides the push
 
-- **Status:** Accepted (points 1 and 6 amended by [ADR-032](032-memory-by-default.md))
+- **Status:** Accepted (points 1 and 6 amended by [ADR-032](032-memory-by-default.md); amended again on 2026-11-13:
+  system installs, GitHub-named members, adopting a store)
 - **Date:** 2026-11-03
 - **Context doc:** [`docs/TDD.md`](../TDD.md) §7.7; [`docs/incubator-memory-feature.md`](../incubator-memory-feature.md);
   amends [ADR-023](023-local-folder-workflow.md) points 3 and 4 for Add memory runs only
@@ -87,3 +88,28 @@ transcript path with a trailing carriage return and captures nothing. The hook e
 reports a **warning**, not a failure, when it runs but captures nothing (owner decision, 2026-11-06); it fails only when
 the hook itself errors or the captured transcript is not ignored by git. Transcripts are not captured on such a machine
 until the seed strips the `\r`.
+
+## Amendment (2026-11-13): system installs, GitHub-named members and adopting a store
+
+Store mode and Add member (ADR-032 point 4) launched their agents the way repo mode did before the 2026-11-06
+amendment, so on Windows they repeated the AC1 failures: no `--tools`, the PowerShell tool present, and the
+playbook's `.claude/` and `.git/` writes refused in a headless session. Plan 079 WI-1 (`d3dd13f`) and WI-2
+(`02f8d6b`) fixed that and added what a system of several repositories needs.
+
+1. **System installs follow the repo-mode rule.** The store, member and new-build memory agents get
+   `MEMORY_AVAILABLE_TOOLS` and `CLAUDE_CODE_USE_POWERSHELL_TOOL=0`, and run one command per call. After the agent
+   stops, the Incubator installs each member's protected files (SessionEnd hook, `settings.json` merge, hooks
+   `.gitattributes` with `eol=lf`) and the store's pre-commit hook, then runs verification steps 5 and 6 for every
+   member. The store path reaches a member through that member's own gitignored `.claude/settings.local.json`
+   (`MEMORY_STORE_DIR` and `additionalDirectories`), never through user-level settings (owner decision, 2026-11-09).
+2. **Members keep their GitHub names, and allowlist repositories work.** Add member names a member after its GitHub
+   repository (the last segment of its `origin` remote, dots allowed) and falls back to the folder name. A member
+   whose `.gitignore` is an allowlist and hides the memory hook files gets `!` lines for each file and the folders
+   above it; if git still ignores them, the install fails with `<member>:unignore`. New stores keep the side-by-side
+   rule (`members_not_siblings`).
+3. **An existing store is adopted, not replaced.** `incubator memory-adopt <store>` reads an existing store and
+   records it on the matching portfolio projects; the Incubator never installs a second store.
+   `incubator memory-system backshack --root <folder>` reports which Backshack repositories are found and which are
+   members, and warns while `MEMORY_STORE_DIR` is set in the user-level Claude settings.
+
+Upgrade and Dream (plan 079 WI-3 and WI-4) are deferred and are not part of this amendment.

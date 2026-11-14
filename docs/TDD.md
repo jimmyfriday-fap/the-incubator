@@ -1180,7 +1180,7 @@ about the push. Repo mode only (one solution, store `.memory/`).
   `PUT /api/portfolio/:id/identifiers`, `RunDetail.memory`; `incubator memory <path>` and
   `incubator portfolio <project> --identifiers a,b`. The desktop app ships the seed unpacked as `memory-seed/`
   and points `INCUBATOR_MEMORY_SEED_DIR` at it.
-- **Not yet.** Upgrade and Dream.
+- **Not yet.** Upgrade and Dream (plan 079 WI-3 and WI-4, deferred).
 
 #### 7.7.1 Memory by default (ADR-032)
 
@@ -1193,7 +1193,9 @@ about the push. Repo mode only (one solution, store `.memory/`).
   and bootstrapped after it; the bootstrap report goes into the build report.
 - **Store mode and Add member** are built: `incubator memory <paths...>` with a confirmed manifest, and
   `incubator memory --join <system>`. They keep everything local; the Incubator makes the store's commits and
-  pushes nothing.
+  pushes nothing. Add member names a member after its GitHub repository and handles allowlist `.gitignore` files;
+  `incubator memory-adopt <store>` adopts an existing store and `incubator memory-system backshack` reports the
+  Backshack repositories (plan 079 WI-1 and WI-2, ADR-031 amendment of 2026-11-13).
 - **Update runs** on a project with no `.memory/` and no `.memory-link` offer Add memory in the finish detail
   (`FinishDetail.memory.note`), the run's guide and `WHAT-NOW.md`. Nothing is installed without the owner
   starting an Add memory run.
