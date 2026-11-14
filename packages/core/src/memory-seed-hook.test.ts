@@ -41,11 +41,25 @@ function transcript(dir: string): string {
   return file;
 }
 
+// why: inside the pre-push and pre-commit hooks git exports these, and Exec strips them only for a `git` child. The hook
+// is a bash child that runs git itself, so it would otherwise act on the hooked repository, not on the scratch one.
+const GIT_REPOSITORY_ENV = [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_COMMON_DIR',
+  'GIT_PREFIX',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_IMPLICIT_WORK_TREE',
+];
+const NO_GIT_ENV = Object.fromEntries(GIT_REPOSITORY_ENV.map((k) => [k, undefined]));
+
 async function runHook(projectDir: string, src: string, env: Record<string, string> = {}) {
   return nodeExec.run('bash', [HOOK], {
     cwd: projectDir,
     timeoutMs: 60_000,
-    env: { CLAUDE_PROJECT_DIR: projectDir, ...env },
+    env: { ...NO_GIT_ENV, CLAUDE_PROJECT_DIR: projectDir, ...env },
     stdin: JSON.stringify({ session_id: 'sess-1', transcript_path: src }),
   });
 }
