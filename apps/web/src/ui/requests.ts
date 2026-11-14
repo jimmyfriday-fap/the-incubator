@@ -3,7 +3,7 @@ import type { IntakeTicketView, StartRunBody } from '../api-types.js';
 /** The part of a Custom App request the owner may change before the build starts. */
 export interface RequestEdits {
   narrative: string;
-  features: { id: string; summary: string; lane: string }[];
+  features: { id: string; summary: string; lane: string; mvp?: boolean }[];
 }
 
 export const editsFrom = (t: IntakeTicketView): RequestEdits => ({

@@ -156,6 +156,7 @@ export function Summary({ run, onContinue }: { run: RunDetail; onContinue?: () =
                 {run.enhance.plan.features.map((f) => (
                   <li key={f.id}>
                     <code>{f.id}</code> <span className="muted">{f.lane}</span>
+                    {f.later && <span className="muted"> (later: not built in this run)</span>}
                     {f.targets.length > 0 && (
                       <span className="muted"> → {f.targets.join(', ')}</span>
                     )}

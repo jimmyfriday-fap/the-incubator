@@ -356,7 +356,7 @@ export function installedPolicy(repo: string): 'pr' | 'direct' | null {
 
 /** The line an update run on a memory-enabled solution starts with (spec §6). */
 export function memoryConsumptionLine(store: string): string {
-  return `This solution has a memory store at \`${store}\`. Read its INDEX.md before starting, and follow the write-memory skill at the end.`;
+  return `This solution has a memory store at \`${store}\`. Read its INDEX.md before starting, then open at most the two files whose description matches this step and no others, and follow the write-memory skill at the end.`;
 }
 
 /** What a memory run shows the owner (the run page and `incubator memory`). */
@@ -491,7 +491,7 @@ export function memoryBuildLine(store: string, opts: { bootstrapFollows?: boolea
   const record = opts.bootstrapFollows
     ? 'Do not write to the memory store in this session: a memory bootstrap runs after you and records the design from your finished code.'
     : 'When you make a design decision, hit a failure likely to recur, or are corrected, record it with the write-memory skill.';
-  return `This solution has a memory store at \`${store}\`. Read its INDEX.md before you change any code. ${record} Do not commit: the owner commits.`;
+  return `This solution has a memory store at \`${store}\`. Read its INDEX.md before you change any code, then open at most the two files whose description matches this step and no others. ${record} Do not commit: the owner commits.`;
 }
 
 // --- Store mode (plan 076) ----------------------------------------------------------------------------

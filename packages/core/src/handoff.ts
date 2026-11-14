@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import path from 'node:path';
 import { globalRedactor, ParkError, type Exec } from '@incubator/runtime';
 import type { Capabilities, LlmAdapterId } from '@incubator/llm';
-import type { IncubatorSpec } from '@incubator/spec';
+import { builtFeatures, type IncubatorSpec } from '@incubator/spec';
 import { MODEL_ID } from './config.js';
 import { loadPrompt } from './prompts.js';
 
@@ -234,15 +234,18 @@ export function handoffPrompt(
   planText: string,
   external?: { checks: readonly string[] },
   backshack?: { contract: string },
+  card?: string | null,
 ): string {
+  const cardText = card ? `\n## Build card\n\n${card.trim()}\n` : '';
   const contract = backshack
     ? `\n${loadPrompt('handoff-backshack').body}\n\n${backshack.contract.trim()}\n`
     : '';
-  if (!external) return `${loadPrompt('handoff').body}\n\n${planText.trim()}\n${contract}`;
+  if (!external)
+    return `${loadPrompt('handoff').body}\n\n${planText.trim()}\n${cardText}${contract}`;
   const checks = external.checks.length
     ? external.checks.map((c) => `- \`${c}\``).join('\n')
     : '(none: run no commands)';
-  return `${loadPrompt('handoff-external').body}\n\n## Approved check commands\n\n${checks}\n\n## Executor plan\n\n${planText.trim()}\n${contract}`;
+  return `${loadPrompt('handoff-external').body}\n\n## Approved check commands\n\n${checks}\n\n## Executor plan\n\n${planText.trim()}\n${cardText}${contract}`;
 }
 
 /** A part of the coding work already committed by the engine (plan 036). */
@@ -576,7 +579,7 @@ export interface HandoffProgress {
 export function activeTicket(
   repo: string,
   spec: IncubatorSpec,
-  ids: readonly string[] = spec.intent.coreFeatures.map((f) => `F-${f.id}`),
+  ids: readonly string[] = builtFeatures(spec.intent.coreFeatures).map((f) => `F-${f.id}`),
 ): string | null {
   for (const id of ids) {
     const file = path.join(repo, '.incubator', 'tickets', `${id}.json`);

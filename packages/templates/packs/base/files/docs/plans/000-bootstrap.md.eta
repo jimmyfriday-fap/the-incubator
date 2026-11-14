@@ -11,7 +11,8 @@ const adapter = {
   'python-service': (id) => `tests/adapters/${it.h.snake(id)}.py`,
   'wordpress': (id) => `tests/Adapters/${it.h.pascal(id)}Adapter.php`,
 }[s.stack.pack];
-const features = it.features.filter((f) => !f.builtin);
+const features = it.features.filter((f) => !f.builtin && !f.later);
+const later = it.features.filter((f) => f.later);
 -%>
 # Plan 000: bootstrap <%= it.names.title %>
 
@@ -36,6 +37,16 @@ No core features were recorded at discovery. Start by adding one with
 - Target: <%= adapter(f.id) %>
 
 <% }) -%>
+<% if (later.length) { -%>
+## Later (not built in this run)
+
+These features are outside the MVP. Their files and tickets exist; do not build them now.
+
+<% for (const f of later) { -%>
+- <%= f.summary %> (`<%= f.id %>`)
+<% } -%>
+
+<% } -%>
 ## Touched files and markers
 
 | Feature | Files | Markers |

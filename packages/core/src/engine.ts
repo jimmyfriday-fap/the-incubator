@@ -22,6 +22,7 @@ import {
   completeSpec,
   discoveryTurnWireSchema,
   specHash,
+  laterFeatures,
   stackById,
   validateSemantics,
   validateSpec,
@@ -216,6 +217,7 @@ import {
   type BackshackFit,
   type BackshackPaths,
 } from './backshack.js';
+import { loadStackCard, readGeneratedCard, writeGeneratedCard } from './cards.js';
 import {
   MEMORY_ALLOWED_TOOLS,
   MEMORY_AVAILABLE_TOOLS,
@@ -1178,6 +1180,7 @@ export class Engine {
           noop = 'already_delivered';
           return;
         }
+        const laterIds = new Set(laterFeatures(features).map((f) => f.id));
         plan = {
           date,
           planPath,
@@ -1185,7 +1188,12 @@ export class Engine {
           create: d.create,
           proposed: d.proposed,
           gaps,
-          features: features.map((f) => ({ id: f.id, lane: f.lane, targets: targets[f.id] ?? [] })),
+          features: features.map((f) => ({
+            id: f.id,
+            lane: f.lane,
+            targets: targets[f.id] ?? [],
+            ...(laterIds.has(f.id) ? { later: true } : {}),
+          })),
         };
         this.record(runId, 'step.ok', { step: 'enhance.plan', data: plan });
       }
@@ -2215,9 +2223,12 @@ export class Engine {
         { expected: base, changed: status.slice(0, 8).map((e) => e.path) },
       );
     stageRunGuides(path.join(this.deps.store.runDir(runId), 'workspace', 'repo'), dir);
+    // The build card is made from the worktree as it is now, deterministically (no model, 6 KB at most).
+    const slug = this.state(runId).input.backshack?.fit.toolSlug;
+    const card = slug ? writeGeneratedCard(dir, slug) : false;
     this.record(runId, 'step.ok', {
       step: 'deliver',
-      data: { branch: base.branch, from: base.branch },
+      data: { branch: base.branch, from: base.branch, card },
     });
   }
 
@@ -2431,10 +2442,13 @@ export class Engine {
     const delivered = s.steps['enhance.plan']?.data as EnhancePlanRecord | undefined;
     if (s.input.kind !== 'enhance' || !delivered) return [];
     const features = this.finalSpec(runId)?.intent.coreFeatures ?? [];
-    return delivered.features.map((f) => ({
-      id: ticketId(f),
-      summary: features.find((x) => x.id === f.id)?.summary ?? f.id,
-    }));
+    // A request left for later by the MVP cut keeps its ticket, but this run neither builds nor verifies it.
+    return delivered.features
+      .filter((f) => !f.later)
+      .map((f) => ({
+        id: ticketId(f),
+        summary: features.find((x) => x.id === f.id)?.summary ?? f.id,
+      }));
   }
 
   /** Runs the approved check commands in the folder, with the PATH the agent had (plan 042). */
@@ -4927,8 +4941,19 @@ export class Engine {
     const store = memory ? memoryStoreFor(repo, memory.store) : null;
     // One fresh session per plan step: an update or Backshack run hands the part only the step of the first ticket
     // not yet marked, so what an earlier step read and wrote is not carried in this session's context.
-    const ticket = activeTicket(repo, spec, delivered?.features.map(ticketId));
+    const ticket = activeTicket(
+      repo,
+      spec,
+      delivered?.features.filter((f) => !f.later).map(ticketId),
+    );
     const planText = readFileSync(planPath, 'utf8');
+    // The build card: where one feature's files go and what not to read. A Backshack worktree carries the one written
+    // at approval; a canonical new-solution stack names a static one; an external repository has none.
+    const card = this.isBackshack(s)
+      ? readGeneratedCard(repo)
+      : external
+        ? null
+        : loadStackCard(stackById(spec.stack.pack)?.card);
     const memoryLine = built
       ? memoryBuildLine(REPO_STORE, { bootstrapFollows: true })
       : memberBuilt && store
@@ -4948,6 +4973,7 @@ export class Engine {
           external && ticket && delivered ? stepPlan(planText, ticket) : planText,
           external ? { checks: checks.commands } : undefined,
           contract !== null ? { contract } : undefined,
+          card,
         ) +
         (opts.continuation ? `\n${continuationText(opts.continuation)}` : ''),
       ticket,

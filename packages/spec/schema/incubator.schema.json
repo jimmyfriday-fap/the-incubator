@@ -89,6 +89,10 @@
               "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,48}$" },
               "summary": { "type": "string", "minLength": 1, "maxLength": 300 },
               "lane": { "$ref": "#/$defs/workLane" },
+              "mvp": {
+                "type": "boolean",
+                "description": "True when the feature is part of the smallest set that makes the product usable (the MVP). When any feature is marked true, only those are built in this run; the rest keep their tickets and are built later. No feature marked means every feature is built."
+              },
               "targets": {
                 "type": "array",
                 "maxItems": 20,

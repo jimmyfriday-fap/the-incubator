@@ -939,7 +939,7 @@ describe('enhance helpers', () => {
   it('ships the enhance prompt versioned and byte-pinned', () => {
     const p = loadPrompt('enhance');
     expect(p.name).toBe('enhance');
-    expect(p.version).toBe('1.4.0');
+    expect(p.version).toBe('1.5.0');
     expect(p.body).toMatchSnapshot();
   });
 

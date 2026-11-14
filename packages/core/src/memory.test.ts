@@ -245,6 +245,8 @@ describe('the memory session (plan 071)', () => {
     expect(line).toContain('`.memory/`');
     expect(line).toContain('INDEX.md');
     expect(line).toContain('write-memory');
+    // Capped: the index, then at most two files, so a coding session does not read the whole store.
+    expect(line).toContain('at most the two files whose description matches this step');
   });
 });
 

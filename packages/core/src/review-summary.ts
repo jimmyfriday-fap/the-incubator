@@ -1,5 +1,5 @@
 import { clean } from '@incubator/analyzer';
-import type { Decision, IncubatorSpec } from '@incubator/spec';
+import { hasMvpCut, type Decision, type IncubatorSpec } from '@incubator/spec';
 import { sanitizeRequest } from './enhance.js';
 
 /**
@@ -60,8 +60,10 @@ export function reviewSummaryUserPrompt(i: ReviewSummaryInput): string {
   const answers = i.spec.decisions
     .filter((d: Decision) => d.source === 'user')
     .map((d) => `- ${d.question} -> ${d.answer}`);
+  const cut = hasMvpCut(i.spec.intent.coreFeatures);
   const features = i.spec.intent.coreFeatures.map(
-    (f) => `- ${f.id} (${f.lane ?? 'new'}): ${clean(f.summary, 400)}`,
+    (f) =>
+      `- ${f.id} (${f.lane ?? 'new'})${cut ? (f.mvp === true ? ' [MVP]' : ' [later]') : ''}: ${clean(f.summary, 400)}`,
   );
   return [
     '# Review summary',

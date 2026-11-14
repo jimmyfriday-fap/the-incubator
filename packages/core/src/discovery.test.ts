@@ -51,7 +51,7 @@ describe('discovery prompt', () => {
   it('ships the brief text, versioned and byte-pinned', () => {
     const p = loadPrompt('discovery');
     expect(p.name).toBe('discovery');
-    expect(p.version).toBe('1.0.0');
+    expect(p.version).toBe('1.1.0');
     expect(p.body).toMatchSnapshot();
     expect(() => parsePrompt('no front matter')).toThrow();
     expect(() => parsePrompt('---\nname: x\nversion: one\n---\nbody')).toThrow(/semver/);

@@ -11,6 +11,8 @@ export interface TicketFact {
   id: string;
   title: string;
   state: string;
+  /** Left for a later run by the MVP cut: the ticket exists, nothing builds it now. */
+  later?: boolean;
 }
 
 /** What the guide is built from. */
@@ -154,7 +156,12 @@ export function readTickets(dir: string): TicketFact[] {
       const id = typeof t['id'] === 'string' ? t['id'] : name.slice(0, -'.json'.length);
       const title = typeof t['title'] === 'string' ? t['title'] : id;
       const state = typeof t['state'] === 'string' ? t['state'] : 'unknown';
-      out.push({ id, title: oneLine(title, 160), state });
+      out.push({
+        id,
+        title: oneLine(title, 160),
+        state,
+        ...(t['later'] === true ? { later: true } : {}),
+      });
     } catch {
       // why: a hand-edited ticket that is not JSON must not stop the guide being written.
     }
@@ -188,12 +195,15 @@ export function readGettingStarted(dir: string): string[] {
 
 /** The guide from the run's facts: deterministic, no model. */
 export function whatNow(f: WhatNowFacts): WhatNow {
-  const built = f.tickets.map((t) => ({
-    id: t.id,
-    title: t.title,
-    state: STATE[t.state] ?? t.state,
-    ready: READY.has(t.state),
-  }));
+  const deferred = f.tickets.filter((t) => t.later === true);
+  const built = f.tickets
+    .filter((t) => t.later !== true)
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      state: STATE[t.state] ?? t.state,
+      ready: READY.has(t.state),
+    }));
   const waiting = built.filter((t) => !t.ready).length;
   const about = [
     `${f.name}: ${oneLine(f.description, 300)}`,
@@ -204,6 +214,10 @@ export function whatNow(f: WhatNowFacts): WhatNow {
   const status = [f.verdict ? VERDICT[f.verdict] : 'The coding agent has not run yet.'];
   if (built.length > 0)
     status.push(`${built.length - waiting} of ${built.length} features are ready for test.`);
+  if (deferred.length > 0)
+    status.push(
+      `${deferred.length} feature${deferred.length === 1 ? ' is' : 's are'} left for later (outside the MVP, not built in this run): ${deferred.map((t) => t.id).join(', ')}.`,
+    );
   if (f.setup) status.push(`Setting up the project failed: ${f.setup}.`);
   if (f.commit !== undefined) {
     if (f.commit?.sha)

@@ -2,7 +2,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { ToolError, sha256Hex, type Clock } from '@incubator/runtime';
 import type { GitIdentity } from '@incubator/git';
-import { OTHER, changedPaths, deepMerge, type DiscoveryTurn, type Issue } from '@incubator/spec';
+import {
+  OTHER,
+  builtFeatures,
+  changedPaths,
+  deepMerge,
+  laterFeatures,
+  type DiscoveryTurn,
+  type Issue,
+} from '@incubator/spec';
 import type { IncubatorSpec } from '@incubator/spec';
 import { writeTree, type RenderResult, type RenderedFile } from '@incubator/templates';
 import { clean, cmp, unsupportedStackLabel, type RepoScan } from '@incubator/analyzer';
@@ -30,7 +38,8 @@ export interface EnhancePlanRecord {
   create: string[];
   proposed: string[];
   gaps: { create: string[]; proposed: string[] } | null;
-  features: { id: string; lane: string; targets: string[] }[];
+  /** `later`: left out of this run's steps by the MVP cut (it keeps its ticket and is built later). */
+  features: { id: string; lane: string; targets: string[]; later?: boolean }[];
 }
 
 // --- model-output checks ----------------------------------------------------------------------
@@ -342,7 +351,9 @@ function renderPlan(d: DeliveryInput): string {
   const lean = d.lean === true;
   const t = (f: Feature): string[] => d.targets[f.id] ?? [];
   const runners = d.scan.tests.runners.join(', ') || 'none detected';
-  const steps = d.features.map((f, i) => {
+  const built = builtFeatures(d.features);
+  const later = laterFeatures(d.features);
+  const steps = built.map((f, i) => {
     const targets = t(f);
     return [
       `**Step ${i + 1}:** ${clean(f.summary, 240)} (\`${f.id}\`, lane \`${f.lane}\`).`,
@@ -358,7 +369,7 @@ function renderPlan(d: DeliveryInput): string {
       '',
     ].join('\n');
   });
-  const rows = d.features.map((f) =>
+  const rows = built.map((f) =>
     lean
       ? `| ${f.id} | ${t(f).join(', ') || '(find it from the step)'} | .incubator/tickets/${ticketId(f)}.json |`
       : `| ${f.id} | ${t(f).join(', ') || '(design stage decides)'} | ${dir}/design-${f.id}.md, .incubator/tickets/${ticketId(f)}.json |`,
@@ -397,6 +408,16 @@ function renderPlan(d: DeliveryInput): string {
     '',
     ...steps,
     ...numberedSection(d.numbered ?? null),
+    ...(later.length
+      ? [
+          '## Later (not built in this run)',
+          '',
+          'These requests are outside the MVP. Their tickets exist; do not build them.',
+          '',
+          ...later.map((f) => `- ${clean(f.summary, 240)} (\`${f.id}\`)`),
+          '',
+        ]
+      : []),
     '## Touched files and markers',
     '',
     lean ? '| Request | Targets | Ticket |' : '| Request | Targets | Design and ticket |',
@@ -457,6 +478,7 @@ export function buildDelivery(d: DeliveryInput): Map<string, RenderedFile> {
       ].join('\n'),
     ),
   );
+  const laterIds = new Set(laterFeatures(d.features).map((f) => f.id));
   const lanes = new Set(d.features.map((f) => f.lane));
   for (const [p, f] of d.base.files)
     for (const lane of lanes)
@@ -491,6 +513,7 @@ export function buildDelivery(d: DeliveryInput): Map<string, RenderedFile> {
           state: 'TAGGED_TO_RELEASE',
           plan: d.planPath,
           remediations: [],
+          ...(laterIds.has(f.id) ? { later: true } : {}),
         }),
       ),
     );

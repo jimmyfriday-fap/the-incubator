@@ -167,6 +167,22 @@ export function Requests() {
                     })
                   }
                 />
+                <label className="muted">
+                  <input
+                    type="checkbox"
+                    aria-label={`MVP ${f.id}`}
+                    checked={f.mvp === true}
+                    onChange={(e) =>
+                      setEdits({
+                        ...edits,
+                        features: edits.features.map((x, j) =>
+                          j === i ? { ...x, mvp: e.target.checked } : x,
+                        ),
+                      })
+                    }
+                  />{' '}
+                  MVP
+                </label>
                 <button
                   type="button"
                   aria-label={`Remove ${f.id}`}

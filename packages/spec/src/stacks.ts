@@ -59,11 +59,18 @@ export interface StackEntry {
   create?: StackCreate;
   /** Workspace stacks only. */
   workspace?: StackWorkspace;
+  /**
+   * The build card inlined in a coding prompt (at most 60 lines, or 6 KB when generated): where one feature's files
+   * go, the one command for each, and what not to read. A name under the core package's `prompts/cards/`, or
+   * `generated` for a card written into the worktree at approval. Absent: no card.
+   */
+  card?: string;
 }
 
 export const STACK_CATALOG: readonly StackEntry[] = [
   {
     id: 'node-web',
+    card: 'node-web',
     label: 'Node web app',
     kind: 'built-in',
     summary: 'A Fastify API with a React and Vite front end, backed by Postgres.',
@@ -75,6 +82,7 @@ export const STACK_CATALOG: readonly StackEntry[] = [
   },
   {
     id: 'node-lib',
+    card: 'node-lib',
     label: 'TypeScript library or CLI',
     kind: 'built-in',
     summary: 'A TypeScript package or command-line tool, published as a package.',
@@ -86,6 +94,7 @@ export const STACK_CATALOG: readonly StackEntry[] = [
   },
   {
     id: 'python-service',
+    card: 'python-service',
     label: 'Python service',
     kind: 'built-in',
     summary: 'A FastAPI service backed by Postgres, managed with uv.',
@@ -97,6 +106,7 @@ export const STACK_CATALOG: readonly StackEntry[] = [
   },
   {
     id: 'wordpress',
+    card: 'wordpress',
     label: 'WordPress plugin or theme',
     kind: 'built-in',
     summary: 'A WordPress plugin or theme with Composer autoloading.',
@@ -148,6 +158,7 @@ export const STACK_CATALOG: readonly StackEntry[] = [
   },
   {
     id: 'backshack-tool',
+    card: 'generated',
     label: 'Backshack tool',
     kind: 'workspace',
     summary:

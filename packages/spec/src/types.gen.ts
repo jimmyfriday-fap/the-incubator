@@ -78,6 +78,10 @@ export interface CoreFeature {
   summary: string;
   lane: WorkLane;
   /**
+   * True when the feature is part of the smallest set that makes the product usable (the MVP). When any feature is marked true, only those are built in this run; the rest keep their tickets and are built later. No feature marked means every feature is built.
+   */
+  mvp?: boolean;
+  /**
    * Repository-relative files or directories the change touches, resolved from the scan (enhancement runs).
    *
    * @maxItems 20

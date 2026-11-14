@@ -1,7 +1,7 @@
 import { Eta } from 'eta/core';
 import * as prettier from 'prettier';
 import { ToolError, sha256Hex, stableJson } from '@incubator/runtime';
-import { serializeSpec, specHash, type IncubatorSpec } from '@incubator/spec';
+import { laterFeatures, serializeSpec, specHash, type IncubatorSpec } from '@incubator/spec';
 import { makeHelpers } from './helpers.js';
 import { applyJsonPatch } from './json-patch.js';
 import { applyMarkerPatch, scanMarkers } from './markers.js';
@@ -94,6 +94,8 @@ function baseContext(spec: IncubatorSpec, reg: PackRegistry): Omit<Ctx, 'pack'> 
     description: h.safeText(spec.project.description, 500),
     pairedName: spec.testing.pairedRepo?.name ?? `${slug}-tests`,
   };
+  // The MVP cut: features left for later keep their files and tickets, but the bootstrap plan has no step for them.
+  const laterIds = new Set(laterFeatures(spec.intent.coreFeatures).map((f) => f.id));
   const features = [
     {
       id: 'health',
@@ -106,6 +108,7 @@ function baseContext(spec: IncubatorSpec, reg: PackRegistry): Omit<Ctx, 'pack'> 
       summary: h.safeText(f.summary, 300),
       lane: f.lane,
       builtin: false,
+      later: laterIds.has(f.id),
     })),
   ];
   return deepFreeze({

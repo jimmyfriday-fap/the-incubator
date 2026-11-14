@@ -8,7 +8,7 @@ import {
 } from '@incubator/core';
 import { ExitCode, PolicyError, fileSink } from '@incubator/runtime';
 import { isLlmAdapterId } from '@incubator/llm';
-import { serializeSpec, type IncubatorSpec } from '@incubator/spec';
+import { hasMvpCut, serializeSpec, type IncubatorSpec } from '@incubator/spec';
 import type { CliDeps } from '../deps.js';
 import type { Io } from '../io.js';
 import { TerminalPrompter } from '../prompter.js';
@@ -81,7 +81,7 @@ export function reportRun(deps: CliDeps, io: Io, state: RunState, out?: string):
       const features = deps.engine.finalSpec(state.runId)?.intent.coreFeatures ?? [];
       if (features.length > 0)
         io.stderr(
-          `  the plan:\n${features.map((f) => `    - ${f.id}: ${f.summary}`).join('\n')}\n`,
+          `  the plan:\n${features.map((f) => `    - ${f.id}${hasMvpCut(features) ? (f.mvp === true ? ' [MVP]' : ' [later]') : ''}: ${f.summary}`).join('\n')}\n`,
         );
       io.stderr(
         `  change the plan with: incubator resume ${state.runId} --change "what to change"\n`,

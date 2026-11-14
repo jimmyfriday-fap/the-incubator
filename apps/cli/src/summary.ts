@@ -1,8 +1,21 @@
-import { OTHER, type IncubatorSpec } from '@incubator/spec';
+import {
+  OTHER,
+  builtFeatures,
+  hasMvpCut,
+  laterFeatures,
+  type IncubatorSpec,
+} from '@incubator/spec';
 
 export function summarizeSpec(spec: IncubatorSpec): string {
   const count = (s: string) => spec.decisions.filter((d) => d.source === s).length;
-  const features = spec.intent.coreFeatures.map((f) => f.id).join(', ') || '(none yet)';
+  const all = spec.intent.coreFeatures;
+  const later = laterFeatures(all).map((f) => f.id);
+  const features =
+    (hasMvpCut(all)
+      ? `${builtFeatures(all)
+          .map((f) => f.id)
+          .join(', ')} (MVP)${later.length ? `; later: ${later.join(', ')}` : ''}`
+      : all.map((f) => f.id).join(', ')) || '(none yet)';
   return [
     `project    ${spec.project.name} (${spec.project.slug}), ${spec.project.visibility}`,
     ...(spec.stack.pack === OTHER

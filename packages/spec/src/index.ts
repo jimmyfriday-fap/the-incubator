@@ -7,6 +7,7 @@ export * from './defaults.js';
 export * from './semantics.js';
 export * from './serialize.js';
 export * from './stacks.js';
+export * from './mvp.js';
 
 import { ENHANCEMENT_SPEC_VERSION, INCUBATOR_SPEC_VERSION } from './constants.js';
 

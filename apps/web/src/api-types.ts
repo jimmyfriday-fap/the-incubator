@@ -391,7 +391,7 @@ export interface EnhanceDetail {
     create: string[];
     proposed: string[];
     gaps: { create: string[]; proposed: string[] } | null;
-    features: { id: string; lane: string; targets: string[] }[];
+    features: { id: string; lane: string; targets: string[]; later?: boolean }[];
   } | null;
   /**
    * Folder runs on a repository with no Incubator gate: the check commands proposed for the coding
@@ -556,7 +556,7 @@ export interface IntakeTicketView {
     intent: {
       narrative: string;
       personas: string[];
-      coreFeatures: { id: string; summary: string; lane: string }[];
+      coreFeatures: { id: string; summary: string; lane: string; mvp?: boolean }[];
     };
   };
   gaps: string[];
